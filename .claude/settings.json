@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(*find-generic-password*)",
+      "Bash(*dump-keychain*)",
+      "Bash(*export-keychain*)",
+      "Read(~/Library/Keychains/**)",
+      "Bash(*api.the-odds-api.com*)",
+      "Bash(*apiKey=*)",
+      "WebFetch(domain:api.the-odds-api.com)",
+      "Bash(*143.244.160.20*)",
+      "Bash(*/opt/arbitredge*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)"
+    ],
+    "ask": [
+      "Bash(*mac/set_budget.sh*)",
+      "Bash(*mac/set_live.sh*)",
+      "Bash(rm -rf *)"
+    ]
+  }
+}

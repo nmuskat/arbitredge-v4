@@ -26,6 +26,7 @@ DEFAULT_MAX_AGE_S = 45 * 60
 # accuracy once data is available (Phase 4).
 SHARP_WEIGHTS = {"pinnacle": 3.0, "circasports": 3.0, "betonlineag": 2.0, "lowvig": 2.0}
 SIDES = {"h2h": ("home", "away"), "spreads": ("home", "away"), "totals": ("over", "under")}
+MIN_SHARP = 2      # market-making books needed before the consensus uses them alone
 
 
 def _latest_per_book(conn, event_id, market, T):
@@ -63,21 +64,35 @@ def market_state(conn, event_id, market, T, max_age_s=DEFAULT_MAX_AGE_S, weights
     if not fresh:
         newest = max(v["fetched_at"] for v in books.values())
         return {**out, "status": "STALE", "newest_quote_age_s": T - newest}
-    # main line = most common point among fresh books (h2h has no point)
+    # Consensus set: market-making books when >= MIN_SHARP of them are fresh, else every fresh
+    # book. Books whose own two prices are under-round (a stale or mispriced pair) are kept
+    # for scanning but excluded from the consensus -- one bad book must not poison the benchmark.
+    def _ok(v):
+        try:
+            pricing.devig([v["sides"][a][0], v["sides"][b][0]])
+            return True
+        except ValueError:
+            return False
+    valid = {k: v for k, v in fresh.items() if _ok(v)}
+    sharp_fresh = {k: v for k, v in valid.items() if k in weights}
+    pool = sharp_fresh if len(sharp_fresh) >= MIN_SHARP else valid
+    out["excluded_books"] = sorted(set(fresh) - set(valid))
+    if not pool:
+        return {**out, "status": "INCONSISTENT", "error": "no fresh book has a consistent two-way price"}
+    # main line = most common point among consensus books (h2h has no point)
     line = None
     if market != "h2h":
-        line = Counter(v["sides"][a][1] for v in fresh.values()).most_common(1)[0][0]
-    on_line = {k: v for k, v in fresh.items() if market == "h2h" or v["sides"][a][1] == line}
+        line = Counter(v["sides"][a][1] for v in pool.values()).most_common(1)[0][0]
+    on_line = {k: v for k, v in pool.items() if market == "h2h" or v["sides"][a][1] == line}
     quotes = {k: (v["sides"][a][0], v["sides"][b][0]) for k, v in on_line.items()}
     w = {k: weights.get(k, 1.0) for k in quotes}
-    try:
-        fair_a = pricing.consensus_fair_prob(quotes, w, devig_method)
-    except ValueError as e:             # e.g. every quote under-round: inconsistent data
-        return {**out, "status": "INCONSISTENT", "error": str(e)}
-    best_a = pricing.best_price({k: q[0] for k, q in quotes.items()})
-    best_b = pricing.best_price({k: q[1] for k, q in quotes.items()})
+    fair_a = pricing.consensus_fair_prob(quotes, w, devig_method)
+    every = {k: v for k, v in fresh.items() if market == "h2h" or v["sides"][a][1] == line}
+    best_a = pricing.best_price({k: v["sides"][a][0] for k, v in every.items()})
+    best_b = pricing.best_price({k: v["sides"][b][0] for k, v in every.items()})
     return {**out, "status": "OK", "line": line, "fair": {a: fair_a, b: 1.0 - fair_a},
-            "best": {a: best_a, b: best_b}, "n_books_on_line": len(quotes),
+            "best": {a: best_a, b: best_b}, "n_books_on_line": len(every),
+            "consensus_books": sorted(quotes), "consensus_basis": "market_makers" if pool is sharp_fresh else "all_books",
             "sharp_books_on_line": sorted(k for k in quotes if k in weights)}
 
 

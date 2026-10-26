@@ -33,8 +33,9 @@ def _consensus_se(state, market):
     books' no-vig probabilities on the main line / sqrt(n), floored."""
     a, b = asof.SIDES[market]
     vals = []
-    for bk in state["books"].values():
-        if bk["fresh"] and bk.get(a) and bk.get(b) and (market == "h2h" or bk[a][1] == state["line"]):
+    for name in state.get("consensus_books", []):
+        bk = state["books"][name]
+        if bk.get(a) and bk.get(b):
             try:
                 vals.append(pricing.devig([bk[a][0], bk[b][0]])[0])
             except ValueError:
@@ -49,10 +50,13 @@ def _consensus_se(state, market):
 def scan(market_conn, ledger_conn, events, T, spread_kn, spread_sigma, total_kn, total_sigma,
          policy=ev.DecisionPolicy(), max_age_s=asof.DEFAULT_MAX_AGE_S, record=True, allow_demo=False):
     """events: [{'event_id', 'kickoff' (epoch), 'home', 'away'}]. Returns decision rows."""
-    ledger.register(ledger_conn, STRATEGY, VERSION, DESCRIPTION, {"policy": policy.__dict__, "max_age_s": max_age_s},
-                    "2026-10-26T00:00:00Z")
-    validated = bool(ledger_conn.execute("SELECT validated FROM v4e_strategy WHERE strategy_id=? AND version=?",
-                                         (STRATEGY, VERSION)).fetchone()[0])
+    validated = False
+    if ledger_conn is not None:
+        ledger.register(ledger_conn, STRATEGY, VERSION, DESCRIPTION, {"policy": policy.__dict__, "max_age_s": max_age_s},
+                        "2026-10-26T00:00:00Z")
+        validated = bool(ledger_conn.execute("SELECT validated FROM v4e_strategy WHERE strategy_id=? AND version=?",
+                                             (STRATEGY, VERSION)).fetchone()[0])
+    record = record and ledger_conn is not None
     rows = []
     for e in events:
         if T >= e["kickoff"]:

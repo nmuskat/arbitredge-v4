@@ -243,3 +243,16 @@ def test_invalid_row_raises_instead_of_vanishing():
     with pytest.raises(sqlite3.IntegrityError):
         store.ingest(conn, [bad], [], "2026-10-24T12:00:00Z", "americanfootball_nfl", "odds", "fp")
     assert conn.execute("SELECT COUNT(*) FROM mkt_fetch").fetchone()[0] == 0     # whole fetch rolled back
+
+
+def test_one_inconsistent_soft_book_does_not_poison_consensus():
+    conn = store.connect()
+    t = ts("2026-10-24T12:00:00Z")
+    books = {"pinnacle": (-150, 130, -108, -102, -110, -110), "betonlineag": (-150, 130, -107, -103, -110, -110),
+             "draftkings": (-150, 130, 115, -110, -110, -110)}          # under-round spread pair at draftkings
+    q, an = normalize.normalize(stamp([event(EID_B, "H", "A", KICK_B, books)], t), iso(t))
+    store.ingest(conn, q, an, iso(t), "americanfootball_nfl", "odds", "fp")
+    st = asof.market_state(conn, EID_B, "spreads", t + 60)
+    assert st["status"] == "OK" and st["consensus_basis"] == "market_makers"
+    assert st["consensus_books"] == ["betonlineag", "pinnacle"] and "draftkings" in st["books"]
+    assert st["best"]["home"] == ("draftkings", 115)        # still visible as a price to shop

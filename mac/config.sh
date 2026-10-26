@@ -1,0 +1,10 @@
+# Shared settings for the ArbitrEdge V4 Mac scripts (sourced, not run).
+V4_HOME="$HOME/ArbitrEdgeV4"
+V4_REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+V4_PY="$V4_REPO/.venv/bin/python"
+KEYCHAIN_SERVICE="arbitredge-v4-odds-api"
+KEYCHAIN_ACCOUNT="arbitredge-v4"
+GW_CONFIG="$V4_HOME/gateway/gateway.json"
+GW_LABEL="com.arbitredge.v4.gateway"
+COLLECT_LABEL="com.arbitredge.v4.collector"
+AGENTS="$HOME/Library/LaunchAgents"

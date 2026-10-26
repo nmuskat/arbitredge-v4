@@ -354,12 +354,40 @@ def serve(cfg, key):
     srv.serve_forever()
 
 
+def key_from_keychain(service, account=None):
+    """macOS: read the key from the login Keychain (never printed or logged).
+    Returns None if the item does not exist."""
+    import subprocess
+    cmd = ["/usr/bin/security", "find-generic-password", "-s", service, "-w"]
+    if account:
+        cmd[3:3] = ["-a", account]
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    return parse_key(r.stdout)
+
+
+def load_key():
+    """Key sources, in order: systemd credential (Linux server), macOS Keychain
+    (ODDS_KEY_KEYCHAIN_SERVICE). The value never reaches stdout or a log."""
+    cred_dir = os.environ.get("CREDENTIALS_DIRECTORY")
+    if cred_dir and os.path.exists(os.path.join(cred_dir, "odds_key")):
+        return read_key(os.path.join(cred_dir, "odds_key"))
+    svc = os.environ.get("ODDS_KEY_KEYCHAIN_SERVICE")
+    if svc:
+        return key_from_keychain(svc)
+    return None
+
+
 def main(argv):
     cfg = load_config(os.environ.get("GATEWAY_CONFIG", "/etc/arbitredge-v4/gateway.json"))
-    cred_dir = os.environ.get("CREDENTIALS_DIRECTORY")
-    key = None
-    if cred_dir and os.path.exists(os.path.join(cred_dir, "odds_key")):
-        key = read_key(os.path.join(cred_dir, "odds_key"))
+    key = load_key()
+    if argv[1:] == ["probe-local"]:    # Mac: key from the Keychain, same zero-credit /v4/sports check
+        if key is None:
+            print(json.dumps({"error": "no Odds API key found in the Keychain"}))
+            return 1
+        print(json.dumps(Gateway(cfg, key).probe(), indent=2))
+        return 0
     if argv[1:] == ["reset-breaker"]:
         Gateway(cfg, key).reset_breaker()
         print("breaker reset")
