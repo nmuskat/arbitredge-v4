@@ -1,0 +1,9 @@
+# ArbitrEdge production dependencies -- pinned loosely (major version) since
+# this is a personal system, not a package meant for wide reuse. Confirmed
+# via a full-repo import audit: these are the only non-stdlib packages
+# ArbitrEdge actually imports anywhere.
+flask>=3.0,<4.0
+requests>=2.31,<3.0
+numpy>=1.26,<2.0
+scikit-learn>=1.3,<2.0
+gunicorn>=21.2,<22.0
