@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+odds_outage_patch.diff
+operations/state/

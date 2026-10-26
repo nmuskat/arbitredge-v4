@@ -54,6 +54,7 @@ from collectors.errors import (
     RequestBudgetExceededError,
     RetriesExhaustedError,
 )
+from collectors.provider_errors import extract_provider_error, scrub, summarize
 
 
 def _now() -> str:
@@ -94,6 +95,7 @@ class CollectionRun:
         source: str,
         scheduled_at: Optional[str] = None,
         logger: Optional[logging.Logger] = None,
+        secrets: tuple = (),
     ):
         self.conn = conn
         self.collector_name = collector_name
@@ -107,6 +109,7 @@ class CollectionRun:
         self.error_type: Optional[str] = None
         self.error_detail: Optional[str] = None
         self._logger = logger or _get_logger(collector_name)
+        self._secrets = tuple(secrets or ())
 
     def __enter__(self) -> "CollectionRun":
         self.executed_at = _now()
@@ -118,7 +121,7 @@ class CollectionRun:
         else:
             self.success = False
             self.error_type = exc_type.__name__
-            self.error_detail = redact(str(exc_val))[:2000]
+            self.error_detail = scrub(redact(str(exc_val)), self._secrets)[:2000]
             self._logger.error(
                 "Collection run failed: %s: %s", self.error_type, self.error_detail
             )
@@ -184,7 +187,8 @@ class BaseCollector:
     def new_run(self, scheduled_at: Optional[str] = None) -> CollectionRun:
         """Starts a new collection run and resets the per-run request budget."""
         self._request_count = 0
-        return CollectionRun(self.conn, self.collector_name, self.source, scheduled_at, self.logger)
+        return CollectionRun(self.conn, self.collector_name, self.source, scheduled_at, self.logger,
+                             secrets=self.secret_values())
 
     # ---------------------------------------------------------------
     # HTTP with retry/backoff/budget/throttle
@@ -208,7 +212,7 @@ class BaseCollector:
                 if attempt_num == total_attempts:
                     raise RetriesExhaustedError(
                         f"Exhausted retries after {total_attempts} attempt(s) "
-                        f"for {redact(url)}: {redact(str(e))}"
+                        f"for {self._safe_url(url)}: {scrub(redact(str(e)), self.secret_values())}"
                     ) from None
                 self.logger.warning(
                     "Attempt %d/%d failed (%s), retrying...",
@@ -220,9 +224,11 @@ class BaseCollector:
             if response.status_code in RETRYABLE_STATUS_CODES:
                 run.retry_count = attempt_num - 1
                 if attempt_num == total_attempts:
+                    diag = self.diagnose_error_response(response)
                     raise RetriesExhaustedError(
-                        f"Exhausted retries after {total_attempts} attempt(s) for {redact(url)}, "
-                        f"last status {response.status_code}"
+                        f"Exhausted retries after {total_attempts} attempt(s) for {self._safe_url(url)}, "
+                        f"last status {response.status_code}; {summarize(diag)}",
+                        diagnostics=diag,
                     )
                 retry_after = self._parse_retry_after(response)
                 self.logger.warning(
@@ -233,8 +239,15 @@ class BaseCollector:
                 continue
 
             if response.status_code >= 400:
+                # Preserve the provider's structured error and credit headers
+                # (sanitized) instead of discarding them -- see
+                # collectors/provider_errors.py. The message keeps its old
+                # prefix so existing log searches still match.
+                diag = self.diagnose_error_response(response)
+                self.logger.error("Provider error: %s", summarize(diag))
                 raise NonRetryableRequestError(
-                    f"Non-retryable HTTP {response.status_code} from {redact(url)}"
+                    f"Non-retryable HTTP {response.status_code} from {self._safe_url(url)}; {summarize(diag)}",
+                    diagnostics=diag,
                 )
 
             usage_info = self.extract_usage_info(response)
@@ -247,6 +260,25 @@ class BaseCollector:
         # Unreachable in practice (loop always returns or raises), kept as a
         # defensive fallback so the function has no implicit-None return path.
         raise RetriesExhaustedError(f"Exhausted retries for {redact(url)}")
+
+    def secret_values(self) -> tuple:
+        """Hook: every secret this collector could ever send (e.g. its API
+        key). Used for VALUE-based scrubbing, so a secret is removed even if
+        a provider echoes it back in an unexpected place or format."""
+        return ()
+
+    def diagnose_error_response(self, response: requests.Response) -> dict:
+        """Sanitized diagnostics for a failed response. Never raises."""
+        try:
+            return extract_provider_error(response, self.secret_values())
+        except Exception as e:  # diagnostics must never mask the HTTP failure
+            return {"http_status": getattr(response, "status_code", None),
+                    "classification": "DIAGNOSTICS_FAILED", "error_code": None,
+                    "safe_headers": {}, "body_format": "unavailable", "body_length": 0,
+                    "message": f"diagnostics extraction failed: {type(e).__name__}"}
+
+    def _safe_url(self, url: str) -> str:
+        return scrub(redact(url), self.secret_values())
 
     def extract_usage_info(self, response: requests.Response) -> Optional[dict]:
         """

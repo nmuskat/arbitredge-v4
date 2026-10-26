@@ -33,6 +33,7 @@ from flask import Flask, jsonify, request, render_template
 from db.migrate import DEFAULT_DB_PATH
 from db.connection import get_connection
 from book_need.run_slate_book_need import run_book_need_slate, _cfb_v3_top25_eligible
+from features.market_freshness import game_freshness, sport_freshness, STALE, NO_DATA
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 
@@ -107,7 +108,7 @@ def _build_why(result, display_names):
             f"response (segment {seg_name}) suggests the book may still need {need_team}.")
 
 
-def _shape_result(result, display_names):
+def _shape_result(result, display_names, freshness=None):
     pp = result["public_pressure"]
     seg_name = result["current_segment_name"]
     current_seg = next((s for s in result["segments"] if s["name"] == seg_name), None) if seg_name else None
@@ -174,6 +175,11 @@ def _shape_result(result, display_names):
             ).get("total_ledger")
         ),
         "segments": segments_out,
+        # Explicit data age: every value above was computed from market data
+        # last observed at freshness["last_market_observation"]. STALE/NO_DATA
+        # means collection is not keeping its own cadence for this game.
+        "market_freshness": freshness,
+        "market_data_stale": bool(freshness and freshness["status"] in (STALE, NO_DATA)),
     }
 
 
@@ -212,6 +218,8 @@ def _compute_slate(sport):
         sports = ["nfl", "cfb"] if sport == "all" else [sport]
         all_results, all_excluded = [], []
         sport_cache_data = {}
+        freshness_by_gid = {}
+        collection_freshness = sport_freshness(conn, now)
 
         for s in sports:
             slate = run_book_need_slate(
@@ -221,11 +229,16 @@ def _compute_slate(sport):
             if s == "cfb":
                 slate["results"] = [r for r in slate["results"] if _cfb_v3_top25_eligible(conn, r["canonical_game_id"], as_of)]
 
+            for r in slate["results"]:
+                freshness_by_gid[r["canonical_game_id"]] = game_freshness(conn, r["canonical_game_id"], now)
+
             if sport == "all":
                 sport_cache_data[s] = {
                     "as_of": as_of,
-                    "games": [_shape_result(r, display_names) for r in slate["results"]],
+                    "games": [_shape_result(r, display_names, freshness_by_gid.get(r["canonical_game_id"]))
+                              for r in slate["results"]],
                     "excluded": _shape_excluded(slate["excluded"], display_names),
+                    "market_freshness": collection_freshness,
                 }
 
             all_results.extend(slate["results"])
@@ -233,8 +246,10 @@ def _compute_slate(sport):
 
         data = {
             "as_of": as_of,
-            "games": [_shape_result(r, display_names) for r in all_results],
+            "games": [_shape_result(r, display_names, freshness_by_gid.get(r["canonical_game_id"]))
+                      for r in all_results],
             "excluded": _shape_excluded(all_excluded, display_names),
+            "market_freshness": collection_freshness,
         }
     finally:
         conn.close()
@@ -334,7 +349,10 @@ def api_slate():
         "excluded": len(excluded),
     }
 
+    stale_games = sum(1 for g in games if g.get("market_data_stale"))
     return jsonify({
+        "market_freshness": data.get("market_freshness"),
+        "stale_market_games": stale_games,
         "as_of": data["as_of"],
         "as_of_central": _to_central(data["as_of"]),
         "data_computed_at_unix": computed_at,

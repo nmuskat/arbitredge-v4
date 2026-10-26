@@ -105,6 +105,9 @@ class OddsCollector(BaseCollector):
     # provider-specific logic; this override lives entirely here)
     # ---------------------------------------------------------------
 
+    def secret_values(self) -> tuple:
+        return (self.api_key,) if self.api_key else ()
+
     def extract_usage_info(self, response) -> Optional[dict]:
         headers = response.headers
         info = {}

@@ -606,3 +606,6 @@ body {
     margin: 0 auto;
   }
 }
+
+/* outage patch: explicit stale-market marking */
+.game-card.stale-market { outline: 2px dashed #c0392b; }

@@ -31,6 +31,7 @@ from book_need.experimental_mixed import evaluate_experimental_mixed_signal, SIG
 from db.migrate import DEFAULT_DB_PATH, run_migration  # noqa: E402
 from db.connection import get_connection  # noqa: E402
 from operations.production_role import resolve_authorized_db_path, ProductionGuardRefusal  # noqa: E402
+from operations import odds_circuit_breaker  # noqa: E402
 from identity.seed_team_data import seed  # noqa: E402
 from identity.team_resolver import TeamResolver  # noqa: E402
 from identity.game_resolver import GameResolver  # noqa: E402
@@ -160,6 +161,19 @@ def check_and_run_odds(conn, team_resolver, game_resolver, sport, force=False):
         print(f"  [odds/{sport}] not due -- tier={tier_label}, needs {required_interval}min, "
               f"only {minutes_since_last:.0f}min elapsed")
         return
+
+    # Circuit breaker: after sustained authentication/quota failures, stop
+    # sending requests until a probe is due, the documented monthly credit
+    # reset passes, or an operator touches the reset marker. --force does
+    # NOT bypass this (force overrides cadence, not account-level failure).
+    breaker = odds_circuit_breaker.decide(conn)
+    if not breaker.allow:
+        log_cadence_decision(conn, sport, game_id, hours_to_nearest, tier_label,
+                              required_interval, minutes_since_last, False, None)
+        print(f"  [odds/{sport}] SUPPRESSED -- {odds_circuit_breaker.describe(breaker)}")
+        return
+    if breaker.state == "HALF_OPEN_PROBE":
+        print(f"  [odds/{sport}] PROBE -- {odds_circuit_breaker.describe(breaker)}")
 
     reason = "forced" if force else f"due (tier={tier_label})"
     try:

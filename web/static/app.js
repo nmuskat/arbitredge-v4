@@ -58,6 +58,7 @@ async function fetchSlate() {
     }
 
     banner.classList.add("hidden");
+    renderFreshness(data.market_freshness, data.stale_market_games);
     latestGames = data.games;
     latestExcluded = data.excluded;
     renderSummary(data.counts);
@@ -73,6 +74,28 @@ async function fetchSlate() {
       activeSlateController = null;
     }
   }
+}
+
+function renderFreshness(freshness, staleGames) {
+  // Market-data age is shown explicitly; it is never inferred from the page's own refresh time.
+  let el = document.getElementById("freshness-banner");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "freshness-banner";
+    el.className = "error-banner";
+    const anchor = document.getElementById("error-banner");
+    anchor.parentNode.insertBefore(el, anchor.nextSibling);
+  }
+  const failed = freshness ? freshness.failed_odds_runs_since_last_success : 0;
+  if (!freshness || (!staleGames && !failed)) {
+    el.classList.add("hidden");
+    return;
+  }
+  const last = freshness.last_successful_odds_poll || "never";
+  el.textContent = `⚠ MARKET DATA NOT CURRENT — last successful odds poll ${last}; ` +
+    `${failed} failed odds run(s) since; ${staleGames} game(s) priced from stale lines. ` +
+    `Spreads, synthetic ledgers and Needs below reflect the last observed market, not the current one.`;
+  el.classList.remove("hidden");
 }
 
 function showError(msg) {
@@ -161,7 +184,11 @@ function renderGames() {
       : (game.card_state === "NOT_YET_EVALUABLE" ? "Not started" : "—");
 
     node.querySelector(".why-text").textContent = game.why;
-    node.querySelector(".as-of-mini").textContent = `as_of: ${game.as_of}`;
+    const mf = game.market_freshness;
+    node.querySelector(".as-of-mini").textContent = `as_of: ${game.as_of}` + (mf
+      ? ` · market data ${mf.status}${mf.last_market_observation ? ` (last odds ${mf.last_market_observation}, ${Math.round(mf.age_minutes)} min old)` : ""}`
+      : "");
+    if (game.market_data_stale) card.classList.add("stale-market");
 
     buildExpanded(node, game);
 
@@ -191,6 +218,13 @@ function buildExpanded(node, game) {
 
   if ((game.sport === "nfl" || game.sport === "cfb") && sportsbook) {
     syntheticSection.classList.remove("hidden");
+
+    if (ledger && game.market_data_stale) {
+      const warn = document.createElement("div");
+      warn.className = "seg-header";
+      warn.textContent = "STALE MARKET DATA — ledger priced from the last observed lines, not current odds";
+      syntheticSection.insertBefore(warn, syntheticDetail);
+    }
 
     if (ledger) {
       const bookNeedTeam = sportsbook.book_need_side === "home"

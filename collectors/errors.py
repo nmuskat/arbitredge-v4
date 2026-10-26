@@ -22,11 +22,24 @@ class RetryableRequestError(CollectorError):
 
 class NonRetryableRequestError(CollectorError):
     """Raised for permanent failures: most 4xx responses, malformed
-    requests, etc. Retrying would not help."""
+    requests, etc. Retrying would not help.
+
+    `diagnostics` (optional) is an ALREADY-SANITIZED dict produced by
+    collectors.provider_errors.extract_provider_error -- never a raw
+    response, never anything containing request headers or the full URL."""
+
+    def __init__(self, message: str, diagnostics: dict = None):
+        super().__init__(message)
+        self.diagnostics = diagnostics
 
 
 class RetriesExhaustedError(CollectorError):
-    """Raised when the maximum retry count is reached without success."""
+    """Raised when the maximum retry count is reached without success.
+    `diagnostics` as for NonRetryableRequestError (last response, if any)."""
+
+    def __init__(self, message: str, diagnostics: dict = None):
+        super().__init__(message)
+        self.diagnostics = diagnostics
 
 
 class RequestBudgetExceededError(CollectorError):
