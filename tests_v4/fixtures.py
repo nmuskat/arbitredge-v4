@@ -62,7 +62,7 @@ NFL_WEEK = [
 ]
 
 
-def build_quotes(week=NFL_WEEK, retail_lag=RETAIL_LAG):
+def build_quotes(week=NFL_WEEK, retail_lag=RETAIL_LAG, source_id="fixture:nfl_week_v1"):
     quotes = {}
     for gid, _h, _a, _ko, _s, _tv, path in week:
         qs = []
@@ -72,7 +72,28 @@ def build_quotes(week=NFL_WEEK, retail_lag=RETAIL_LAG):
                 bt = t if (book in REFERENCE_BOOKS or i == 0) else t + retail_lag
                 qs.append(quote(book, bt.isoformat(), hs, hp, ap, ref=f"fx:{gid}:{book}:{i}"))
         quotes[gid] = qs
-    return FixtureMarket(quotes, source_id="fixture:nfl_week_v1")
+    return FixtureMarket(quotes, source_id=source_id)
+
+
+def static_week(week=NFL_WEEK):
+    """Market counterfactual: every line frozen at its opening quote."""
+    return [(gid, h, a, ko, st, tv, path[:1]) for gid, h, a, ko, st, tv, path in week]
+
+
+def reversed_week(week=NFL_WEEK):
+    """
+    Market counterfactual: every move after the open is mirrored around the
+    opening number (a move toward the favourite becomes an equal move toward
+    the underdog), and juice-only moves swap sides. Same timing, same books.
+    """
+    out = []
+    for gid, h, a, ko, st, tv, path in week:
+        open_hs = path[0][1]
+        new_path = [path[0]]
+        for ts, hs, hp, ap in path[1:]:
+            new_path.append((ts, open_hs - (hs - open_hs), ap, hp))
+        out.append((gid, h, a, ko, st, tv, new_path))
+    return out
 
 
 def build_slate(week=NFL_WEEK, slate_id="nfl_2026_w9_fixture"):

@@ -203,7 +203,9 @@ All 16 required properties have automated tests. Results are in Part 2.
 ### 10. Risks, unknowns, and information I need
 
 **Modelling risks (from the diagnostics — see Part 2):**
-1. **On the realistic fixture, the Need is almost always the underdog (69 of 72 non-pick'em game-seeds).** This is the V4 counterpart of V3's "always away", except it now follows from explicit, inspectable assumptions:
+1. > **CORRECTION (Milestone 2):** the explanation below is wrong about the cause. The sensitivity study (`docs_v4/MILESTONE_2_REPORT.md` §4) shows that sharp reaction to the fixture's line moves supplies ~72% of the favourite pressure; recreational and high-stakes favourite preference supplies the rest. High-stakes concentration is not the main driver. The 69/72 figure is from the pre-M2 seeding; it is 65/72 after the M2 seeding change.
+
+   **On the realistic fixture, the Need is almost always the underdog (69 of 72 non-pick'em game-seeds).** This is the V4 counterpart of V3's "always away", except it now follows from explicit, inspectable assumptions:
    - favourite-leaning recreational and high-stakes bettors
    - high-stakes bettors (4% of bettors) carrying **~48% of handle**
    

@@ -20,6 +20,9 @@ Design rules enforced by validate_params():
     "high stakes" is a property of the bettor, not a coefficient sign.
 """
 
+import copy
+from contextlib import contextmanager
+
 from sportsbook_v4.util import json_hash
 
 PARAMS_VERSION = "v4_params_m1_unvalidated"
@@ -245,9 +248,13 @@ def validate_params(archetypes=None, book=None):
     return True
 
 
+ACTIVE_VARIANT = {"name": None, "overrides": None}
+
+
 def params_snapshot():
     return {
         "params_version": PARAMS_VERSION,
+        "variant": ACTIVE_VARIANT,
         "archetypes": ARCHETYPES,
         "book": BOOK,
         "timing_profiles": TIMING_PROFILES,
@@ -257,6 +264,55 @@ def params_snapshot():
 
 def params_hash():
     return json_hash(params_snapshot())
+
+
+@contextmanager
+def variant(name, archetype_overrides=None, book_overrides=None, all_archetypes=None):
+    """
+    DIAGNOSTICS ONLY: temporarily apply a named parameter variant.
+
+    archetype_overrides: {ARCHETYPE: {field: value}}
+    all_archetypes:      {field: value} applied to every archetype first
+    book_overrides:      {field: value}
+    Shares are re-validated, and the variant name and overrides are part of
+    params_hash() -- so any population/run created under a variant is
+    distinguishable from the baseline and can never continue a baseline run.
+    Restores the baseline on exit, even on error.
+    """
+    if ACTIVE_VARIANT["name"] is not None:
+        raise RuntimeError("variants do not nest")
+    saved_a, saved_b = copy.deepcopy(ARCHETYPES), copy.deepcopy(BOOK)
+    try:
+        for a in ARCHETYPES.values():
+            a.update(copy.deepcopy(all_archetypes or {}))
+        for arch, changes in (archetype_overrides or {}).items():
+            if arch not in ARCHETYPES:
+                raise KeyError(arch)
+            ARCHETYPES[arch].update(copy.deepcopy(changes))
+        BOOK.update(copy.deepcopy(book_overrides or {}))
+        _validate_variant()
+        ACTIVE_VARIANT.update(name=name, overrides={"all": all_archetypes, "archetypes": archetype_overrides,
+                                                    "book": book_overrides})
+        yield
+    finally:
+        ARCHETYPES.clear()
+        ARCHETYPES.update(saved_a)
+        BOOK.clear()
+        BOOK.update(saved_b)
+        ACTIVE_VARIANT.update(name=None, overrides=None)
+
+
+def _validate_variant():
+    """Variants may move home_pref (to measure it) but must still be well-formed."""
+    total = sum(a["share"] for a in ARCHETYPES.values())
+    if abs(total - 1.0) > 1e-9:
+        raise ValueError(f"variant archetype shares must sum to 1.0, got {total}")
+    for name, a in ARCHETYPES.items():
+        for t in ("unit_fraction", "arrivals_per_week", "fav_pref", "home_pref",
+                  "popularity_weight", "recency_weight"):
+            _check_trait(f"{name}.{t}", a[t])
+        if a["timing"] not in TIMING_PROFILES:
+            raise ValueError(f"{name}: unknown timing profile")
 
 
 validate_params()

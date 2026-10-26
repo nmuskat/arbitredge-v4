@@ -9,7 +9,7 @@ the production `market_snapshots` table unless explicitly allowed, as a
 guard against pointing V4 at the production database by mistake.
 """
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # m2: v4_run.rng_key (common random numbers); nothing deployed, no migration
 
 DDL = """
 CREATE TABLE IF NOT EXISTS v4_schema_meta (
@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS v4_run (
     engine_version    TEXT NOT NULL,
     params_hash       TEXT NOT NULL,
     market_source_id  TEXT NOT NULL,
+    rng_key           TEXT NOT NULL,          -- seeds arrivals/decisions; excludes params + market source
     created_at        TEXT NOT NULL
 );
 

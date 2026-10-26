@@ -8,7 +8,7 @@ create_run()  fixes the run identity: population, slate (games + betting
 advance()     moves the run's clock from its watermark to `until`, inside
               ONE transaction:
                 1. every bettor's arrival times over the whole window are a
-                   pure function of (run_id, bettor_uid) -- so the arrivals
+                   pure function of (rng_key, bettor_uid) -- so the arrivals
                    falling in (watermark, until] are identical however the
                    window is chopped into intervals;
                 2. each arrival decides using ONLY the market as of its own
@@ -90,6 +90,21 @@ def compute_run_id(population_id, slate, market_source_id):
     )
 
 
+def compute_rng_key(population_id, slate):
+    """
+    Randomness identity for a run. Deliberately EXCLUDES params_hash and the
+    market source: two runs over the same population and slate that differ
+    only in a parameter variant or in the market path draw the same arrival
+    times and the same per-decision random numbers (common random numbers),
+    so differences between them are caused by the change under study, not
+    by re-rolled dice. The population's bettor draws are already
+    params-independent per index (population.generate_bettor).
+    """
+    sport, size = population_id.split("|")[0], population_id.split("|")[2]
+    return sha256_hex("v4_rng_v1", sport, size, slate.slate_id, slate.window_start, slate.window_end,
+                      canonical_json(_games_payload(slate)))
+
+
 def create_run(conn, population_id, slate, market):
     pop = conn.execute("SELECT sport FROM v4_population WHERE population_id=?", (population_id,)).fetchone()
     if pop is None:
@@ -106,10 +121,10 @@ def create_run(conn, population_id, slate, market):
     if conn.execute("SELECT 1 FROM v4_run WHERE run_id=?", (run_id,)).fetchone() is None:
         conn.execute(
             "INSERT INTO v4_run (run_id, population_id, sport, slate_id, window_start, window_end, games_json, "
-            "engine_version, params_hash, market_source_id, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "engine_version, params_hash, market_source_id, rng_key, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (run_id, population_id, slate.sport, slate.slate_id, from_epoch(ws), from_epoch(we),
              canonical_json(_games_payload(slate)), ENGINE_VERSION, params_hash(), market.source_id,
-             datetime.now(timezone.utc).strftime(ISO_FMT)),
+             compute_rng_key(population_id, slate), datetime.now(timezone.utc).strftime(ISO_FMT)),
         )
         conn.commit()
     return run_id
@@ -118,15 +133,15 @@ def create_run(conn, population_id, slate, market):
 def load_run(conn, run_id):
     row = conn.execute(
         "SELECT population_id, sport, slate_id, window_start, window_end, games_json, engine_version, "
-        "params_hash, market_source_id FROM v4_run WHERE run_id=?", (run_id,),
+        "params_hash, market_source_id, rng_key FROM v4_run WHERE run_id=?", (run_id,),
     ).fetchone()
     if row is None:
         raise KeyError(run_id)
-    pid, sport, slate_id, ws, we, gj, ev, ph, msid = row
+    pid, sport, slate_id, ws, we, gj, ev, ph, msid, rng_key = row
     games = tuple(GameSpec(**g) for g in json.loads(gj))
     return {
         "run_id": run_id, "population_id": pid, "engine_version": ev, "params_hash": ph,
-        "market_source_id": msid,
+        "market_source_id": msid, "rng_key": rng_key,
         "slate": SlateSpec(sport=sport, slate_id=slate_id, window_start=ws, window_end=we, games=games),
     }
 
@@ -156,7 +171,7 @@ def _profile_stats(profile_name, ws, we):
     return profile, sum(samples) / len(samples), dmax
 
 
-def bettor_arrivals(run_id, bettor, ws, we, stats_cache):
+def bettor_arrivals(rng_key, bettor, ws, we, stats_cache):
     """Deterministic arrival epochs for one bettor over the whole window."""
     arch = ARCHETYPES[bettor["archetype"]]
     if arch["timing"] not in stats_cache:
@@ -167,7 +182,7 @@ def bettor_arrivals(run_id, bettor, ws, we, stats_cache):
     if expected <= 0 or mean_d <= 0:
         return []
     lam_max = expected * dmax / (mean_d * window)  # per second, thinning envelope
-    rng = random.Random(seed_int("v4_arrivals", run_id, bettor["bettor_uid"]))
+    rng = random.Random(seed_int("v4_arrivals", rng_key, bettor["bettor_uid"]))
     out, t = [], float(ws)
     while True:
         t += rng.expovariate(lam_max)
@@ -298,13 +313,13 @@ def _sharp_pick(arch, open_games, view, ref_t):
     return best
 
 
-def _decide(run_id, bettor, seq, t, games, view, facts_source, staked):
+def _decide(rng_key, bettor, seq, t, games, view, facts_source, staked):
     arch = ARCHETYPES[bettor["archetype"]]
     tr = bettor["traits"]
     gran = BOOK["decision_time_granularity_seconds"]
     ref_t = _floor(t, gran)
     offer_t = _floor(t - BOOK["offer_lag_seconds"], gran)
-    rng = random.Random(seed_int("v4_decide", run_id, bettor["bettor_uid"], seq))
+    rng = random.Random(seed_int("v4_decide", rng_key, bettor["bettor_uid"], seq))
 
     open_games = []
     for g in games:
@@ -393,7 +408,7 @@ def advance(conn, run_id, until, market, facts, data_complete_through, _fail_aft
         ).fetchall())
         stats_cache, events = {}, []
         for b in pop["bettors"]:
-            for seq, t in enumerate(bettor_arrivals(run_id, b, ws, we, stats_cache)):
+            for seq, t in enumerate(bettor_arrivals(run["rng_key"], b, ws, we, stats_cache)):
                 if wm < t <= until_e:
                     events.append((t, b["bettor_index"], seq, b))
         events.sort(key=lambda e: (e[0], e[1], e[2]))
@@ -403,7 +418,7 @@ def advance(conn, run_id, until, market, facts, data_complete_through, _fail_aft
         new_seq = last_seq + 1
         passes, wagers = {}, []
         for t, _, seq, b in events:
-            accepted, reason = _decide(run_id, b, seq, t, games, view, facts, staked)
+            accepted, reason = _decide(run["rng_key"], b, seq, t, games, view, facts, staked)
             if accepted is None:
                 passes[reason] = passes.get(reason, 0) + 1
                 continue
