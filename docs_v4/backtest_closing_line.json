@@ -1,0 +1,212 @@
+{
+  "independent": {
+    "decisions": 15736,
+    "bets_2012_2025": 83,
+    "bets_2026": 0,
+    "summary_2012_2025": {
+      "record": {
+        "n": 83,
+        "W": 40,
+        "L": 42,
+        "P": 1,
+        "staked": 83.0,
+        "profit": -4.136397962962944,
+        "roi": -0.049836120035698116
+      },
+      "roi_ci": {
+        "roi_lo": -0.2678825205344683,
+        "roi_hi": 0.15623226856198918,
+        "p_roi_le_0": 0.7022977022977023,
+        "n": 83
+      },
+      "p_adjusted": 0.7022977022977023,
+      "mean_clv": -0.01292473742452288,
+      "clv_coverage": 1.0,
+      "max_drawdown": 11.424478285542687,
+      "longest_losing_streak": 6,
+      "criteria": {
+        "sample_size>=500": false,
+        "roi_ci_lower>0": false,
+        "multiple_testing_adjusted_p<0.05": false,
+        "mean_clv>0_with_>=80%_close_coverage": false
+      },
+      "edge_status": "NOT PROVEN"
+    },
+    "record_2026": null
+  },
+  "anchored": {
+    "decisions": 15736,
+    "bets_2012_2025": 20,
+    "bets_2026": 0,
+    "summary_2012_2025": {
+      "record": {
+        "n": 20,
+        "W": 8,
+        "L": 12,
+        "P": 0,
+        "staked": 20.0,
+        "profit": -3.9962540944475453,
+        "roi": -0.19981270472237728
+      },
+      "roi_ci": {
+        "roi_lo": -0.6964563106796117,
+        "roi_hi": 0.21016273693943596,
+        "p_roi_le_0": 0.8121878121878122,
+        "n": 20
+      },
+      "p_adjusted": 1.0,
+      "mean_clv": -0.01256990251130719,
+      "clv_coverage": 1.0,
+      "max_drawdown": 5.919126213592233,
+      "longest_losing_streak": 3,
+      "criteria": {
+        "sample_size>=500": false,
+        "roi_ci_lower>0": false,
+        "multiple_testing_adjusted_p<0.05": false,
+        "mean_clv>0_with_>=80%_close_coverage": false
+      },
+      "edge_status": "NOT PROVEN"
+    },
+    "record_2026": null
+  },
+  "independent_loose": {
+    "bets_2012_2025": 6451,
+    "summary_2012_2025": {
+      "record": {
+        "n": 6451,
+        "W": 3182,
+        "L": 3165,
+        "P": 104,
+        "staked": 6451.0,
+        "profit": -143.51111809262989,
+        "roi": -0.022246336706344735
+      },
+      "roi_ci": {
+        "roi_lo": -0.04732303853681997,
+        "roi_hi": 0.0014675361443031434,
+        "p_roi_le_0": 0.9660339660339661,
+        "n": 6451
+      },
+      "p_adjusted": 1.0,
+      "mean_clv": -0.014727479404633122,
+      "clv_coverage": 1.0,
+      "max_drawdown": 194.42501083480508,
+      "longest_losing_streak": 11,
+      "criteria": {
+        "sample_size>=500": true,
+        "roi_ci_lower>0": false,
+        "multiple_testing_adjusted_p<0.05": false,
+        "mean_clv>0_with_>=80%_close_coverage": false
+      },
+      "edge_status": "NOT PROVEN"
+    },
+    "record_2026": {
+      "n": 178,
+      "W": 76,
+      "L": 98,
+      "P": 4,
+      "staked": 178.0,
+      "profit": -28.28041998937833,
+      "roi": -0.1588787639852715
+    },
+    "by_market": {
+      "spreads": {
+        "n": 3276,
+        "W": 1619,
+        "L": 1585,
+        "P": 72,
+        "staked": 3276.0,
+        "profit": -46.93281261505225,
+        "roi": -0.014326255377000077
+      },
+      "totals": {
+        "n": 3175,
+        "W": 1563,
+        "L": 1580,
+        "P": 32,
+        "staked": 3175.0,
+        "profit": -96.57830547757763,
+        "roi": -0.03041836392994571
+      }
+    },
+    "high_ev_bucket": {
+      "n": 4584,
+      "W": 2250,
+      "L": 2261,
+      "P": 73,
+      "staked": 4584.0,
+      "profit": -122.3974224480582,
+      "roi": -0.02670100838744725
+    }
+  },
+  "anchored_loose": {
+    "bets_2012_2025": 4755,
+    "summary_2012_2025": {
+      "record": {
+        "n": 4755,
+        "W": 2352,
+        "L": 2323,
+        "P": 80,
+        "staked": 4755.0,
+        "profit": -52.726406070470524,
+        "roi": -0.011088623779278764
+      },
+      "roi_ci": {
+        "roi_lo": -0.04133511722878663,
+        "roi_hi": 0.016570960549601353,
+        "p_roi_le_0": 0.7692307692307693,
+        "n": 4755
+      },
+      "p_adjusted": 1.0,
+      "mean_clv": -0.014069145607214362,
+      "clv_coverage": 1.0,
+      "max_drawdown": 84.15405952795362,
+      "longest_losing_streak": 13,
+      "criteria": {
+        "sample_size>=500": true,
+        "roi_ci_lower>0": false,
+        "multiple_testing_adjusted_p<0.05": false,
+        "mean_clv>0_with_>=80%_close_coverage": false
+      },
+      "edge_status": "NOT PROVEN"
+    },
+    "record_2026": {
+      "n": 82,
+      "W": 43,
+      "L": 37,
+      "P": 2,
+      "staked": 82.0,
+      "profit": 3.4449691286264175,
+      "roi": 0.042011818641785575
+    },
+    "by_market": {
+      "spreads": {
+        "n": 2503,
+        "W": 1246,
+        "L": 1206,
+        "P": 51,
+        "staked": 2503.0,
+        "profit": -1.5122664621592121,
+        "roi": -0.0006041815669833049
+      },
+      "totals": {
+        "n": 2252,
+        "W": 1106,
+        "L": 1117,
+        "P": 29,
+        "staked": 2252.0,
+        "profit": -51.214139608311314,
+        "roi": -0.02274162504809561
+      }
+    },
+    "high_ev_bucket": {
+      "n": 1331,
+      "W": 680,
+      "L": 631,
+      "P": 20,
+      "staked": 1331.0,
+      "profit": 37.844975550723376,
+      "roi": 0.028433490271016812
+    }
+  }
+}

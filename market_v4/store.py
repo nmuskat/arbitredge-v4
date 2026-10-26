@@ -73,8 +73,9 @@ def ingest(conn, quotes, anomalies, fetched_at_iso, sport, endpoint, request_fp,
         n = 0
         for q in quotes:
             cur = conn.execute(
-                "INSERT OR IGNORE INTO mkt_quote (event_id, sport, commence, home, away, book, market, side, point,"
-                " price, market_last_update, fetched_at, source, request_fp) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO mkt_quote (event_id, sport, commence, home, away, book, market, side, point,"
+                " price, market_last_update, fetched_at, source, request_fp) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT (event_id, book, market, side, fetched_at) DO NOTHING",   # NOT NULL violations still raise
                 (q.event_id, q.sport or sport, iso_to_epoch(q.commence_time), q.home_team, q.away_team, q.book,
                  q.market, q.side, q.point, q.price, iso_to_epoch(q.market_last_update), fa, q.source, q.request_fp))
             n += cur.rowcount

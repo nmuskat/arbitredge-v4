@@ -234,3 +234,12 @@ def test_quote_stamped_after_T_by_the_book_is_excluded():
     store.ingest(conn, q, an, iso(t), "americanfootball_nfl", "odds", "fp")
     assert asof.market_state(conn, EID_B, "h2h", t + 300)["status"] == "NO_DATA"
     assert asof.market_state(conn, EID_B, "h2h", t + 700)["status"] == "OK"
+
+
+def test_invalid_row_raises_instead_of_vanishing():
+    conn = store.connect()
+    bad = normalize.Quote(EID_B, "americanfootball_nfl", KICK_B, "H", "A", "pinnacle", "h2h", "home", None, None,
+                          "2026-10-24T12:00:00Z", "2026-10-24T12:00:00Z", "odds_api", "fp")
+    with pytest.raises(sqlite3.IntegrityError):
+        store.ingest(conn, [bad], [], "2026-10-24T12:00:00Z", "americanfootball_nfl", "odds", "fp")
+    assert conn.execute("SELECT COUNT(*) FROM mkt_fetch").fetchone()[0] == 0     # whole fetch rolled back
