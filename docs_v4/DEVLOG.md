@@ -2,6 +2,41 @@
 
 Newest first. Test counts are from actual runs.
 
+## 2026-10-26 (later): Engines A–C, decision pipeline and website built without a server
+
+- **Data:** nflverse games 1999–2026 and play-by-play 2006–2026 (381 MB), with SHA-256 manifest. CFBD is blocked from the sandbox, so CFB is pending.
+- **Engine C:** point-in-time Elo + EPA features, ridge margin/total models, key-number distributions calibrated by iterative proportional fitting (out-of-sample pushes 90 predicted vs 93 actual).
+  - Walk-forward 2012–2025: the independent model is significantly worse than the market; the anchored model ties it.
+  - **Conclusion: no model edge vs near-close NFL lines.**
+- **Engine B:** price-only sharp evidence with an experimental score. Splits-based signals are reported as unavailable. The synthetic sportsbook is rejected as a source; demo data only when explicitly opted in and labelled.
+- **Engine A m3:** totals and moneyline markets; Need for each market and the joint book (exact over every score 0–70). The market_v4 adapter enforces freshness, so an outage closes the book. A 10,000-bettor week runs in under 2 minutes.
+- **Decision pipeline:**
+  - Fair prices at any number, an append-only strategy registry and paper ledger.
+  - Real-data backtests: all NOT PROVEN.
+  - Synthetic controls: a planted edge is found, none is invented where absent, and the illusion is rejected.
+  - Forward EV scanner.
+- **Website:** 8 sections, provenance badges, read-only. Browser-tested at 1366 px and 390 px (no overflow, no console errors).
+- **Bugs found by tests and fixed:**
+  - `INSERT OR IGNORE` silently dropped CHECK/NOT NULL violations (ledger, quote store).
+  - A recreational first mover was mislabelled as sharp.
+  - Same-day kickoff leakage risk (guarded and tested).
+  - Wrong design of the "noisy consensus" control (corrected).
+- **Tests:**
+  - 190 V4 tests pass locally with real data (sportsbook 73, edge 53, market 24, sharp 14, sims 11, web 15).
+  - Clean Python 3.12 clone (CI simulation): 174 passed, 16 skipped (data-dependent).
+  - Every planted regression in the new modules was caught.
+
+### Milestone that genuinely needs infrastructure
+
+**Real-data validation of line shopping (S1) and calibration of Engine B.** Both need timestamped multi-book odds with observed closes. Neither games.csv nor anything reachable from this sandbox has them.
+
+The cheapest options, in order:
+1. **Read-only copy of the V3 production backup:** $0 new spend, but it needs somewhere to put an 8.6 GB file that a session can reach.
+2. **Targeted Odds API historical snapshots under the 6,000-credit V4 cap:** $0 new spend, but needs a machine that can reach the Odds API (blocked from this sandbox).
+3. **The previously proposed droplet** (about $58/month). Not needed for anything else yet.
+
+**Blocked on owner:** GitHub repository (code preservation), choice of data-access path above, SIMS code.
+
 ## 2026-10-26: P0 decision core; P2 market layer; dev-server package
 
 - **edge_v4:** vig removal, EV with pushes, uncertainty-gated BET/WATCH/NO BET, fractional Kelly with caps, Odds API credit gate, validation statistics. 42 tests.
