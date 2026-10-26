@@ -1,0 +1,1901 @@
+{
+  "seasons": "2012-2026",
+  "variants": {
+    "independent": {
+      "pooled_out_of_sample_through_2025": {
+        "n_games": 3829,
+        "margin_rmse_model": 13.21511242800547,
+        "margin_rmse_market": 12.93154526297931,
+        "total_rmse_model": 13.535685970404677,
+        "total_rmse_market": 13.277253221992842,
+        "ml": {
+          "n": 3814,
+          "logloss_model": 0.6268349001560132,
+          "logloss_market": 0.6092094690481369,
+          "logloss_coinflip": 0.6931471805599453,
+          "brier_model": 0.2186742850624337,
+          "brier_market": 0.21092220402777873,
+          "diff_model_minus_market": 0.017625431107876285,
+          "diff_ci95": [
+            0.012282966750559215,
+            0.02308925516063885
+          ],
+          "model_better_than_market": false
+        },
+        "ats": {
+          "n": 3735,
+          "logloss_model": 0.7082494906021035,
+          "logloss_market": 0.6935661001142963,
+          "logloss_coinflip": 0.6931471805599453,
+          "brier_model": 0.2569298630539703,
+          "brier_market": 0.2502085863777267,
+          "diff_model_minus_market": 0.014683390487807188,
+          "diff_ci95": [
+            0.009147027027390826,
+            0.0207519446304243
+          ],
+          "model_better_than_market": false
+        },
+        "tot": {
+          "n": 3791,
+          "logloss_model": 0.7057127262441868,
+          "logloss_market": 0.6931942624983309,
+          "logloss_coinflip": 0.6931471805599453,
+          "brier_model": 0.2560585548953434,
+          "brier_market": 0.2500234239947396,
+          "diff_model_minus_market": 0.012518463745855688,
+          "diff_ci95": [
+            0.0071792584798577785,
+            0.01756743265030823
+          ],
+          "model_better_than_market": false
+        },
+        "ats_push_pred": 87.15855231170201,
+        "ats_push_actual": 93
+      },
+      "season_2026_to_date": {
+        "n_games": 106,
+        "margin_rmse_model": 12.459831656284369,
+        "margin_rmse_market": 12.027680339102076,
+        "total_rmse_model": 13.658661243239298,
+        "total_rmse_market": 12.91499786338816,
+        "ml": {
+          "n": 105,
+          "logloss_model": 0.6624325843638486,
+          "logloss_market": 0.6639840994429608,
+          "logloss_coinflip": 0.6931471805599453,
+          "brier_model": 0.23565122279542533,
+          "brier_market": 0.23423263300108918,
+          "diff_model_minus_market": -0.0015515150791122253,
+          "diff_ci95": [
+            -0.03484886430364896,
+            0.03173452111412766
+          ],
+          "model_better_than_market": false
+        },
+        "ats": {
+          "n": 100,
+          "logloss_model": 0.7076940202228933,
+          "logloss_market": 0.6931978805550343,
+          "logloss_coinflip": 0.6931471805599453,
+          "brier_model": 0.25712733472036986,
+          "brier_market": 0.25002480158783363,
+          "diff_model_minus_market": 0.014496139667859223,
+          "diff_ci95": [
+            -0.019208890068684675,
+            0.048533188260103104
+          ],
+          "model_better_than_market": false
+        },
+        "tot": {
+          "n": 106,
+          "logloss_model": 0.7471961918282973,
+          "logloss_market": 0.6942629972537323,
+          "logloss_coinflip": 0.6931471805599453,
+          "brier_model": 0.2763834609427046,
+          "brier_market": 0.2505578874094728,
+          "diff_model_minus_market": 0.05293319457456496,
+          "diff_ci95": [
+            0.019021399637048544,
+            0.08651494129520579
+          ],
+          "model_better_than_market": false
+        },
+        "ats_push_pred": 2.148226465486069,
+        "ats_push_actual": 6
+      },
+      "by_season": {
+        "2012": {
+          "n_games": 267,
+          "margin_rmse_model": 14.126975916778175,
+          "margin_rmse_market": 13.864310337106405,
+          "total_rmse_model": 13.510807545468785,
+          "total_rmse_market": 13.405166984139331,
+          "ml": {
+            "n": 266,
+            "logloss_model": 0.6203884105362532,
+            "logloss_market": 0.6022839792018608,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.21600206464054225,
+            "brier_market": 0.20869072063400024,
+            "diff_model_minus_market": 0.018104431334392303,
+            "diff_ci95": [
+              -0.0006879809057288836,
+              0.037187685674516066
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 262,
+            "logloss_model": 0.711440694081149,
+            "logloss_market": 0.6964266130648373,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25871981468775346,
+            "brier_market": 0.2516349917258276,
+            "diff_model_minus_market": 0.015014081016311612,
+            "diff_ci95": [
+              -0.0021122685882779308,
+              0.03111527873300559
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 265,
+            "logloss_model": 0.6992520223512386,
+            "logloss_market": 0.6936280404072679,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25293783325831076,
+            "brier_market": 0.2502401700213951,
+            "diff_model_minus_market": 0.005623981943970846,
+            "diff_ci95": [
+              -0.012410030676927995,
+              0.02277831500508995
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.7734588372780555,
+          "ats_push_actual": 5
+        },
+        "2013": {
+          "n_games": 267,
+          "margin_rmse_model": 12.879464006687451,
+          "margin_rmse_market": 12.758781950246371,
+          "total_rmse_model": 13.947739309620115,
+          "total_rmse_market": 14.06515736440205,
+          "ml": {
+            "n": 266,
+            "logloss_model": 0.6150961314820494,
+            "logloss_market": 0.5923723007501498,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2137587634517334,
+            "brier_market": 0.20273570900979215,
+            "diff_model_minus_market": 0.02272383073189955,
+            "diff_ci95": [
+              0.0012427099423728608,
+              0.04303620399529338
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 260,
+            "logloss_model": 0.7021244098272517,
+            "logloss_market": 0.6947896559042327,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25453237752051916,
+            "brier_market": 0.2508201796527461,
+            "diff_model_minus_market": 0.007334753923019034,
+            "diff_ci95": [
+              -0.01462744188777106,
+              0.02979275723651997
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 263,
+            "logloss_model": 0.6868262594009303,
+            "logloss_market": 0.6939394677050252,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2468749354428598,
+            "brier_market": 0.2503959714285596,
+            "diff_model_minus_market": -0.007113208304094744,
+            "diff_ci95": [
+              -0.025968504227431202,
+              0.009528272454085964
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.19567273959894,
+          "ats_push_actual": 7
+        },
+        "2014": {
+          "n_games": 267,
+          "margin_rmse_model": 14.712700261067063,
+          "margin_rmse_market": 14.422205101855956,
+          "total_rmse_model": 13.180907568155252,
+          "total_rmse_market": 12.9234638391956,
+          "ml": {
+            "n": 266,
+            "logloss_model": 0.6061887623419249,
+            "logloss_market": 0.599081231660962,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.20924108742020547,
+            "brier_market": 0.20663734728487018,
+            "diff_model_minus_market": 0.0071075306809626915,
+            "diff_ci95": [
+              -0.011279870831519332,
+              0.023374189075109617
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 261,
+            "logloss_model": 0.7028754425270917,
+            "logloss_market": 0.6956506277938752,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2546063149309086,
+            "brier_market": 0.25124980883946185,
+            "diff_model_minus_market": 0.007224814733216515,
+            "diff_ci95": [
+              -0.014006786530173955,
+              0.02608923469679755
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 264,
+            "logloss_model": 0.7097709284937989,
+            "logloss_market": 0.693445960448186,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25816500969613265,
+            "brier_market": 0.2501492555356238,
+            "diff_model_minus_market": 0.016324968045612957,
+            "diff_ci95": [
+              0.0013580049435976368,
+              0.03253699846148882
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 7.094552776920715,
+          "ats_push_actual": 6
+        },
+        "2015": {
+          "n_games": 267,
+          "margin_rmse_model": 13.1431561869017,
+          "margin_rmse_market": 12.96122855646346,
+          "total_rmse_model": 13.359028294614973,
+          "total_rmse_market": 13.244036181694101,
+          "ml": {
+            "n": 267,
+            "logloss_model": 0.6488067968089679,
+            "logloss_market": 0.6488180077276954,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2280014692343824,
+            "brier_market": 0.22866533582801404,
+            "diff_model_minus_market": -1.121091872748875e-05,
+            "diff_ci95": [
+              -0.020467395013566533,
+              0.022089899048044512
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 257,
+            "logloss_model": 0.6966536214498549,
+            "logloss_market": 0.6962169010184711,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25148904766389346,
+            "brier_market": 0.25152996640133907,
+            "diff_model_minus_market": 0.000436720431383712,
+            "diff_ci95": [
+              -0.02172519234087988,
+              0.020801305426366178
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 262,
+            "logloss_model": 0.6933003931201257,
+            "logloss_market": 0.6937698831363801,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2501195955962909,
+            "brier_market": 0.25031078239996996,
+            "diff_model_minus_market": -0.00046949001625429975,
+            "diff_ci95": [
+              -0.015148434277564538,
+              0.014954970490872367
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.940042259839798,
+          "ats_push_actual": 10
+        },
+        "2016": {
+          "n_games": 267,
+          "margin_rmse_model": 11.905823611903092,
+          "margin_rmse_market": 11.754949551202287,
+          "total_rmse_model": 12.572698897485257,
+          "total_rmse_market": 12.27097302687188,
+          "ml": {
+            "n": 265,
+            "logloss_model": 0.624951616717194,
+            "logloss_market": 0.621574434962004,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.21827852930692268,
+            "brier_market": 0.21702644111687608,
+            "diff_model_minus_market": 0.00337718175519001,
+            "diff_ci95": [
+              -0.018225486115107686,
+              0.02381478458366394
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 262,
+            "logloss_model": 0.7134346266888585,
+            "logloss_market": 0.6944976903110708,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2592034920781865,
+            "brier_market": 0.25067419691287,
+            "diff_model_minus_market": 0.018936936377787476,
+            "diff_ci95": [
+              -0.005336133010563485,
+              0.04425753805965601
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 266,
+            "logloss_model": 0.7141563861267869,
+            "logloss_market": 0.6930161382498263,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2602270297044183,
+            "brier_market": 0.24993464396590262,
+            "diff_model_minus_market": 0.021140247876960602,
+            "diff_ci95": [
+              0.003148228217318151,
+              0.03602693787010619
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 5.792855666871324,
+          "ats_push_actual": 5
+        },
+        "2017": {
+          "n_games": 267,
+          "margin_rmse_model": 13.600045194065714,
+          "margin_rmse_market": 13.141230823843825,
+          "total_rmse_model": 14.697121957149891,
+          "total_rmse_market": 14.38960949516077,
+          "ml": {
+            "n": 266,
+            "logloss_model": 0.6161054572699725,
+            "logloss_market": 0.593228950769932,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.21396046659046974,
+            "brier_market": 0.20306564783267755,
+            "diff_model_minus_market": 0.022876506500040434,
+            "diff_ci95": [
+              -0.0024558187202719634,
+              0.04442404790764244
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 258,
+            "logloss_model": 0.7166435220914132,
+            "logloss_market": 0.6924423936821644,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2596387917144895,
+            "brier_market": 0.2496464401925646,
+            "diff_model_minus_market": 0.024201128409248804,
+            "diff_ci95": [
+              -0.0025926586178263793,
+              0.05257074498809489
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 266,
+            "logloss_model": 0.712815473165498,
+            "logloss_market": 0.6920938084116907,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2596635651977394,
+            "brier_market": 0.2494733373912463,
+            "diff_model_minus_market": 0.02072166475380737,
+            "diff_ci95": [
+              0.0022500644169557737,
+              0.04053472846033904
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.509851859873346,
+          "ats_push_actual": 8
+        },
+        "2018": {
+          "n_games": 267,
+          "margin_rmse_model": 13.219462610866524,
+          "margin_rmse_market": 12.994488892335616,
+          "total_rmse_model": 14.387091798436504,
+          "total_rmse_market": 13.632962917231959,
+          "ml": {
+            "n": 265,
+            "logloss_model": 0.6237197552633448,
+            "logloss_market": 0.6135417958333168,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2173940766889483,
+            "brier_market": 0.21239253814219686,
+            "diff_model_minus_market": 0.010177959430027955,
+            "diff_ci95": [
+              -0.010280090807734038,
+              0.029271248821652066
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 258,
+            "logloss_model": 0.7001475237088908,
+            "logloss_market": 0.6951176506604282,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25337662486900836,
+            "brier_market": 0.25098365599879824,
+            "diff_model_minus_market": 0.005029873048462674,
+            "diff_ci95": [
+              -0.015319945551442242,
+              0.02468266888390308
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 264,
+            "logloss_model": 0.7143806171445991,
+            "logloss_market": 0.6943843897949681,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2601780374762627,
+            "brier_market": 0.25061761763760126,
+            "diff_model_minus_market": 0.01999622734963095,
+            "diff_ci95": [
+              -0.001256904506147394,
+              0.042287634000076416
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.142726314010787,
+          "ats_push_actual": 9
+        },
+        "2019": {
+          "n_games": 267,
+          "margin_rmse_model": 13.385637442359684,
+          "margin_rmse_market": 13.064518664691589,
+          "total_rmse_model": 13.549434673003176,
+          "total_rmse_market": 13.402198097986684,
+          "ml": {
+            "n": 266,
+            "logloss_model": 0.6375594387190103,
+            "logloss_market": 0.616296939609658,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.22335361915792284,
+            "brier_market": 0.21411910740869397,
+            "diff_model_minus_market": 0.021262499109352247,
+            "diff_ci95": [
+              0.00031795138324887216,
+              0.04070275957500151
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 257,
+            "logloss_model": 0.7122634115875691,
+            "logloss_market": 0.6915181731816126,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25906520380270354,
+            "brier_market": 0.24918610709956526,
+            "diff_model_minus_market": 0.020745238405956646,
+            "diff_ci95": [
+              -0.0013966234950163288,
+              0.04824577979494913
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 266,
+            "logloss_model": 0.694828506972586,
+            "logloss_market": 0.6929692718140306,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2508591660594354,
+            "brier_market": 0.24991061996465988,
+            "diff_model_minus_market": 0.001859235158555571,
+            "diff_ci95": [
+              -0.01896297336204395,
+              0.01891066410832132
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 5.714614205031199,
+          "ats_push_actual": 10
+        },
+        "2020": {
+          "n_games": 269,
+          "margin_rmse_model": 12.8760563721499,
+          "margin_rmse_market": 12.696595275841197,
+          "total_rmse_model": 13.520990694484446,
+          "total_rmse_market": 13.083624374224417,
+          "ml": {
+            "n": 267,
+            "logloss_model": 0.6192738696647296,
+            "logloss_market": 0.5900185197870338,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2139284101867222,
+            "brier_market": 0.20191278408607866,
+            "diff_model_minus_market": 0.029255349877695777,
+            "diff_ci95": [
+              0.010733810912908712,
+              0.051280709085569316
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 269,
+            "logloss_model": 0.7043237405490602,
+            "logloss_market": 0.6899210408379762,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2540073765937219,
+            "brier_market": 0.24838839289343057,
+            "diff_model_minus_market": 0.014402699711083907,
+            "diff_ci95": [
+              -0.011199754388757014,
+              0.03789058640684552
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 264,
+            "logloss_model": 0.7121827646576412,
+            "logloss_market": 0.694502330738133,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2591857655193134,
+            "brier_market": 0.2506771839308169,
+            "diff_model_minus_market": 0.017680433919508298,
+            "diff_ci95": [
+              0.0017959840181590303,
+              0.03654785913149493
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.407682867095884,
+          "ats_push_actual": 0
+        },
+        "2021": {
+          "n_games": 285,
+          "margin_rmse_model": 13.962763043908362,
+          "margin_rmse_market": 13.548871902286235,
+          "total_rmse_model": 13.646558031686823,
+          "total_rmse_market": 13.297473708097485,
+          "ml": {
+            "n": 284,
+            "logloss_model": 0.6515110743317375,
+            "logloss_market": 0.6231858249511435,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.22973609203724316,
+            "brier_market": 0.21765747246631165,
+            "diff_model_minus_market": 0.02832524938059407,
+            "diff_ci95": [
+              0.00774680217063778,
+              0.04825007223643206
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 281,
+            "logloss_model": 0.7175650210505399,
+            "logloss_market": 0.693472300465582,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2618246561947178,
+            "brier_market": 0.2501625856162879,
+            "diff_model_minus_market": 0.024092720584958014,
+            "diff_ci95": [
+              0.0039024501649487743,
+              0.04643741759934179
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 282,
+            "logloss_model": 0.7108844710998022,
+            "logloss_market": 0.690359328293737,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25845089608205357,
+            "brier_market": 0.24860706321576653,
+            "diff_model_minus_market": 0.020525142806065218,
+            "diff_ci95": [
+              0.00019164611402406698,
+              0.039307173001151545
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.166103638756944,
+          "ats_push_actual": 4
+        },
+        "2022": {
+          "n_games": 284,
+          "margin_rmse_model": 11.66583865057277,
+          "margin_rmse_market": 11.487247981878998,
+          "total_rmse_model": 13.438210213895125,
+          "total_rmse_market": 13.212709950095482,
+          "ml": {
+            "n": 282,
+            "logloss_model": 0.6254131542291202,
+            "logloss_market": 0.6049628094225832,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.21829226581739333,
+            "brier_market": 0.20928693994497818,
+            "diff_model_minus_market": 0.020450344806537187,
+            "diff_ci95": [
+              -0.005354095211217192,
+              0.041202288786687094
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 274,
+            "logloss_model": 0.6940864043402869,
+            "logloss_market": 0.6900464170212962,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25061991722058935,
+            "brier_market": 0.24845171517179837,
+            "diff_model_minus_market": 0.004039987318990741,
+            "diff_ci95": [
+              -0.019866550658332184,
+              0.027253852455886185
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 281,
+            "logloss_model": 0.7061023312706828,
+            "logloss_market": 0.6929909808056586,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25611182356878154,
+            "brier_market": 0.2499223259688367,
+            "diff_model_minus_market": 0.013111350465024187,
+            "diff_ci95": [
+              -0.003960124856196433,
+              0.03310558368270799
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.272775922489709,
+          "ats_push_actual": 10
+        },
+        "2023": {
+          "n_games": 285,
+          "margin_rmse_model": 13.544082199697947,
+          "margin_rmse_market": 13.173970880942838,
+          "total_rmse_model": 13.390797771438722,
+          "total_rmse_market": 13.0569602330066,
+          "ml": {
+            "n": 285,
+            "logloss_model": 0.650043000987407,
+            "logloss_market": 0.6269703437511283,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.22945587945159499,
+            "brier_market": 0.21863833615593303,
+            "diff_model_minus_market": 0.023072657236278552,
+            "diff_ci95": [
+              0.006304517509437915,
+              0.04201871068480296
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 271,
+            "logloss_model": 0.7179501360796559,
+            "logloss_market": 0.6930301184192867,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.261822189996201,
+            "brier_market": 0.24994125226876493,
+            "diff_model_minus_market": 0.024920017660369175,
+            "diff_ci95": [
+              0.006558211504494626,
+              0.045805820470247754
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 281,
+            "logloss_model": 0.7142856834332708,
+            "logloss_market": 0.6933846511085036,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.26009500342014114,
+            "brier_market": 0.2501186930563686,
+            "diff_model_minus_market": 0.020901032324767317,
+            "diff_ci95": [
+              0.0023068705226493517,
+              0.0374357219846298
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.496150572501451,
+          "ats_push_actual": 14
+        },
+        "2024": {
+          "n_games": 285,
+          "margin_rmse_model": 12.991646017599079,
+          "margin_rmse_market": 12.72051113394316,
+          "total_rmse_model": 12.834873567642452,
+          "total_rmse_market": 12.586612213679416,
+          "ml": {
+            "n": 285,
+            "logloss_model": 0.6128861493670973,
+            "logloss_market": 0.5892140458430416,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.21208528476286717,
+            "brier_market": 0.20097478625894333,
+            "diff_model_minus_market": 0.0236721035240558,
+            "diff_ci95": [
+              0.00014648632543642678,
+              0.04750348196921348
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 281,
+            "logloss_model": 0.7104817254532725,
+            "logloss_market": 0.6949727590907993,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2577747390443845,
+            "brier_market": 0.2509123830145689,
+            "diff_model_minus_market": 0.015508966362473193,
+            "diff_ci95": [
+              -0.012336984040034728,
+              0.038599233961542884
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 282,
+            "logloss_model": 0.7088914269079084,
+            "logloss_market": 0.6928105766612904,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2574970650271506,
+            "brier_market": 0.24983160725565298,
+            "diff_model_minus_market": 0.01608085024661794,
+            "diff_ci95": [
+              -0.004107764088774287,
+              0.03555212629795225
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.470950949947831,
+          "ats_push_actual": 4
+        },
+        "2025": {
+          "n_games": 285,
+          "margin_rmse_model": 12.742157700633628,
+          "margin_rmse_market": 12.24479839439173,
+          "total_rmse_model": 13.384466984145444,
+          "total_rmse_market": 13.237274590960604,
+          "ml": {
+            "n": 284,
+            "logloss_model": 0.6217691335386092,
+            "logloss_market": 0.6069889381505206,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2170156605569904,
+            "brier_market": 0.2109063730663587,
+            "diff_model_minus_market": 0.014780195388088703,
+            "diff_ci95": [
+              -0.0058322462991013445,
+              0.03490950759805327
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 284,
+            "logloss_model": 0.7143645258917884,
+            "logloss_market": 0.6921583960108301,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2597780299395495,
+            "brier_market": 0.24950572879591953,
+            "diff_model_minus_market": 0.02220612988095827,
+            "diff_ci95": [
+              0.0006081400847333436,
+              0.043408632674945866
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 285,
+            "logloss_model": 0.7013268748565626,
+            "logloss_market": 0.6936275907941787,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25400535910181243,
+            "brier_market": 0.2502399276764687,
+            "diff_model_minus_market": 0.007699284062384116,
+            "diff_ci95": [
+              -0.012330901384439645,
+              0.02963464152576012
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 4.181113701486024,
+          "ats_push_actual": 1
+        }
+      },
+      "calibration_ml": [
+        {
+          "bin": "0.0-0.1",
+          "n": 1,
+          "pred": 0.05146590584970663,
+          "obs": 0.0
+        },
+        {
+          "bin": "0.1-0.2",
+          "n": 31,
+          "pred": 0.16458060745103856,
+          "obs": 0.25806451612903225
+        },
+        {
+          "bin": "0.2-0.3",
+          "n": 159,
+          "pred": 0.25964206414123353,
+          "obs": 0.2641509433962264
+        },
+        {
+          "bin": "0.3-0.4",
+          "n": 373,
+          "pred": 0.35788363925263944,
+          "obs": 0.3136729222520107
+        },
+        {
+          "bin": "0.4-0.5",
+          "n": 736,
+          "pred": 0.45192721844708805,
+          "obs": 0.4171195652173913
+        },
+        {
+          "bin": "0.5-0.6",
+          "n": 908,
+          "pred": 0.5507758763542948,
+          "obs": 0.5341409691629956
+        },
+        {
+          "bin": "0.6-0.7",
+          "n": 872,
+          "pred": 0.6470135139805109,
+          "obs": 0.661697247706422
+        },
+        {
+          "bin": "0.7-0.8",
+          "n": 541,
+          "pred": 0.7433028183860881,
+          "obs": 0.7634011090573013
+        },
+        {
+          "bin": "0.8-0.9",
+          "n": 177,
+          "pred": 0.8403669453973596,
+          "obs": 0.8870056497175142
+        },
+        {
+          "bin": "0.9-1.0",
+          "n": 18,
+          "pred": 0.9174300267339274,
+          "obs": 0.9444444444444444
+        }
+      ],
+      "calibration_ats": [
+        {
+          "bin": "0.1-0.2",
+          "n": 5,
+          "pred": 0.1769860566177322,
+          "obs": 0.4
+        },
+        {
+          "bin": "0.2-0.3",
+          "n": 38,
+          "pred": 0.26232400058238875,
+          "obs": 0.42105263157894735
+        },
+        {
+          "bin": "0.3-0.4",
+          "n": 367,
+          "pred": 0.36765890553288,
+          "obs": 0.47956403269754766
+        },
+        {
+          "bin": "0.4-0.5",
+          "n": 1392,
+          "pred": 0.45555648091621376,
+          "obs": 0.49712643678160917
+        },
+        {
+          "bin": "0.5-0.6",
+          "n": 1443,
+          "pred": 0.5433764452200255,
+          "obs": 0.4837144837144837
+        },
+        {
+          "bin": "0.6-0.7",
+          "n": 435,
+          "pred": 0.6349456369600751,
+          "obs": 0.5149425287356322
+        },
+        {
+          "bin": "0.7-0.8",
+          "n": 45,
+          "pred": 0.7281548538567898,
+          "obs": 0.4888888888888889
+        },
+        {
+          "bin": "0.8-0.9",
+          "n": 9,
+          "pred": 0.8296431956368594,
+          "obs": 0.4444444444444444
+        },
+        {
+          "bin": "0.9-1.0",
+          "n": 2,
+          "pred": 0.9220481525525014,
+          "obs": 0.0
+        }
+      ],
+      "last_model_coefficients": {
+        "margin": {
+          "intercept": 2.14928,
+          "elo_diff": 0.02009,
+          "epa_net_diff": 5.14148,
+          "sr_net_diff": 21.86506,
+          "pts_net_diff": 0.25189,
+          "home_field": 2.24238,
+          "rest_diff": 0.18527,
+          "qb_change_diff": -1.98138
+        },
+        "total": {
+          "intercept": 45.35205,
+          "tot_pts_env": 0.30827,
+          "tot_epa_env": 12.83313,
+          "tot_plays_env": 0.13727,
+          "indoor": 2.51131
+        },
+        "margin_sigma": 13.398289044273618,
+        "total_sigma": 13.479609708747212
+      }
+    },
+    "anchored": {
+      "pooled_out_of_sample_through_2025": {
+        "n_games": 3829,
+        "margin_rmse_model": 12.957069982906214,
+        "margin_rmse_market": 12.93154526297931,
+        "total_rmse_model": 13.278717016522904,
+        "total_rmse_market": 13.277253221992842,
+        "ml": {
+          "n": 3814,
+          "logloss_model": 0.6112785486499618,
+          "logloss_market": 0.6092094690481369,
+          "logloss_coinflip": 0.6931471805599453,
+          "brier_model": 0.21174543705857887,
+          "brier_market": 0.21092220402777873,
+          "diff_model_minus_market": 0.0020690796018249516,
+          "diff_ci95": [
+            -4.86194289433525e-05,
+            0.004240551475437139
+          ],
+          "model_better_than_market": false
+        },
+        "ats": {
+          "n": 3735,
+          "logloss_model": 0.6946488699375718,
+          "logloss_market": 0.6935661001142963,
+          "logloss_coinflip": 0.6931471805599453,
+          "brier_model": 0.25074352798667193,
+          "brier_market": 0.2502085863777267,
+          "diff_model_minus_market": 0.0010827698232754484,
+          "diff_ci95": [
+            -0.0011084141594916836,
+            0.003295720401239706
+          ],
+          "model_better_than_market": false
+        },
+        "tot": {
+          "n": 3791,
+          "logloss_model": 0.6937090052791887,
+          "logloss_market": 0.6931942624983309,
+          "logloss_coinflip": 0.6931471805599453,
+          "brier_model": 0.25027954879648706,
+          "brier_market": 0.2500234239947396,
+          "diff_model_minus_market": 0.000514742780857696,
+          "diff_ci95": [
+            -0.0012605852618769668,
+            0.002225454421357024
+          ],
+          "model_better_than_market": false
+        },
+        "ats_push_pred": 90.13608669517264,
+        "ats_push_actual": 93
+      },
+      "season_2026_to_date": {
+        "n_games": 106,
+        "margin_rmse_model": 12.068244908119855,
+        "margin_rmse_market": 12.027680339102076,
+        "total_rmse_model": 12.88180507533293,
+        "total_rmse_market": 12.91499786338816,
+        "ml": {
+          "n": 105,
+          "logloss_model": 0.6581693680866794,
+          "logloss_market": 0.6639840994429608,
+          "logloss_coinflip": 0.6931471805599453,
+          "brier_model": 0.23200796395604634,
+          "brier_market": 0.23423263300108918,
+          "diff_model_minus_market": -0.0058147313562813534,
+          "diff_ci95": [
+            -0.01797101286713545,
+            0.0057823006810125525
+          ],
+          "model_better_than_market": false
+        },
+        "ats": {
+          "n": 100,
+          "logloss_model": 0.6847982356376593,
+          "logloss_market": 0.6931978805550343,
+          "logloss_coinflip": 0.6931471805599453,
+          "brier_model": 0.2458393313579339,
+          "brier_market": 0.25002480158783363,
+          "diff_model_minus_market": -0.008399644917374716,
+          "diff_ci95": [
+            -0.01938521986344899,
+            0.002515747638381806
+          ],
+          "model_better_than_market": false
+        },
+        "tot": {
+          "n": 106,
+          "logloss_model": 0.6954220668888531,
+          "logloss_market": 0.6942629972537323,
+          "logloss_coinflip": 0.6931471805599453,
+          "brier_model": 0.25113375853482567,
+          "brier_market": 0.2505578874094728,
+          "diff_model_minus_market": 0.0011590696351206635,
+          "diff_ci95": [
+            -0.0075193451705782505,
+            0.009793743362016428
+          ],
+          "model_better_than_market": false
+        },
+        "ats_push_pred": 2.2277808683280274,
+        "ats_push_actual": 6
+      },
+      "by_season": {
+        "2012": {
+          "n_games": 267,
+          "margin_rmse_model": 13.879701549432983,
+          "margin_rmse_market": 13.864310337106405,
+          "total_rmse_model": 13.407509582924781,
+          "total_rmse_market": 13.405166984139331,
+          "ml": {
+            "n": 266,
+            "logloss_model": 0.606793905743105,
+            "logloss_market": 0.6022839792018608,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.21005623494869807,
+            "brier_market": 0.20869072063400024,
+            "diff_model_minus_market": 0.004509926541244139,
+            "diff_ci95": [
+              -0.005633516887396897,
+              0.015331285667898395
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 262,
+            "logloss_model": 0.6983832301086909,
+            "logloss_market": 0.6964266130648373,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2526213509648033,
+            "brier_market": 0.2516349917258276,
+            "diff_model_minus_market": 0.001956617043853425,
+            "diff_ci95": [
+              -0.007279797921222596,
+              0.010965727313067723
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 265,
+            "logloss_model": 0.6952788299370687,
+            "logloss_market": 0.6936280404072679,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2510490738270021,
+            "brier_market": 0.2502401700213951,
+            "diff_model_minus_market": 0.0016507895298008644,
+            "diff_ci95": [
+              -0.0062341661130347874,
+              0.009951321699191638
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.934618432406183,
+          "ats_push_actual": 5
+        },
+        "2013": {
+          "n_games": 267,
+          "margin_rmse_model": 12.738348409689381,
+          "margin_rmse_market": 12.758781950246371,
+          "total_rmse_model": 13.941415267987926,
+          "total_rmse_market": 14.06515736440205,
+          "ml": {
+            "n": 266,
+            "logloss_model": 0.6008588234520025,
+            "logloss_market": 0.5923723007501498,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2068672597216865,
+            "brier_market": 0.20273570900979215,
+            "diff_model_minus_market": 0.008486522701852578,
+            "diff_ci95": [
+              -0.0029560121558486314,
+              0.017511647119231897
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 260,
+            "logloss_model": 0.6972383033504752,
+            "logloss_market": 0.6947896559042327,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2521045968837935,
+            "brier_market": 0.2508201796527461,
+            "diff_model_minus_market": 0.0024486474462426543,
+            "diff_ci95": [
+              -0.0077569449544522065,
+              0.012310726324276728
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 263,
+            "logloss_model": 0.6870732421073265,
+            "logloss_market": 0.6939394677050252,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.24697323145489333,
+            "brier_market": 0.2503959714285596,
+            "diff_model_minus_market": -0.006866225597698705,
+            "diff_ci95": [
+              -0.014586602207041192,
+              0.0008112337441086587
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.375433992238304,
+          "ats_push_actual": 7
+        },
+        "2014": {
+          "n_games": 267,
+          "margin_rmse_model": 14.53652171962117,
+          "margin_rmse_market": 14.422205101855956,
+          "total_rmse_model": 13.079359124757008,
+          "total_rmse_market": 12.9234638391956,
+          "ml": {
+            "n": 266,
+            "logloss_model": 0.5999811456000593,
+            "logloss_market": 0.599081231660962,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2069332550825188,
+            "brier_market": 0.20663734728487018,
+            "diff_model_minus_market": 0.0008999139390971619,
+            "diff_ci95": [
+              -0.0074348317714968875,
+              0.009510374996723102
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 261,
+            "logloss_model": 0.6955391739551678,
+            "logloss_market": 0.6956506277938752,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2511627509869148,
+            "brier_market": 0.25124980883946185,
+            "diff_model_minus_market": -0.00011145383870734747,
+            "diff_ci95": [
+              -0.011703401651676394,
+              0.010777246099141937
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 264,
+            "logloss_model": 0.6993289646976013,
+            "logloss_market": 0.693445960448186,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25308682673440736,
+            "brier_market": 0.2501492555356238,
+            "diff_model_minus_market": 0.0058830042494154,
+            "diff_ci95": [
+              -0.0003645719906488605,
+              0.012062182893211155
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 7.26887160730206,
+          "ats_push_actual": 6
+        },
+        "2015": {
+          "n_games": 267,
+          "margin_rmse_model": 13.003922620465152,
+          "margin_rmse_market": 12.96122855646346,
+          "total_rmse_model": 13.230641683353364,
+          "total_rmse_market": 13.244036181694101,
+          "ml": {
+            "n": 267,
+            "logloss_model": 0.6463919090388424,
+            "logloss_market": 0.6488180077276954,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.22747027549137083,
+            "brier_market": 0.22866533582801404,
+            "diff_model_minus_market": -0.0024260986888529233,
+            "diff_ci95": [
+              -0.01216338860229867,
+              0.006223210314827011
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 257,
+            "logloss_model": 0.6912377979264615,
+            "logloss_market": 0.6962169010184711,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.24899167230209748,
+            "brier_market": 0.25152996640133907,
+            "diff_model_minus_market": -0.004979103092009631,
+            "diff_ci95": [
+              -0.01483234047261224,
+              0.004451246585194802
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 262,
+            "logloss_model": 0.6914243174551532,
+            "logloss_market": 0.6937698831363801,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2491425609458757,
+            "brier_market": 0.25031078239996996,
+            "diff_model_minus_market": -0.002345565681226776,
+            "diff_ci95": [
+              -0.008341144415132448,
+              0.002830814005934846
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 7.1602477013265595,
+          "ats_push_actual": 10
+        },
+        "2016": {
+          "n_games": 267,
+          "margin_rmse_model": 11.714272774455377,
+          "margin_rmse_market": 11.754949551202287,
+          "total_rmse_model": 12.343083949343205,
+          "total_rmse_market": 12.27097302687188,
+          "ml": {
+            "n": 265,
+            "logloss_model": 0.6200160725140355,
+            "logloss_market": 0.621574434962004,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.21603408716790423,
+            "brier_market": 0.21702644111687608,
+            "diff_model_minus_market": -0.001558362447968493,
+            "diff_ci95": [
+              -0.010281249115996793,
+              0.005715204639622153
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 262,
+            "logloss_model": 0.6928885688027128,
+            "logloss_market": 0.6944976903110708,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.24985483328121405,
+            "brier_market": 0.25067419691287,
+            "diff_model_minus_market": -0.0016091215083580822,
+            "diff_ci95": [
+              -0.011797778308626225,
+              0.007467471211628463
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 266,
+            "logloss_model": 0.6971339160618011,
+            "logloss_market": 0.6930161382498263,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2519910428822588,
+            "brier_market": 0.24993464396590262,
+            "diff_model_minus_market": 0.004117777811974704,
+            "diff_ci95": [
+              -0.002177018745915791,
+              0.010011292419388796
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 5.9626722678666395,
+          "ats_push_actual": 5
+        },
+        "2017": {
+          "n_games": 267,
+          "margin_rmse_model": 13.255840005638078,
+          "margin_rmse_market": 13.141230823843825,
+          "total_rmse_model": 14.435443261211583,
+          "total_rmse_market": 14.38960949516077,
+          "ml": {
+            "n": 266,
+            "logloss_model": 0.597470843522502,
+            "logloss_market": 0.593228950769932,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.20508869700792376,
+            "brier_market": 0.20306564783267755,
+            "diff_model_minus_market": 0.004241892752569928,
+            "diff_ci95": [
+              -0.002817238272556478,
+              0.012270845676467029
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 258,
+            "logloss_model": 0.6977136693442842,
+            "logloss_market": 0.6924423936821644,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25225759309905493,
+            "brier_market": 0.2496464401925646,
+            "diff_model_minus_market": 0.005271275662119773,
+            "diff_ci95": [
+              -0.0035915973430725315,
+              0.015072544429535763
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 266,
+            "logloss_model": 0.6958219786895429,
+            "logloss_market": 0.6920938084116907,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2513347457914965,
+            "brier_market": 0.2494733373912463,
+            "diff_model_minus_market": 0.0037281702778522107,
+            "diff_ci95": [
+              -0.0035243392073535645,
+              0.010124827858787223
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.708848927751898,
+          "ats_push_actual": 8
+        },
+        "2018": {
+          "n_games": 267,
+          "margin_rmse_model": 13.00746216474668,
+          "margin_rmse_market": 12.994488892335616,
+          "total_rmse_model": 13.753770925736474,
+          "total_rmse_market": 13.632962917231959,
+          "ml": {
+            "n": 265,
+            "logloss_model": 0.6135321076228524,
+            "logloss_market": 0.6135417958333168,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2125169111160938,
+            "brier_market": 0.21239253814219686,
+            "diff_model_minus_market": -9.688210464481422e-06,
+            "diff_ci95": [
+              -0.007258039439614684,
+              0.00806948202531259
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 258,
+            "logloss_model": 0.6923688705832439,
+            "logloss_market": 0.6951176506604282,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.24962088553743392,
+            "brier_market": 0.25098365599879824,
+            "diff_model_minus_market": -0.002748780077184189,
+            "diff_ci95": [
+              -0.01001102462968837,
+              0.0037886278359885567
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 264,
+            "logloss_model": 0.6946022464603128,
+            "logloss_market": 0.6943843897949681,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25072755411136005,
+            "brier_market": 0.25061761763760126,
+            "diff_model_minus_market": 0.0002178566653447724,
+            "diff_ci95": [
+              -0.006399116059840982,
+              0.0071443721766623865
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.340435628887385,
+          "ats_push_actual": 9
+        },
+        "2019": {
+          "n_games": 267,
+          "margin_rmse_model": 13.07680035876677,
+          "margin_rmse_market": 13.064518664691589,
+          "total_rmse_model": 13.396384370663919,
+          "total_rmse_market": 13.402198097986684,
+          "ml": {
+            "n": 266,
+            "logloss_model": 0.6168499567119318,
+            "logloss_market": 0.616296939609658,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.21413543591708212,
+            "brier_market": 0.21411910740869397,
+            "diff_model_minus_market": 0.000553017102273795,
+            "diff_ci95": [
+              -0.007616779057068183,
+              0.007792622398848102
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 257,
+            "logloss_model": 0.6943228049318969,
+            "logloss_market": 0.6915181731816126,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2505850428908978,
+            "brier_market": 0.24918610709956526,
+            "diff_model_minus_market": 0.002804631750284395,
+            "diff_ci95": [
+              -0.004912510776671071,
+              0.01004808081409852
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 266,
+            "logloss_model": 0.6913795997121452,
+            "logloss_market": 0.6929692718140306,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2491178031924369,
+            "brier_market": 0.24991061996465988,
+            "diff_model_minus_market": -0.0015896721018853303,
+            "diff_ci95": [
+              -0.008286878758255614,
+              0.004413134225932701
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 5.926615319268417,
+          "ats_push_actual": 10
+        },
+        "2020": {
+          "n_games": 269,
+          "margin_rmse_model": 12.674727064611401,
+          "margin_rmse_market": 12.696595275841197,
+          "total_rmse_model": 13.024855483334003,
+          "total_rmse_market": 13.083624374224417,
+          "ml": {
+            "n": 267,
+            "logloss_model": 0.5931998237325199,
+            "logloss_market": 0.5900185197870338,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.20274720242972408,
+            "brier_market": 0.20191278408607866,
+            "diff_model_minus_market": 0.0031813039454860557,
+            "diff_ci95": [
+              -0.0027340638176752644,
+              0.009320010321621797
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 269,
+            "logloss_model": 0.6927368760332115,
+            "logloss_market": 0.6899210408379762,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.24977989012977234,
+            "brier_market": 0.24838839289343057,
+            "diff_model_minus_market": 0.0028158351952353874,
+            "diff_ci95": [
+              -0.0036324221636510738,
+              0.00885250707434996
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 264,
+            "logloss_model": 0.6940483317219469,
+            "logloss_market": 0.694502330738133,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25044950018619716,
+            "brier_market": 0.2506771839308169,
+            "diff_model_minus_market": -0.0004539990161859158,
+            "diff_ci95": [
+              -0.005773523493970428,
+              0.005305193564980426
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.6882012422576445,
+          "ats_push_actual": 0
+        },
+        "2021": {
+          "n_games": 285,
+          "margin_rmse_model": 13.584511596323882,
+          "margin_rmse_market": 13.548871902286235,
+          "total_rmse_model": 13.273590787623784,
+          "total_rmse_market": 13.297473708097485,
+          "ml": {
+            "n": 284,
+            "logloss_model": 0.625541966265824,
+            "logloss_market": 0.6231858249511435,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.21862179667195392,
+            "brier_market": 0.21765747246631165,
+            "diff_model_minus_market": 0.0023561413146805,
+            "diff_ci95": [
+              -0.005084409249717137,
+              0.009092045519519532
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 281,
+            "logloss_model": 0.695923153779542,
+            "logloss_market": 0.693472300465582,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2513759183073091,
+            "brier_market": 0.2501625856162879,
+            "diff_model_minus_market": 0.002450853313959951,
+            "diff_ci95": [
+              -0.00444740938505786,
+              0.0107031128887101
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 282,
+            "logloss_model": 0.689353524922631,
+            "logloss_market": 0.690359328293737,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.24810380508115645,
+            "brier_market": 0.24860706321576653,
+            "diff_model_minus_market": -0.0010058033711059758,
+            "diff_ci95": [
+              -0.005869272375070386,
+              0.004087344289741979
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.392610649474653,
+          "ats_push_actual": 4
+        },
+        "2022": {
+          "n_games": 284,
+          "margin_rmse_model": 11.513719451819723,
+          "margin_rmse_market": 11.487247981878998,
+          "total_rmse_model": 13.196628003148195,
+          "total_rmse_market": 13.212709950095482,
+          "ml": {
+            "n": 282,
+            "logloss_model": 0.6063550793079096,
+            "logloss_market": 0.6049628094225832,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2098506862922268,
+            "brier_market": 0.20928693994497818,
+            "diff_model_minus_market": 0.001392269885326517,
+            "diff_ci95": [
+              -0.005088811125664686,
+              0.006393291587432876
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 274,
+            "logloss_model": 0.6917230194499229,
+            "logloss_market": 0.6900464170212962,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.24929059186158628,
+            "brier_market": 0.24845171517179837,
+            "diff_model_minus_market": 0.0016766024286267098,
+            "diff_ci95": [
+              -0.005157168857613194,
+              0.008075668379231495
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 281,
+            "logloss_model": 0.6905149219755959,
+            "logloss_market": 0.6929909808056586,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.24868631450273015,
+            "brier_market": 0.2499223259688367,
+            "diff_model_minus_market": -0.0024760588300626434,
+            "diff_ci95": [
+              -0.008437582391368048,
+              0.002989836104806647
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.529322823430465,
+          "ats_push_actual": 10
+        },
+        "2023": {
+          "n_games": 285,
+          "margin_rmse_model": 13.213047149206188,
+          "margin_rmse_market": 13.173970880942838,
+          "total_rmse_model": 12.97641833953209,
+          "total_rmse_market": 13.0569602330066,
+          "ml": {
+            "n": 285,
+            "logloss_model": 0.6266601381088144,
+            "logloss_market": 0.6269703437511283,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2187097940405687,
+            "brier_market": 0.21863833615593303,
+            "diff_model_minus_market": -0.0003102056423139513,
+            "diff_ci95": [
+              -0.006806500611616355,
+              0.006769859055653177
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 271,
+            "logloss_model": 0.6963379457556845,
+            "logloss_market": 0.6930301184192867,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2515894740986479,
+            "brier_market": 0.24994125226876493,
+            "diff_model_minus_market": 0.003307827336397734,
+            "diff_ci95": [
+              -0.002566282070127982,
+              0.009900996478156345
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 281,
+            "logloss_model": 0.69262876042407,
+            "logloss_market": 0.6933846511085036,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.24973649689073452,
+            "brier_market": 0.2501186930563686,
+            "diff_model_minus_market": -0.0007558906844336046,
+            "diff_ci95": [
+              -0.006919195362158933,
+              0.00556181503328183
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.737257037679866,
+          "ats_push_actual": 14
+        },
+        "2024": {
+          "n_games": 285,
+          "margin_rmse_model": 12.713965361848404,
+          "margin_rmse_market": 12.72051113394316,
+          "total_rmse_model": 12.56514519016661,
+          "total_rmse_market": 12.586612213679416,
+          "ml": {
+            "n": 285,
+            "logloss_model": 0.5954766642847792,
+            "logloss_market": 0.5892140458430416,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.20381327406001154,
+            "brier_market": 0.20097478625894333,
+            "diff_model_minus_market": 0.006262618441737678,
+            "diff_ci95": [
+              -0.00214215392657273,
+              0.013766734694966906
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 281,
+            "logloss_model": 0.6965062839605881,
+            "logloss_market": 0.6949727590907993,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.2516669341845707,
+            "brier_market": 0.2509123830145689,
+            "diff_model_minus_market": 0.0015335248697887901,
+            "diff_ci95": [
+              -0.006113580025732855,
+              0.008707349083098703
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 282,
+            "logloss_model": 0.6970194941695931,
+            "logloss_market": 0.6928105766612904,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25193168403927685,
+            "brier_market": 0.24983160725565298,
+            "diff_model_minus_market": 0.004208917508302622,
+            "diff_ci95": [
+              -0.002685311247497906,
+              0.010424282536262368
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 6.770219577645108,
+          "ats_push_actual": 4
+        },
+        "2025": {
+          "n_games": 285,
+          "margin_rmse_model": 12.259269562534937,
+          "margin_rmse_market": 12.24479839439173,
+          "total_rmse_model": 13.21963183831436,
+          "total_rmse_market": 13.237274590960604,
+          "ml": {
+            "n": 284,
+            "logloss_model": 0.6083103561280028,
+            "logloss_market": 0.6069889381505206,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.21133078451054904,
+            "brier_market": 0.2109063730663587,
+            "diff_model_minus_market": 0.0013214179774822205,
+            "diff_ci95": [
+              -0.005717599944897521,
+              0.008958033810081463
+            ],
+            "model_better_than_market": false
+          },
+          "ats": {
+            "n": 284,
+            "logloss_model": 0.6922312750202116,
+            "logloss_market": 0.6921583960108301,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.24954076979451775,
+            "brier_market": 0.24950572879591953,
+            "diff_model_minus_market": 7.287900938145676e-05,
+            "diff_ci95": [
+              -0.007254718907620709,
+              0.006272792952673158
+            ],
+            "model_better_than_market": false
+          },
+          "tot": {
+            "n": 285,
+            "logloss_model": 0.6963793271814712,
+            "logloss_market": 0.6936275907941787,
+            "logloss_coinflip": 0.6931471805599453,
+            "brier_model": 0.25161395129999653,
+            "brier_market": 0.2502399276764687,
+            "diff_model_minus_market": 0.0027517363872926223,
+            "diff_ci95": [
+              -0.0035812851878237978,
+              0.01020293508736263
+            ],
+            "model_better_than_market": false
+          },
+          "ats_push_pred": 4.340731487637459,
+          "ats_push_actual": 1
+        }
+      },
+      "calibration_ml": [
+        {
+          "bin": "0.0-0.1",
+          "n": 2,
+          "pred": 0.0667476821834903,
+          "obs": 0.0
+        },
+        {
+          "bin": "0.1-0.2",
+          "n": 57,
+          "pred": 0.1568734550480546,
+          "obs": 0.15789473684210525
+        },
+        {
+          "bin": "0.2-0.3",
+          "n": 205,
+          "pred": 0.26064081241165776,
+          "obs": 0.23902439024390243
+        },
+        {
+          "bin": "0.3-0.4",
+          "n": 524,
+          "pred": 0.35723299885554843,
+          "obs": 0.33587786259541985
+        },
+        {
+          "bin": "0.4-0.5",
+          "n": 634,
+          "pred": 0.4389006638830964,
+          "obs": 0.42586750788643535
+        },
+        {
+          "bin": "0.5-0.6",
+          "n": 814,
+          "pred": 0.5641236714737866,
+          "obs": 0.542997542997543
+        },
+        {
+          "bin": "0.6-0.7",
+          "n": 821,
+          "pred": 0.6483111194545453,
+          "obs": 0.6833130328867235
+        },
+        {
+          "bin": "0.7-0.8",
+          "n": 547,
+          "pred": 0.7422418652541275,
+          "obs": 0.773308957952468
+        },
+        {
+          "bin": "0.8-0.9",
+          "n": 190,
+          "pred": 0.8445425153794923,
+          "obs": 0.9105263157894737
+        },
+        {
+          "bin": "0.9-1.0",
+          "n": 22,
+          "pred": 0.9204653360659585,
+          "obs": 0.9090909090909091
+        }
+      ],
+      "calibration_ats": [
+        {
+          "bin": "0.2-0.3",
+          "n": 7,
+          "pred": 0.27491446964022254,
+          "obs": 0.2857142857142857
+        },
+        {
+          "bin": "0.3-0.4",
+          "n": 18,
+          "pred": 0.3676997808197469,
+          "obs": 0.4444444444444444
+        },
+        {
+          "bin": "0.4-0.5",
+          "n": 2188,
+          "pred": 0.4733145932309003,
+          "obs": 0.4945155393053016
+        },
+        {
+          "bin": "0.5-0.6",
+          "n": 1520,
+          "pred": 0.5228870730727397,
+          "obs": 0.4881578947368421
+        },
+        {
+          "bin": "0.6-0.7",
+          "n": 3,
+          "pred": 0.6258681502758626,
+          "obs": 0.0
+        }
+      ],
+      "last_model_coefficients": {
+        "margin": {
+          "intercept": 2.14928,
+          "mkt_margin": 0.92438,
+          "elo_diff": 0.00378,
+          "epa_net_diff": -4.69213,
+          "sr_net_diff": 6.66431,
+          "pts_net_diff": 0.10796,
+          "home_field": 0.43828,
+          "rest_diff": 0.03506,
+          "qb_change_diff": -0.34283
+        },
+        "total": {
+          "intercept": 45.35205,
+          "total_line": 1.03039,
+          "tot_pts_env": -0.08312,
+          "tot_epa_env": -1.0299,
+          "tot_plays_env": 0.01763,
+          "indoor": 1.06397
+        },
+        "margin_sigma": 13.159603184708603,
+        "total_sigma": 13.246272772053478
+      }
+    }
+  }
+}
