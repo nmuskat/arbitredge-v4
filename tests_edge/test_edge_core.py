@@ -298,3 +298,10 @@ def test_walk_forward_is_strictly_chronological():
         assert max(r["t"] for r in train) < min(r["t"] for r in test)
         n += 1
     assert n >= 4
+
+
+def test_month_start_is_utc_first():
+    import calendar
+    t = calendar.timegm((2026, 10, 31, 23, 59, 0, 0, 0, 0))
+    assert credits.month_start(t) == calendar.timegm((2026, 10, 1, 0, 0, 0, 0, 0, 0))
+    assert credits.month_start(t + 120) == calendar.timegm((2026, 11, 1, 0, 0, 0, 0, 0, 0))

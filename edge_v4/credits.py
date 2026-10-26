@@ -20,6 +20,7 @@ RETURNED, so estimates are upper bounds.
 `bookmakers=` instead of `regions=`: each group of up to 10 books = 1 region.
 """
 
+import calendar
 import hashlib
 import json
 import math
@@ -89,14 +90,15 @@ def fingerprint(endpoint, params):
 
 
 def month_start(ts):
+    """Start of the UTC calendar month containing ts (provider resets on the 1st)."""
     t = time.gmtime(ts)
-    return time.mktime((t.tm_year, t.tm_mon, 1, 0, 0, 0, 0, 0, 0)) - time.timezone
+    return calendar.timegm((t.tm_year, t.tm_mon, 1, 0, 0, 0, 0, 0, 0))
 
 
 @dataclass(frozen=True)
 class Budget:
     monthly_total: int = 20_000
-    v4_monthly_cap: int = 6_000        # owner decision; default leaves 14,000 to V3
+    v4_monthly_cap: int = 6_000        # owner-approved 2026-10-26; leaves 14,000 to V3
     v4_daily_cap: int = 400
     v3_floor_remaining: int = 2_000    # never let provider-remaining fall below this because of V4
     max_single_request: int = 200      # anything larger requires explicit owner approval
