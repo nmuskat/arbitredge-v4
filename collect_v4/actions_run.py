@@ -156,18 +156,27 @@ def run(state_in, out, env=os.environ, clock=time.time, opener=None, tier="test"
                 "SELECT DISTINCT commence FROM mkt_quote WHERE sport=?", (sport,))})
             st.update(odds_at=clock(), kickoffs=[k for k in kicks if k > clock()][:400], last_reason=why)
             summary["fetches"].append({**r, "reason": why})
+            # persist the spend IMMEDIATELY: if anything later in this run fails, the
+            # workflow's always-run save step still uploads a ledger containing this request
+            _persist(gw, state, out)
         if summary["fetches"]:
             shard = os.path.join(out, f"quotes_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(clock()))}.jsonl.gz")
             summary["shard"] = os.path.basename(shard)
             summary["shard_rows"] = export_shard(col.conn, shard)
-    with open(os.path.join(out, "collector_state.json"), "w") as f:
-        json.dump(state, f, indent=2, sort_keys=True)
-    summary["ledger_rows"] = dump_ledger(gw, os.path.join(out, "ledger.jsonl"))
+    summary["ledger_rows"] = _persist(gw, state, out)
     summary["usage"] = gw.status()["usage"]
     summary["status"] = "ok"
     _write_summary(out, summary)
     shutil.rmtree(work, ignore_errors=True)
     return summary
+
+
+def _persist(gw, state, out):
+    tmp = os.path.join(out, "collector_state.json.tmp")
+    with open(tmp, "w") as f:
+        json.dump(state, f, indent=2, sort_keys=True)
+    os.replace(tmp, os.path.join(out, "collector_state.json"))
+    return dump_ledger(gw, os.path.join(out, "ledger.jsonl"))
 
 
 def _write_summary(out, summary):

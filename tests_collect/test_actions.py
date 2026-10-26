@@ -260,3 +260,88 @@ def test_standard_tier_within_6000_and_actions_minutes_within_free_quota():
     analysis = 31 * 4                                     # daily analysis, <= 4 min
     ci = 40 * 3                                           # ~40 pushes x ~2-3 min
     assert runs_per_month + analysis + ci <= 1200         # well under GitHub Free's 2,000 minutes
+
+
+def test_spend_is_persisted_after_each_request_even_if_the_run_dies(run_chain, monkeypatch):
+    go, up, tmp = run_chain
+    real = AR.Collector.fetch_odds
+    calls = {"n": 0}
+
+    def flaky(self, sport):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("runner died mid-run")
+        return real(self, sport)
+    monkeypatch.setattr(AR.Collector, "fetch_odds", flaky)
+    with pytest.raises(RuntimeError):
+        go()
+    out = tmp / "out1"
+    rows = [json.loads(x) for x in open(out / "ledger.jsonl")]
+    assert sum(r["actual_cost"] or r["est_cost"] for r in rows) == 3      # the first request is on record
+
+
+def test_state_load_refuses_lost_ledger():
+    text = open(os.path.join(REPO, ".github", "scripts", "state_load.sh")).read()
+    assert "refusing to run" in text and "exit 1" in text
+    assert "|| true" not in text                                       # downloads may never fail silently
+
+
+FAKE_GH = r'''#!/bin/bash
+# fake gh: behaviour driven by env FAKE_ASSETS, FAKE_DATA_RELEASES, FAKE_DOWNLOAD_FAIL
+case "$1 $2" in
+  "release view")
+    if [[ "$*" == *"--json assets"* ]]; then printf '%s\n' $FAKE_ASSETS; fi; exit 0 ;;
+  "release create") exit 0 ;;
+  "release list") echo "${FAKE_DATA_RELEASES:-0}"; exit 0 ;;
+  "release download")
+    [[ "${FAKE_DOWNLOAD_FAIL:-0}" == 1 ]] && exit 1
+    for a in "$@"; do last="$a"; done
+    pat=""; prev=""; dir=""
+    for a in "$@"; do [[ "$prev" == "-p" ]] && pat="$a"; [[ "$prev" == "-D" ]] && dir="$a"; prev="$a"; done
+    echo '{}' > "$dir/$pat"; exit 0 ;;
+esac
+exit 0
+'''
+
+
+@pytest.mark.parametrize("assets,data_releases,fail,expect_ok", [
+    ("", "0", "0", True),                                    # genuine first run
+    ("collector_state.json", "0", "0", False),                # state without ledger -> ledger was lost
+    ("", "3", "0", False),                                    # data exists, ledger gone
+    ("ledger.jsonl collector_state.json", "3", "0", True),    # normal run
+    ("ledger.jsonl collector_state.json", "3", "1", False),   # download failure must fail the job
+])
+def test_state_load_behaviour(tmp_path, assets, data_releases, fail, expect_ok):
+    import subprocess
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text(FAKE_GH)
+    (bin_dir / "gh").chmod(0o755)
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_ASSETS=assets,
+               FAKE_DATA_RELEASES=data_releases, FAKE_DOWNLOAD_FAIL=fail)
+    r = subprocess.run(["bash", os.path.join(REPO, ".github", "scripts", "state_load.sh")], cwd=tmp_path, env=env,
+                       capture_output=True, text=True)
+    assert (r.returncode == 0) == expect_ok, r.stdout + r.stderr
+    if expect_ok and "ledger.jsonl" in assets:
+        assert (tmp_path / "state" / "ledger.jsonl").exists()
+
+
+def test_worst_case_month_cannot_exceed_caps(run_chain, monkeypatch):
+    """Scheduling logic broken (every run wants to fetch both sports), every scheduled run fires:
+    the gate alone must hold V4 to the monthly and daily caps."""
+    go, up, tmp = run_chain
+    monkeypatch.setattr(SP, "due", lambda *a, **k: (True, "forced"))
+    month_start = store.iso_to_epoch("2026-11-01T00:00:00Z")
+    runs = [t for w in range(-1, 5) for t in cron_plan.run_times(store.iso_to_epoch("2026-11-01T00:00:00Z") + w * 7 * 86400)
+            if month_start <= t < store.iso_to_epoch("2026-12-01T00:00:00Z")]
+    clock_now = NOW
+    per_day = {}
+    for t in runs:
+        s, _ = go(advance_min=(t - clock_now) / 60)
+        clock_now = t
+        for f in s["fetches"]:
+            day = t // 86400
+            per_day[day] = per_day.get(day, 0) + 3
+    total = sum(per_day.values())
+    assert total <= 500 and max(per_day.values()) <= 60
+    assert total >= 450              # and the budget is actually usable, not blocked by a bug
