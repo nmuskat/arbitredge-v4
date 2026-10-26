@@ -1,0 +1,8 @@
+{% macro badge(kind) -%}
+{%- set m = {"observed": ("b-observed", "OBSERVED"), "model": ("b-model", "MODEL"), "synthetic": ("b-synthetic", "SYNTHETIC"),
+  "experimental": ("b-experimental", "EXPERIMENTAL"), "demo": ("b-demo", "DEMO DATA"), "validated": ("b-validated", "VALIDATED"),
+  "notvalid": ("b-notvalid", "NOT VALIDATED")} -%}
+<span class="b {{ m[kind][0] }}" title="{{ {'observed':'Real external data with recorded provenance','model':'Engine C projection (not a market price)','synthetic':'Simulated ArbitrEdge customers and their wagers','experimental':'Uncalibrated heuristic','demo':'Simulated market quotes: no live odds feed is connected in this build','validated':'Passed the evidence gate','notvalid':'Has not passed the evidence gate: paper tracking only'}[kind] }}">{{ m[kind][1] }}</span>
+{%- endmacro %}
+{% macro badges() -%}<span class="badges">{% for k in varargs %}{{ badge(k) }}{% endfor %}</span>{%- endmacro %}
+{% macro matchup(g) -%}<span class="teams">{{ g.away }}<span class="at">@</span>{{ g.home }}</span>{%- endmacro %}

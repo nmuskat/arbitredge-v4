@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% import "_macros.html" as mx %}
+{% block title %}Dashboard · ArbitrEdge V4{% endblock %}
+{% block body %}
+{% set wk = s.games | map(attribute="week") | unique | list %}<h1>NFL slate · Week{{ "s" if wk|length > 1 else "" }} {{ wk | join(" – ") }}</h1>
+<p class="lede">Every number on this site is labelled by where it comes from. Real games and listed lines are <b>observed</b>; projections are <b>model</b> output; the
+synthetic book's tickets are <b>synthetic</b>; multi-book quotes are <b>demo data</b> until a live odds feed is connected.</p>
+{% set watch = s.scanner | selectattr("decision", "equalto", "WATCH") | list %}
+<div class="grid g4" style="margin-bottom:14px">
+  <div class="panel kpi"><div class="v blue">{{ s.games|length }}</div><div class="l">NFL games with a listed line {{ mx.badge("observed") }}</div></div>
+  <div class="panel kpi"><div class="v">{{ "{:,}".format(s.health.synthetic_book.wagers) }}</div><div class="l">synthetic wagers accepted · {{ "{:,}".format(s.health.synthetic_book.bettors) }} bettors {{ mx.badge("synthetic") }}</div></div>
+  <div class="panel kpi"><div class="v orange">{{ watch|length }}</div><div class="l">prices beating consensus (WATCH) {{ mx.badge("demo") }}</div></div>
+  <div class="panel kpi"><div class="v red">0</div><div class="l">official plays · edge status <b>NOT PROVEN</b></div></div>
+</div>
+<div class="grid g3">
+{% for g in s.games %}
+  {% set sa = g.sims.anchored if g.sims else None %}
+  {% set sp = g.need.spread if g.need else None %}
+  {% set sh = g.sharp.spreads %}
+  <article class="panel game">
+    <div class="matchup">{{ mx.matchup(g) }}<span class="ko">{{ g.kickoff | et("%a %-I:%M %p") }}</span></div>
+    <div class="rows">
+      <span class="k">Listed</span><span class="mono">{{ g.home }} {{ g.listed.home_spread | line }} · O/U {{ g.listed.total | line(False) }} · ML {{ g.listed.home_ml | odds }}/{{ g.listed.away_ml | odds }} {{ mx.badge("observed") }}</span>
+      {% if sa %}<span class="k">SIMS fair</span><span class="mono">{{ g.home }} {{ sa.fair_home_spread | line }} · {{ sa.fair_total | round(1) }} · win {{ sa.p_home_win | pct }} {{ mx.badge("model") }}</span>{% endif %}
+      <span class="k">Need</span><span>{% if sp and sp.financial_need_side %}<span class="pill need">{{ g.home if sp.financial_need_side == 'home' else g.away }} spread</span>
+        <span class="note">{{ sp.home_ticket_pct | round(0) | int }}% tickets on {{ g.home }}</span>{% else %}<span class="pill none">none</span>{% endif %} {{ mx.badge("synthetic") }}</span>
+      <span class="k">Sharp</span><span>{% if sh.status == 'SIGNAL' %}<span class="pill sharp">{{ g.home if sh.suspected_side == 'home' else g.away }} · {{ sh.score }}</span>{% else %}<span class="pill none">insufficient evidence</span>{% endif %} {{ mx.badges("experimental", "demo") }}</span>
+    </div>
+  </article>
+{% endfor %}
+  <article class="panel game">
+    <div class="matchup"><span class="teams">College football · Top 25</span><span class="ko">{{ s.cfb.status }}</span></div>
+    <p class="note">{{ s.cfb.detail }}</p>
+  </article>
+</div>
+{% endblock %}

@@ -1,0 +1,34 @@
+{% import "_macros.html" as mx %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}ArbitrEdge V4{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap">
+<link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <div class="logo"><span class="a">Arbitr</span><span class="e">Edge</span><sup>V4 · SHADOW</sup></div>
+    <div class="asof">as of <b>{{ s.as_of | et }}</b></div>
+  </div>
+  <nav class="tabs" aria-label="Sections">
+    {% for p, label in PAGES %}<a href="{{ link(p) }}" class="{{ 'on' if p == page else '' }}">{{ label }}</a>{% endfor %}
+  </nav>
+</header>
+<main>
+{% block body %}{% endblock %}
+<footer>
+  <div class="legend">
+    {{ mx.badge("observed") }} real data &nbsp; {{ mx.badge("model") }} Engine C &nbsp; {{ mx.badge("synthetic") }} simulated customers
+    &nbsp; {{ mx.badge("experimental") }} uncalibrated &nbsp; {{ mx.badge("demo") }} simulated quotes &nbsp; {{ mx.badge("validated") }} evidence gate passed
+  </div>
+  <p class="note">ArbitrEdge V4 shadow build · research and paper tracking only · no wager is recommended until a strategy passes the evidence gate.
+  Snapshot generated {{ s.generated_at | et }}.</p>
+</footer>
+</main>
+</body>
+</html>

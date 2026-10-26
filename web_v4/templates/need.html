@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% import "_macros.html" as mx %}
+{% block title %}ArbitrEdge Need · V4{% endblock %}
+{% block body %}
+<h1>ArbitrEdge Need {{ mx.badges("synthetic", "demo") }}</h1>
+<p class="lede">The synthetic sportsbook accepts wagers from {{ "{:,}".format(s.health.synthetic_book.bettors) }} persistent simulated NFL customers. Each wager is accepted at a time-stamped
+price (here from demo quotes), and every ticket is kept in an append-only ledger. <b>Need</b> is the outcome that pays the book best. It is a liability
+fact about simulated customers, <b>not</b> a prediction and <b>not</b> a bet recommendation. Customer behaviour parameters are unvalidated assumptions.</p>
+<div class="callout blue">The book closes to new wagers whenever quotes go stale (no fresh price within 45 minutes), so simulated customers never bet into prices that weren't posted.</div>
+{% for g in s.games %}{% if g.need %}
+{% set n = g.need %}
+<section class="panel" style="margin-bottom:14px">
+  <div class="panel-h"><h2>{{ g.away_name }} @ {{ g.home_name }}</h2><span class="ko">{{ g.kickoff | et }}</span></div>
+  <div class="grid g3">
+    <div>
+      <h3>Spread · Need {% if n.spread.financial_need_side %}<span class="pill need">{{ g.home if n.spread.financial_need_side == 'home' else g.away }}</span>{% else %}<span class="pill none">none</span>{% endif %}</h3>
+      <div class="note">tickets</div>{{ svg.split_bar(n.spread.home_ticket_pct, g.home, g.away) | safe }}
+      <div class="note" style="margin-top:6px">money</div>{{ svg.split_bar(n.spread.home_handle_pct, g.home, g.away) | safe }}
+      <div class="rows" style="margin-top:8px">
+        <span class="k">{{ g.home }} covers all</span><span class="num {{ 'pos' if n.spread.pnl_if_home_covers_all > 0 else 'neg' }}">{{ n.spread.pnl_if_home_covers_all | money }}</span>
+        <span class="k">{{ g.away }} covers all</span><span class="num {{ 'pos' if n.spread.pnl_if_away_covers_all > 0 else 'neg' }}">{{ n.spread.pnl_if_away_covers_all | money }}</span>
+        <span class="k">Handle · tickets</span><span class="num">{{ n.spread.handle | money }} · {{ n.spread.tickets }}</span>
+        {% if n.spread.middle_risk_margins %}<span class="k">Middle risk</span><span class="num">margin {{ n.spread.middle_risk_margins | join(", ") }}</span>{% endif %}
+      </div>
+    </div>
+    <div>
+      {% set t = n.total %}
+      <h3>Total · Need {% if t.financial_need_side %}<span class="pill need">{{ t.financial_need_side | upper }}</span>{% else %}<span class="pill none">none</span>{% endif %}</h3>
+      {% if t.tickets %}
+      <div class="note">money</div>{{ svg.split_bar(100 * t.over_handle / t.handle if t.handle else None, "Over", "Under") | safe }}
+      <div class="rows" style="margin-top:8px">
+        <span class="k">Over all</span><span class="num {{ 'pos' if t.pnl_if_over_all > 0 else 'neg' }}">{{ t.pnl_if_over_all | money }}</span>
+        <span class="k">Under all</span><span class="num {{ 'pos' if t.pnl_if_under_all > 0 else 'neg' }}">{{ t.pnl_if_under_all | money }}</span>
+        <span class="k">Handle · tickets</span><span class="num">{{ t.handle | money }} · {{ t.tickets }}</span>
+      </div>{% else %}<p class="note">no totals wagers yet</p>{% endif %}
+    </div>
+    <div>
+      {% set m = n.moneyline %}
+      <h3>Moneyline · Need {% if m.financial_need_side %}<span class="pill need">{{ g.home if m.financial_need_side == 'home' else g.away }}</span>{% else %}<span class="pill none">none</span>{% endif %}</h3>
+      {% if m.tickets %}
+      <div class="note">money</div>{{ svg.split_bar(100 * m.home_handle / m.handle if m.handle else None, g.home, g.away) | safe }}
+      <div class="rows" style="margin-top:8px">
+        <span class="k">{{ g.home }} wins</span><span class="num {{ 'pos' if m.pnl_if_home_wins > 0 else 'neg' }}">{{ m.pnl_if_home_wins | money }}</span>
+        <span class="k">{{ g.away }} wins</span><span class="num {{ 'pos' if m.pnl_if_away_wins > 0 else 'neg' }}">{{ m.pnl_if_away_wins | money }}</span>
+        <span class="k">Handle · tickets</span><span class="num">{{ m.handle | money }} · {{ m.tickets }}</span>
+      </div>{% else %}<p class="note">no moneyline wagers yet</p>{% endif %}
+    </div>
+  </div>
+  {% if n.joint and n.joint.regions %}
+  <h3>Whole book under every outcome (all markets, every final score 0–{{ n.joint.score_range[1] }})</h3>
+  <div class="table-wrap"><table>
+    <tr><th>Outcome region (vs listed {{ g.home }} {{ n.joint.reference.home_spread | line }}, total {{ n.joint.reference.total | line(False) }})</th><th class="n">Worst P&amp;L</th><th class="n">Best P&amp;L</th></tr>
+    {% for k, v in n.joint.regions.items() %}<tr><td>{{ k.replace("home_covers", g.home ~ " covers").replace("away_covers", g.away ~ " covers").replace("+", " · ") }}</td>
+      <td class="n {{ 'pos' if v.min_pnl > 0 else 'neg' }}">{{ v.min_pnl | money }}</td><td class="n {{ 'pos' if v.max_pnl > 0 else 'neg' }}">{{ v.max_pnl | money }}</td></tr>{% endfor %}
+    <tr><td class="muted">Single worst score: {{ g.home }} {{ n.joint.worst_case.home_score }}–{{ n.joint.worst_case.away_score }} {{ g.away }}</td><td class="n neg">{{ n.joint.worst_case.pnl | money }}</td><td></td></tr>
+  </table></div>
+  {% endif %}
+</section>
+{% endif %}{% endfor %}
+{% endblock %}

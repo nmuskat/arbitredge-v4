@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% import "_macros.html" as mx %}
+{% block title %}Sharp Money · V4{% endblock %}
+{% block body %}
+<h1>Sharp Money Tracker {{ mx.badges("experimental", "demo") }}</h1>
+<p class="lede">Evidence of informed betting is read only from real price movement: which books moved first, steam across books, key-number crossings, buybacks,
+and market-making vs recreational disagreement. The 0–100 score is an <b>uncalibrated heuristic</b>. Simulated sportsbook customers are never used as evidence.
+In this build the quotes are demo data, so the signals demonstrate the method only.</p>
+<div class="callout">Not available: reverse line movement and ticket-vs-money splits (no licensed betting-splits source), and injury news (no feed).
+The engine reports these as unavailable; it never estimates them.</div>
+<div class="table-wrap"><table>
+<tr><th>Game</th><th>Market</th><th>Suspected side</th><th class="n">Score</th><th>Detected</th><th>Supporting evidence</th><th>Contradicting</th><th>Books</th></tr>
+{% for g in s.games %}{% for mk in ("spreads", "totals") %}{% set r = g.sharp[mk] %}
+<tr>
+  <td>{{ mx.matchup(g) }}</td><td>{{ mk }}</td>
+  <td>{% if r.status == 'SIGNAL' %}<span class="pill sharp">{{ (g.home if r.suspected_side == 'home' else g.away) if r.suspected_side in ('home','away') else r.suspected_side | upper }}</span>{% else %}<span class="pill none">INSUFFICIENT EVIDENCE</span>{% endif %}</td>
+  <td class="n">{{ r.score if r.score is not none else "—" }}</td>
+  <td class="mono">{{ r.detected_at | et("%a %-I:%M %p") if r.detected_at else "—" }}</td>
+  <td class="reasons">{% if r.supporting %}<ul class="ev sup">{% for e in r.supporting %}<li>{{ e }}</li>{% endfor %}</ul>{% else %}{{ r.reason or "—" }}{% endif %}</td>
+  <td class="reasons">{% if r.contradicting %}<ul class="ev con">{% for e in r.contradicting %}<li>{{ e }}</li>{% endfor %}</ul>{% else %}—{% endif %}</td>
+  <td class="reasons">{% for b, v in r.books.items() %}{{ b }}<span class="muted">({{ v.class }})</span>{{ ", " if not loop.last }}{% endfor %}</td>
+</tr>
+{% endfor %}{% endfor %}
+</table></div>
+<p class="note">Historical effectiveness of similar signals: <b>not yet measured</b>. That needs multi-book quote history with observed closes; see Performance.</p>
+{% endblock %}

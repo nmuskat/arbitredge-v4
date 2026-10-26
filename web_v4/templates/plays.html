@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% import "_macros.html" as mx %}
+{% block title %}Official Plays · V4{% endblock %}
+{% block body %}
+<h1>Official Plays</h1>
+<section class="panel empty-state">
+  <div class="big">0</div>
+  <h2 style="margin-top:6px">No official plays</h2>
+  <p class="lede" style="margin:8px auto 0">{{ s.plays_note }} A play appears here only when a pre-registered strategy has passed every check below, with real executable prices.</p>
+</section>
+<section class="panel" style="margin-top:14px">
+  <h2>Evidence gate · current status</h2>
+  {% set rows = [
+    ("✗", "≥ 2,500 graded out-of-sample bets across ≥ 2 seasons (holdout + forward)", "Line shopping (S1) has no real multi-book history yet"),
+    ("✗", "ROI confidence interval above 0 after correcting for every strategy tried", "No real strategy has a CI above 0 (Performance)"),
+    ("✗", "Positive mean CLV with observed closes for ≥ 80% of bets", "Needs timestamped closing prices"),
+    ("✗", "Probability model beats the no-vig market baseline out of sample", "Engine C ties or trails the market"),
+    ("✗", "Stable across seasons and halves; no single week drives the result", "—"),
+    ("✗", "Executable prices: fills verified against later recorded quotes", "No live feed in this build"),
+    ("✗", "Forward paper results consistent with the backtest", "Paper ledger running on demo data only"),
+    ("✓", "Framework controls: finds a planted edge, invents none, rejects an illusion", "Passed (Performance)")] %}
+  {% for st, crit, now in rows %}<div class="check"><span class="s {{ 'pos' if st == '✓' else 'neg' }}">{{ st }}</span><span>{{ crit }}</span><span class="note">{{ now }}</span></div>{% endfor %}
+</section>
+{% endblock %}

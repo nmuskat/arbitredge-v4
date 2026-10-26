@@ -47,7 +47,7 @@ def _consensus_se(state, market):
 
 
 def scan(market_conn, ledger_conn, events, T, spread_kn, spread_sigma, total_kn, total_sigma,
-         policy=ev.DecisionPolicy(), max_age_s=asof.DEFAULT_MAX_AGE_S, record=True):
+         policy=ev.DecisionPolicy(), max_age_s=asof.DEFAULT_MAX_AGE_S, record=True, allow_demo=False):
     """events: [{'event_id', 'kickoff' (epoch), 'home', 'away'}]. Returns decision rows."""
     ledger.register(ledger_conn, STRATEGY, VERSION, DESCRIPTION, {"policy": policy.__dict__, "max_age_s": max_age_s},
                     "2026-10-26T00:00:00Z")
@@ -64,7 +64,7 @@ def scan(market_conn, ledger_conn, events, T, spread_kn, spread_sigma, total_kn,
                              "reasons": [f"market {st['status']}"], "home": e["home"], "away": e["away"]})
                 continue
             try:
-                sh = signals.analyse(market_conn, e["event_id"], market, T)
+                sh = signals.analyse(market_conn, e["event_id"], market, T, allow_demo=allow_demo)
             except signals.SyntheticSourceRejected:
                 sh = None
             se = _consensus_se(st, market)

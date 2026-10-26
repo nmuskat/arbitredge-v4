@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "_macros.html" as mx %}
+{% block title %}SIMS · V4{% endblock %}
+{% block body %}
+<h1>ArbitrEdge SIMS {{ mx.badge("model") }}</h1>
+{% set ec = s.performance.engine_c.variants.anchored.pooled_out_of_sample_through_2025 if s.performance.engine_c else None %}
+<p class="lede">Score-margin and total distributions from Engine C. Team strength comes from point-in-time Elo and EPA efficiency, and the distribution has key-number
+spikes learned from NFL history. Each season is predicted by a model fitted only on earlier seasons.</p>
+<div class="callout">Validation, 2012–2025 out of sample: <b>neither model beats the market.</b> The independent model is significantly worse; the market-anchored model ties
+the market{% if ec %} (moneyline log loss {{ "%.4f"|format(ec.ml.logloss_model) }} vs market {{ "%.4f"|format(ec.ml.logloss_market) }}){% endif %}.
+So SIMS is used to <b>price</b> numbers and pushes, not to pick sides. Model-vs-line gaps below are not betting signals.</div>
+<div class="grid g2">
+{% for g in s.games %}{% if g.sims %}{% set a = g.sims.anchored %}{% set i = g.sims.independent %}
+<section class="panel">
+  <div class="panel-h"><h2>{{ g.away_name }} @ {{ g.home_name }}</h2><span class="ko">{{ g.kickoff | et("%a %-I:%M %p") }}</span></div>
+  {{ svg.margin_histogram(a.margin_hist, a.listed_home_line, title="Projected " ~ g.home ~ " margin") | safe }}
+  <p class="note" style="margin:2px 0 0">Final {{ g.home }} margin, anchored model: <span style="color:var(--blue-2)">■</span> {{ g.home }} wins · <span style="color:var(--orange)">■</span> {{ g.away }} wins · bright bars = key numbers 3, 7, 10</p>
+  <div class="table-wrap" style="margin-top:8px"><table>
+    <tr><th></th><th class="n">Listed {{ mx.badge("observed") }}</th><th class="n">Anchored</th><th class="n">Independent</th></tr>
+    <tr><td>{{ g.home }} spread (fair)</td><td class="n">{{ g.listed.home_spread | line }}</td><td class="n">{{ a.fair_home_spread_exact | line }}</td><td class="n">{{ i.fair_home_spread_exact | line }}</td></tr>
+    <tr><td>Total (fair)</td><td class="n">{{ g.listed.total | line(False) }}</td><td class="n">{{ "%.1f"|format(a.fair_total) }}</td><td class="n">{{ "%.1f"|format(i.fair_total) }}</td></tr>
+    <tr><td>{{ g.home }} win prob</td><td class="n">{{ g.listed.home_ml | odds }}</td><td class="n">{{ a.p_home_win | pct }}</td><td class="n">{{ i.p_home_win | pct }}</td></tr>
+    <tr><td>{{ g.home }} covers {{ g.listed.home_spread | line }}</td><td class="n">—</td><td class="n">{{ a.p_home_cover_listed | pct }}</td><td class="n">{{ i.p_home_cover_listed | pct }}</td></tr>
+    <tr><td>Push at listed spread</td><td class="n">—</td><td class="n">{{ a.p_push_listed | pct }}</td><td class="n">{{ i.p_push_listed | pct }}</td></tr>
+    <tr><td>Over {{ g.listed.total | line(False) }}</td><td class="n">—</td><td class="n">{{ a.p_over_listed | pct }}</td><td class="n">{{ i.p_over_listed | pct }}</td></tr>
+    <tr><td>Margin uncertainty (σ · mean s.e.)</td><td class="n">—</td><td class="n">{{ "%.1f · %.1f"|format(a.sigma_margin, a.se_margin) }}</td><td class="n">{{ "%.1f · %.1f"|format(i.sigma_margin, i.se_margin) }}</td></tr>
+  </table></div>
+  <p class="note">Starting QBs listed: {{ g.qb.away or "—" }} @ {{ g.qb.home or "—" }} (the model assumes the listed starter plays). Roof: {{ g.roof }}.</p>
+</section>
+{% endif %}{% endfor %}
+</div>
+{% endblock %}

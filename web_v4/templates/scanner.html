@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "_macros.html" as mx %}
+{% block title %}EV Scanner · V4{% endblock %}
+{% block body %}
+<h1>EV Opportunity Scanner {{ mx.badges("demo", "notvalid") }}</h1>
+<p class="lede">Every fresh book price is compared with the sharp-weighted no-vig consensus, re-priced to that book's own number with Engine C's key-number distribution
+(so −2.5 and −3 are not treated as the same bet). EV = P(win)·profit − P(loss)·stake, with pushes refunded. A price becomes <b>BET</b> only if EV stays above
+2% at the pessimistic end of the uncertainty interval <i>and</i> the strategy has passed validation. Nothing has passed yet, so the best result possible today is <b>WATCH</b> (paper tracking).</p>
+{% set shown = s.scanner | rejectattr("decision", "equalto", "NO BET") | list %}
+<div class="table-wrap"><table>
+<tr><th>Decision</th><th>Game</th><th>Market</th><th>Selection</th><th>Book</th><th class="n">Odds</th><th class="n">Model p</th><th class="n">Break-even</th>
+<th class="n">Push p</th><th class="n">EV / unit</th><th class="n">EV range</th><th class="n">Stake</th><th>Price age</th><th>Signals</th><th>Why</th></tr>
+{% for r in shown %}
+<tr>
+  <td><span class="dec {{ r.decision.replace(' ', '') }}">{{ r.decision }}</span></td>
+  <td>{{ r.away }} @ {{ r.home }}</td><td>{{ r.market }}</td>
+  <td class="mono">{{ (r.home if r.selection == 'home' else r.away if r.selection == 'away' else r.selection|upper) }} {% if r.market != 'h2h' %}{{ r.line | line(r.market == 'spreads') }}{% endif %}</td>
+  <td>{{ r.book }}</td><td class="n">{{ r.american | odds }}</td>
+  <td class="n">{{ r.p_win_model | pct }}</td><td class="n">{{ r.breakeven_win_prob | pct }}</td><td class="n">{{ r.p_push_model | pct }}</td>
+  <td class="n pos">{{ r.ev_per_unit | pct(1) }}</td><td class="n">{{ r.ev_interval[0] | pct(1) }} – {{ r.ev_interval[1] | pct(1) }}</td>
+  <td class="n">0 u</td>
+  <td class="mono">{{ (r.price_age_s // 60) | int }} min</td>
+  <td class="reasons">{% for x in r.supporting %}<span class="pos">+ {{ x.replace("Engine B (experimental) suspects", "sharp (exp.):") }}</span><br>{% endfor %}{% for x in r.conflicting %}<span class="neg">− {{ x.replace("Engine B (experimental) suspects", "sharp (exp.):") }}</span><br>{% endfor %}{% if not r.supporting and not r.conflicting %}—{% endif %}</td>
+  <td class="reasons">{{ r.reasons | join("; ") }}. Consensus {{ r.consensus_line | line(r.market == 'spreads') if r.consensus_line is not none else "" }} from {{ r.sharp_books | join(", ") }}.</td>
+</tr>
+{% else %}
+<tr><td colspan="15" class="muted">No price currently beats the consensus by the required margin.</td></tr>
+{% endfor %}
+</table></div>
+<p class="note">{{ s.scanner | selectattr("decision", "equalto", "NO BET") | list | length }} other priced selections evaluated → NO BET (no uncertainty-adjusted edge, stale or missing market).
+Each decision is written to the append-only paper ledger.</p>
+{% endblock %}

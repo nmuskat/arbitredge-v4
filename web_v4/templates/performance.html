@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% import "_macros.html" as mx %}
+{% block title %}Performance · V4{% endblock %}
+{% block body %}
+<h1>Performance Center</h1>
+<p class="lede">Every number here comes from real NFL outcomes or from controls with a known answer. Bets are graded in an append-only ledger. "SUPPORTED" requires ≥ 500 bets,
+a ROI confidence interval above zero after a multiple-testing correction, and positive closing-line value. Nothing real has met that bar.</p>
+
+<section class="panel" style="margin-bottom:14px">
+  <div class="panel-h"><h2>1 · Framework controls (simulated market, known truth)</h2>{{ mx.badge("synthetic") }}</div>
+  {% set c = s.performance.controls %}
+  <div class="table-wrap"><table>
+    <tr><th>Control</th><th>Question</th><th class="n">Bets</th><th class="n">ROI</th><th class="n">95% CI</th><th class="n">Mean CLV</th><th>Gate</th></tr>
+    {% for key, q in [("positive", "Finds a real edge?"), ("negative", "Invents an edge where none exists?"), ("noisy_consensus", "Certifies an illusion?")] %}{% set r = c[key] %}
+    <tr><td>{{ key.replace("_", " ") }}</td><td>{{ q }}</td><td class="n">{{ "{:,}".format(r.bets) }}</td><td class="n">{{ r.roi | pct if r.roi is not none else "—" }}</td>
+      <td class="n">{{ (r.roi_ci[0] | pct) ~ " – " ~ (r.roi_ci[1] | pct) if r.roi_ci else "—" }}</td><td class="n">{{ r.mean_clv | pct if r.mean_clv is not none else "—" }}</td>
+      <td><span class="dec {{ 'BET' if r.edge_status == 'SUPPORTED' else 'NOBET' }}">{{ r.edge_status }}</span></td></tr>{% endfor %}
+  </table></div>
+  <p class="note">All three behave correctly. The illusion case had +2.7% realized ROI by luck; negative CLV and an interval that includes zero stopped it from being certified.</p>
+</section>
+
+<section class="panel" style="margin-bottom:14px">
+  <div class="panel-h"><h2>2 · Engine C vs the listed NFL line, 2012–2025 out of sample</h2>{{ mx.badges("observed", "model") }}</div>
+  <div class="table-wrap"><table>
+    <tr><th>Strategy</th><th class="n">Bets</th><th class="n">W-L-P</th><th class="n">ROI</th><th class="n">95% CI</th><th class="n">Mean CLV</th><th class="n">Max DD (u)</th><th class="n">Worst streak</th><th>Gate</th></tr>
+    {% for key, label in [("independent", "Independent model · conservative policy"), ("anchored", "Anchored model · conservative policy"),
+                          ("independent_loose", "Independent model · loose research policy"), ("anchored_loose", "Anchored model · loose research policy")] %}
+    {% set r = s.performance.closing_line[key].summary_2012_2025 %}
+    <tr><td>{{ label }}</td><td class="n">{{ "{:,}".format(r.record.n) }}</td><td class="n">{{ r.record.W }}-{{ r.record.L }}-{{ r.record.P }}</td>
+      <td class="n {{ 'pos' if r.record.roi > 0 else 'neg' }}">{{ r.record.roi | pct }}</td><td class="n">{{ r.roi_ci.roi_lo | pct }} – {{ r.roi_ci.roi_hi | pct }}</td>
+      <td class="n">{{ r.mean_clv | pct(2) }}</td><td class="n">{{ "%.1f"|format(r.max_drawdown) }}</td><td class="n">{{ r.longest_losing_streak }}</td>
+      <td><span class="dec NOBET">{{ r.edge_status }}</span></td></tr>
+    {% endfor %}
+  </table></div>
+  <p class="note">The listed line's book and time are unspecified, so these are hypothetical prices, not verified executable bets. Flat 1-unit stakes.</p>
+</section>
+
+{% set ec = s.performance.engine_c %}
+{% if ec %}
+<div class="grid g2">
+<section class="panel">
+  <div class="panel-h"><h2>3 · Win-probability calibration</h2>{{ mx.badge("model") }}</div>
+  {{ svg.calibration(ec.variants.anchored.calibration_ml, title="Anchored model calibration, 2012–2025") | safe }}
+  <p class="note">Anchored model; dots on the diagonal = well calibrated. Moneyline log loss {{ "%.4f"|format(ec.variants.anchored.pooled_out_of_sample_through_2025.ml.logloss_model) }}
+  vs market {{ "%.4f"|format(ec.variants.anchored.pooled_out_of_sample_through_2025.ml.logloss_market) }}.</p>
+</section>
+<section class="panel">
+  <div class="panel-h"><h2>4 · Spread log loss vs market, by season</h2>{{ mx.badge("model") }}</div>
+  {% set items = [] %}{% for yr, v in ec.variants.independent.by_season.items() %}{% set _ = items.append((yr, v.ats.diff_model_minus_market)) %}{% endfor %}
+  {{ svg.bars_signed(items, title="Independent model minus market, spread log loss") | safe }}
+  <p class="note">Red = worse than the market. The independent model trails the market in all 14 seasons; the anchored model stays within ±0.005 (statistically a tie).</p>
+</section>
+</div>
+{% endif %}
+{% endblock %}

@@ -33,7 +33,10 @@ class SyntheticSourceRejected(ValueError):
     pass
 
 
-def _series(conn, event_id, market, T):
+DEMO_SOURCES = ("demo_sim",)
+
+
+def _series(conn, event_id, market, T, allow_demo=False):
     """book -> [(fetched_at, pe, line, fair_a)] in time order (point-in-time)."""
     a, b = ("home", "away") if market in ("spreads", "h2h") else ("over", "under")
     rows = conn.execute(
@@ -42,7 +45,7 @@ def _series(conn, event_id, market, T):
         (event_id, market, T, T)).fetchall()
     snap = defaultdict(dict)
     for book, side, point, price, fa, source in rows:
-        if not source.startswith(REAL_SOURCES):
+        if not (source.startswith(REAL_SOURCES) or (allow_demo and source.startswith(DEMO_SOURCES))):
             raise SyntheticSourceRejected(f"source {source!r} is not a real market feed")
         snap[(book, fa)][side] = (price, point)
     out = defaultdict(list)
@@ -77,11 +80,15 @@ def _consensus(series, books, t):
     return sum(vals) / len(vals) if vals else None
 
 
-def analyse(conn, event_id, market, T, min_books=3, min_move=0.5, steam_window_s=900, steam_books=3):
-    s = _series(conn, event_id, market, T)
+def analyse(conn, event_id, market, T, min_books=3, min_move=0.5, steam_window_s=900, steam_books=3,
+            allow_demo=False):
+    """allow_demo: accept rows explicitly tagged 'demo_sim' (simulated quotes for UI demonstration).
+    The result is then labelled DEMO. The synthetic sportsbook's own data is never accepted."""
+    s = _series(conn, event_id, market, T, allow_demo)
     side_pos, side_neg = ("home", "away") if market in ("spreads", "h2h") else ("over", "under")
     res = {"event_id": event_id, "market": market, "as_of": T, "status": "INSUFFICIENT EVIDENCE",
-           "suspected_side": None, "score": None, "label": "EXPERIMENTAL heuristic (uncalibrated)",
+           "suspected_side": None, "score": None,
+           "label": ("DEMO DATA - " if allow_demo else "") + "EXPERIMENTAL heuristic (uncalibrated)",
            "supporting": [], "contradicting": [], "books": {}, "detected_at": None,
            "unavailable": ["reverse line movement (needs ticket/handle splits: no licensed source)",
                            "ticket vs money divergence (no licensed source)",

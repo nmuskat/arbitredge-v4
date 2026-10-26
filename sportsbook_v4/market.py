@@ -263,23 +263,37 @@ class MarketV4Source(MarketSource):
     def __init__(self, conn, max_age_seconds=45 * 60, source_id=None):
         self.conn, self.max_age = conn, max_age_seconds
         self.source_id = source_id or f"market_v4:max_age={max_age_seconds}"
+        self._cache = {}
+
+    def _load(self, game_id):
+        """All observations of a game, once: {(book, market): (fetch_times, [(t, mlu, {side: (price, point)})])}."""
+        if game_id not in self._cache:
+            rows = self.conn.execute(
+                "SELECT book, market, side, point, price, fetched_at, market_last_update FROM mkt_quote "
+                "WHERE event_id=? ORDER BY fetched_at", (game_id,)).fetchall()
+            series = {}
+            for book, market, side, point, price, fa, mlu in rows:
+                lst = series.setdefault((book, market), [])
+                if not lst or lst[-1][0] != fa:
+                    lst.append((fa, mlu, {}))
+                lst[-1][2][side] = (price, point)
+            self._cache[game_id] = {k: ([x[0] for x in v], v) for k, v in series.items()}
+        return self._cache[game_id]
 
     def latest_quotes(self, game_id, as_of_epoch):
-        rows = self.conn.execute(
-            """SELECT q.book, q.market, q.side, q.point, q.price, q.fetched_at, q.request_fp
-                 FROM mkt_quote q
-                 JOIN (SELECT book, market, MAX(fetched_at) fa FROM mkt_quote
-                        WHERE event_id=? AND fetched_at<=? AND market_last_update<=? GROUP BY book, market) l
-                   ON l.book=q.book AND l.market=q.market AND l.fa=q.fetched_at
-                WHERE q.event_id=?""", (game_id, as_of_epoch, as_of_epoch, game_id)).fetchall()
         books = {}
-        for book, market, side, point, price, fa, fp in rows:
-            if as_of_epoch - fa > self.max_age:
+        for (book, market), (times, obs) in self._load(game_id).items():
+            i = bisect.bisect_right(times, as_of_epoch) - 1
+            while i >= 0 and obs[i][1] > as_of_epoch:      # book-reported update after T: not visible yet
+                i -= 1
+            if i < 0 or as_of_epoch - obs[i][0] > self.max_age:
                 continue
+            fa, _mlu, sides = obs[i]
             b = books.setdefault(book, {"t": fa, "refs": set()})
             b["t"] = max(b["t"], fa)
             b["refs"].add(f"mkt:{book}:{market}:{int(fa)}")
-            b[(market, side)] = (price, point)
+            for side, v in sides.items():
+                b[(market, side)] = v
         out = []
         for book, b in sorted(books.items()):
             hs = b.get(("spreads", "home"))

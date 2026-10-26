@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% import "_macros.html" as mx %}
+{% block title %}System Health · V4{% endblock %}
+{% block body %}
+{% set h = s.health %}
+<h1>System Health</h1>
+<div class="grid g4" style="margin-bottom:14px">
+  <div class="panel kpi"><div class="v red">OFF</div><div class="l">Odds API feed (no dev server)</div></div>
+  <div class="panel kpi"><div class="v">{{ "{:,}".format(h.odds_api.v4_monthly_cap) }}</div><div class="l">V4 monthly credit cap · V3 floor {{ "{:,}".format(h.odds_api.v3_floor_remaining) }}</div></div>
+  <div class="panel kpi"><div class="v blue">{{ h.git_commit or "—" }}</div><div class="l">code version (git)</div></div>
+  <div class="panel kpi"><div class="v">{{ h.build_seconds }} s</div><div class="l">snapshot build time</div></div>
+</div>
+<div class="grid g2">
+<section class="panel">
+  <h2>Data sources {{ mx.badge("observed") }}</h2>
+  <div class="table-wrap" style="margin-top:10px"><table>
+    <tr><th>Dataset</th><th class="n">Size</th><th>Fetched</th><th>SHA-256</th></tr>
+    {% for d in h.data_sources %}<tr><td>{{ d.file }}</td><td class="n">{{ "%.1f MB"|format(d.bytes / 1e6) }}</td><td class="mono">{{ d.fetched_at | et("%b %-d %-I:%M %p") }}</td><td class="mono">{{ d.sha256 }}</td></tr>{% endfor %}
+  </table></div>
+  {% for d in h.data_sources %}<p class="note"><b>{{ d.file }}</b>: {{ d.licence }}</p>{% endfor %}
+</section>
+<section class="panel">
+  <h2>Engines and versions</h2>
+  <div class="rows" style="margin-top:10px">
+    {% for k, v in h.versions.items() %}<span class="k">{{ k }}</span><span class="mono">{{ v }}</span>{% endfor %}
+    <span class="k">V3 production</span><span>{{ h.v3_production }}</span>
+    <span class="k">Odds API</span><span>{{ h.odds_api.status }}</span>
+    <span class="k">Live calls</span><span>{{ "enabled" if h.odds_api.live_enabled else "disabled (owner switch)" }}</span>
+  </div>
+</section>
+<section class="panel">
+  <h2>Demo market {{ mx.badge("demo") }}</h2>
+  <div class="rows" style="margin-top:10px">
+    <span class="k">Quote rows</span><span class="num">{{ "{:,}".format(h.demo_market.rows) }}</span>
+    <span class="k">Collection gaps</span><span>{{ h.demo_market.gaps | length }} {{ "(none)" if not h.demo_market.gaps }}</span>
+  </div>
+  <p class="note">Freshness rule: a market is closed when no quote is newer than 45 minutes. Games kicking off during an outage are marked "close not observed".</p>
+</section>
+<section class="panel">
+  <h2>Synthetic sportsbook {{ mx.badge("synthetic") }}</h2>
+  <div class="rows" style="margin-top:10px">
+    <span class="k">Bettors</span><span class="num">{{ "{:,}".format(h.synthetic_book.bettors) }}</span>
+    <span class="k">Arrivals · accepted</span><span class="num">{{ "{:,}".format(h.synthetic_book.arrivals) }} · {{ "{:,}".format(h.synthetic_book.wagers) }}</span>
+    {% for k, v in h.synthetic_book.passes.items() %}<span class="k">pass: {{ k }}</span><span class="num">{{ "{:,}".format(v) }}</span>{% endfor %}
+  </div>
+</section>
+{% if h.tests %}
+<section class="panel">
+  <h2>Automated tests (last run)</h2>
+  <div class="rows" style="margin-top:10px">{% for k, v in h.tests.items() %}<span class="k">{{ k }}</span><span class="mono">{{ v }}</span>{% endfor %}</div>
+</section>
+{% endif %}
+</div>
+{% endblock %}

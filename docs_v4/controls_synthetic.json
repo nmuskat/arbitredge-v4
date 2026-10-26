@@ -1,0 +1,35 @@
+{
+  "positive": {
+    "bets": 5293,
+    "edge_status": "SUPPORTED",
+    "roi": 0.07672586434914037,
+    "roi_ci": [
+      0.04797090496882675,
+      0.10508596259210279
+    ],
+    "mean_clv": 0.04028226004200496,
+    "mean_model_ev": 0.08989068150426692,
+    "max_drawdown": 31.240000000000094
+  },
+  "negative": {
+    "bets": 0,
+    "edge_status": "NO BETS",
+    "roi": null,
+    "roi_ci": null,
+    "mean_clv": null,
+    "mean_model_ev": null,
+    "max_drawdown": null
+  },
+  "noisy_consensus": {
+    "bets": 1916,
+    "edge_status": "NOT PROVEN",
+    "roi": 0.02719184027618663,
+    "roi_ci": [
+      -0.016634593221507732,
+      0.07213120131682824
+    ],
+    "mean_clv": -0.011901734263353683,
+    "mean_model_ev": 0.08001276384629057,
+    "max_drawdown": 68.16824127305144
+  }
+}

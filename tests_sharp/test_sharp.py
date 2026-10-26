@@ -133,3 +133,13 @@ def test_recreational_first_mover_is_not_called_sharp():
     texts = r["supporting"] + r["contradicting"]
     assert not any("market-making book(s)" in e and "moved first" in e for e in texts)
     assert any("recreational book(s) draftkings moved first" in e for e in texts)
+
+
+def test_demo_rows_need_explicit_opt_in_and_are_labelled():
+    conn = build(steady([0, 30]), source="demo_sim")
+    with pytest.raises(S.SyntheticSourceRejected):
+        S.analyse(conn, EID, "spreads", T0 + 3600)
+    r = S.analyse(conn, EID, "spreads", T0 + 3600, allow_demo=True)
+    assert r["label"].startswith("DEMO DATA")
+    with pytest.raises(S.SyntheticSourceRejected):          # the synthetic sportsbook is never evidence
+        S.analyse(build(steady([0, 30]), source="synthetic_v4"), EID, "spreads", T0 + 3600, allow_demo=True)
