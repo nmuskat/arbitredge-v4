@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ArbitrEdge — Inferred Book Need</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div id="app">
+
+  <header class="top-bar">
+   <div class="brand">
+  <img src="{{ url_for('static', filename='arbitredgeGLOW.jpeg') }}"
+       alt="ArbitrEdge"
+       class="brand-logo">
+  <span class="brand-name">ArbitrEdge</span>
+  <span class="brand-sub">Inferred Public Pressure &amp; Book Need</span>
+</div>
+    <div class="sport-toggle" id="sport-toggle">
+      <button class="toggle-btn active" data-sport="all">ALL</button>
+      <button class="toggle-btn" data-sport="nfl">NFL</button>
+      <button class="toggle-btn" data-sport="cfb">CFB</button>
+    </div>
+    <div class="refresh-area">
+      <span id="as-of-label" class="as-of-label">—</span>
+      <button id="refresh-btn" class="refresh-btn" title="Refresh now">⟳ Refresh</button>
+    </div>
+  </header>
+
+  <div id="error-banner" class="error-banner hidden"></div>
+
+  <section class="summary-bar" id="summary-bar">
+    <div class="summary-item"><span class="summary-num" id="cnt-upcoming">—</span><span class="summary-label">Upcoming</span></div>
+    <div class="summary-item"><span class="summary-num" id="cnt-evaluable">—</span><span class="summary-label">Evaluable</span></div>
+    <div class="summary-item"><span class="summary-num" id="cnt-not-yet">—</span><span class="summary-label">Not Yet Evaluable</span></div>
+    <div class="summary-item"><span class="summary-num" id="cnt-insufficient">—</span><span class="summary-label">Insufficient Evidence</span></div>
+    <div class="summary-item"><span class="summary-num" id="cnt-noclear">—</span><span class="summary-label">No Clear Need</span></div>
+    <div class="summary-item highlight"><span class="summary-num" id="cnt-directional">—</span><span class="summary-label">Book Need Candidates</span></div>
+    <div class="summary-item clickable" id="cnt-excluded-wrap"><span class="summary-num" id="cnt-excluded">—</span><span class="summary-label">Excluded ▾</span></div>
+  </section>
+
+  <section id="excluded-panel" class="excluded-panel hidden"></section>
+
+  <nav class="filter-bar" id="filter-bar">
+    <button class="filter-btn active" data-filter="ALL">All Games</button>
+    <button class="filter-btn" data-filter="CANDIDATES">Book Need Candidates</button>
+    <button class="filter-btn strong" data-filter="STRONG">Strong</button>
+    <button class="filter-btn moderate" data-filter="MODERATE">Moderate</button>
+    <button class="filter-btn lean" data-filter="LEAN">Lean</button>
+    <button class="filter-btn" data-filter="NO_CLEAR_NEED">No Clear Need</button>
+    <button class="filter-btn" data-filter="INSUFFICIENT_EVIDENCE">Insufficient Evidence</button>
+    <button class="filter-btn" data-filter="NOT_YET_EVALUABLE">Not Yet Evaluable</button>
+  </nav>
+
+  <main id="game-grid" class="game-grid">
+    <div class="loading">Loading slate…</div>
+  </main>
+
+  <footer class="page-footer">
+    Week 1 prior methodology. Need Strength reflects convergence of observable evidence, not a calibrated probability.
+    Prospective persistence is disabled — this view never writes a record.
+  </footer>
+
+</div>
+
+<template id="game-card-template">
+  <article class="game-card">
+    <div class="card-top">
+      <div class="matchup"></div>
+      <div class="kickoff"></div>
+    </div>
+    <div class="card-state-badge"></div>
+    <div class="card-body">
+      <div class="need-side"></div>
+      <div class="need-meta">
+        <span class="need-strength-pill"></span>
+        <span class="data-quality-pill"></span>
+      </div>
+      <div class="mini-stats">
+        <div class="mini-stat"><span class="mini-label">Handle Intensity</span><span class="mini-value hi-val"></span></div>
+        <div class="mini-stat"><span class="mini-label">Side Preference</span><span class="mini-value sp-val"></span></div>
+        <div class="mini-stat"><span class="mini-label">Market Response</span><span class="mini-value regime-val"></span></div>
+        <div class="mini-stat"><span class="mini-label">Segment</span><span class="mini-value segment-val"></span></div>
+      </div>
+      <div class="why-text"></div>
+      <div class="as-of-mini"></div>
+    </div>
+    <div class="card-expanded hidden">
+      <div class="expand-section">
+        <h4>Public Pressure</h4>
+        <div class="expand-grid pressure-detail"></div>
+      </div>
+      <div class="expand-section synthetic-splits-section hidden">
+        <h4>Modeled Betting Splits — 10,000 Bettor Simulation</h4>
+        <div class="expand-grid synthetic-splits-detail"></div>
+      </div>
+      <div class="expand-section">
+        <h4>Market Response — Segments</h4>
+        <div class="segments-detail"></div>
+      </div>
+      <div class="expand-section">
+        <h4>Book Need</h4>
+        <div class="expand-grid need-detail"></div>
+      </div>
+    </div>
+  </article>
+</template>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
