@@ -1,0 +1,267 @@
+{
+ "label": "SYNTHETIC FIXTURES ONLY -- UNVALIDATED PARAMETERS",
+ "params_version": "v4_params_m1_unvalidated",
+ "bettors": 10000,
+ "seeds": 12,
+ "seed0_interval": {
+  "arrivals": 23483,
+  "accepted": 17888,
+  "passes": {
+   "no_open_market": 46,
+   "no_edge": 2362,
+   "low_conviction": 956,
+   "budget_or_minimum": 2057,
+   "shopped_elsewhere": 9,
+   "price_too_expensive": 165
+  }
+ },
+ "archetypes": {
+  "HIGH_STAKES_REC": {
+   "bettors": 421,
+   "tickets": 720,
+   "ticket_share": 0.0403,
+   "handle_share": 0.4806,
+   "stake_median": 1079.0,
+   "stake_p90": 3625.0,
+   "stake_max": 10000.0,
+   "tickets_per_bettor": 1.71
+  },
+  "NARRATIVE_CHASER": {
+   "bettors": 1180,
+   "tickets": 3079,
+   "ticket_share": 0.1721,
+   "handle_share": 0.0493,
+   "stake_median": 24.0,
+   "stake_p90": 86.0,
+   "stake_max": 809.0,
+   "tickets_per_bettor": 2.609
+  },
+  "REC_CASUAL": {
+   "bettors": 5071,
+   "tickets": 10268,
+   "ticket_share": 0.574,
+   "handle_share": 0.1417,
+   "stake_median": 21.0,
+   "stake_p90": 73.0,
+   "stake_max": 901.0,
+   "tickets_per_bettor": 2.025
+  },
+  "SELECTIVE_PRICE_SENSITIVE": {
+   "bettors": 983,
+   "tickets": 315,
+   "ticket_share": 0.0176,
+   "handle_share": 0.0101,
+   "stake_median": 58.0,
+   "stake_p90": 161.0,
+   "stake_max": 442.0,
+   "tickets_per_bettor": 0.32
+  },
+  "SHARP": {
+   "bettors": 284,
+   "tickets": 339,
+   "ticket_share": 0.019,
+   "handle_share": 0.2696,
+   "stake_median": 2046.0,
+   "stake_p90": 3000.0,
+   "stake_max": 3000.0,
+   "tickets_per_bettor": 1.194
+  },
+  "TEAM_LOYAL": {
+   "bettors": 1199,
+   "tickets": 1880,
+   "ticket_share": 0.1051,
+   "handle_share": 0.0253,
+   "stake_median": 21.0,
+   "stake_p90": 70.0,
+   "stake_max": 404.0,
+   "tickets_per_bettor": 1.568
+  },
+  "UNDERDOG_CONTRARIAN": {
+   "bettors": 862,
+   "tickets": 1287,
+   "ticket_share": 0.0719,
+   "handle_share": 0.0234,
+   "stake_median": 26.0,
+   "stake_p90": 104.0,
+   "stake_max": 1065.0,
+   "tickets_per_bettor": 1.493
+  }
+ },
+ "seed0_games": {
+  "g_tnf": {
+   "tickets": 3958,
+   "handle": 498844.0,
+   "home_ticket_pct": 69.28,
+   "home_handle_pct": 55.33,
+   "financial_need_side": "away",
+   "pnl_if_home_covers_all": -22163.91,
+   "pnl_if_away_covers_all": 68861.42,
+   "pnl_swing": 91025.33,
+   "worst_case_pnl": -22163.91,
+   "distinct_accepted_numbers": 6,
+   "closing_favorite": "home"
+  },
+  "g_sun1": {
+   "tickets": 1569,
+   "handle": 280643.0,
+   "home_ticket_pct": 71.26,
+   "home_handle_pct": 86.68,
+   "financial_need_side": "away",
+   "pnl_if_home_covers_all": -183747.18,
+   "pnl_if_away_covers_all": 209260.18,
+   "pnl_swing": 393007.36,
+   "worst_case_pnl": -183747.18,
+   "distinct_accepted_numbers": 4,
+   "closing_favorite": "home"
+  },
+  "g_sun2": {
+   "tickets": 1583,
+   "handle": 319224.0,
+   "home_ticket_pct": 47.63,
+   "home_handle_pct": 79.15,
+   "financial_need_side": "away",
+   "pnl_if_home_covers_all": -163147.91,
+   "pnl_if_away_covers_all": 192168.27,
+   "pnl_swing": 355316.18,
+   "worst_case_pnl": -163147.91,
+   "distinct_accepted_numbers": 6,
+   "closing_favorite": "home"
+  },
+  "g_sun3": {
+   "tickets": 1413,
+   "handle": 163820.0,
+   "home_ticket_pct": 49.61,
+   "home_handle_pct": 51.38,
+   "financial_need_side": "away",
+   "pnl_if_home_covers_all": 3124.18,
+   "pnl_if_away_covers_all": 11768.55,
+   "pnl_swing": 8644.37,
+   "worst_case_pnl": 0.0,
+   "distinct_accepted_numbers": 2,
+   "closing_favorite": null
+  },
+  "g_sun4": {
+   "tickets": 1869,
+   "handle": 272403.0,
+   "home_ticket_pct": 57.62,
+   "home_handle_pct": 59.9,
+   "financial_need_side": "away",
+   "pnl_if_home_covers_all": -33756.94,
+   "pnl_if_away_covers_all": 57685.55,
+   "pnl_swing": 91442.49,
+   "worst_case_pnl": -42945.27,
+   "distinct_accepted_numbers": 4,
+   "closing_favorite": "home"
+  },
+  "g_snf": {
+   "tickets": 3683,
+   "handle": 477404.0,
+   "home_ticket_pct": 56.64,
+   "home_handle_pct": 70.46,
+   "financial_need_side": "away",
+   "pnl_if_home_covers_all": -149869.95,
+   "pnl_if_away_covers_all": 198249.82,
+   "pnl_swing": 348119.77,
+   "worst_case_pnl": -149869.95,
+   "distinct_accepted_numbers": 6,
+   "closing_favorite": "home"
+  },
+  "g_mnf": {
+   "tickets": 3813,
+   "handle": 443031.0,
+   "home_ticket_pct": 41.94,
+   "home_handle_pct": 35.0,
+   "financial_need_side": "home",
+   "pnl_if_home_covers_all": 147036.0,
+   "pnl_if_away_covers_all": -106760.45,
+   "pnl_swing": 253796.45,
+   "worst_case_pnl": -106760.45,
+   "distinct_accepted_numbers": 4,
+   "closing_favorite": "away"
+  }
+ },
+ "need_frequencies": {
+  "nfl_week_fixture": {
+   "home": 21,
+   "away": 63,
+   "tie_or_none": 0,
+   "favorite": 3,
+   "underdog": 69,
+   "pickem": 12,
+   "games_evaluated": 84,
+   "home_need_share": 0.25
+  },
+  "symmetric_fixture": {
+   "home": 47,
+   "away": 49,
+   "tie_or_none": 0,
+   "favorite": 6,
+   "underdog": 66,
+   "pickem": 24,
+   "games_evaluated": 96,
+   "home_need_share": 0.49
+  }
+ },
+ "sensitivity": {
+  "baseline": {
+   "home": 6,
+   "away": 22,
+   "tie_or_none": 0,
+   "favorite": 1,
+   "underdog": 23,
+   "pickem": 4,
+   "games_evaluated": 28,
+   "home_need_share": 0.214
+  },
+  "offer_lag_0s": {
+   "home": 9,
+   "away": 19,
+   "tie_or_none": 0,
+   "favorite": 1,
+   "underdog": 23,
+   "pickem": 4,
+   "games_evaluated": 28,
+   "home_need_share": 0.321
+  },
+  "offer_lag_1h": {
+   "home": 12,
+   "away": 16,
+   "tie_or_none": 0,
+   "favorite": 4,
+   "underdog": 20,
+   "pickem": 4,
+   "games_evaluated": 28,
+   "home_need_share": 0.429
+  },
+  "rec_fav_pref_0": {
+   "home": 7,
+   "away": 21,
+   "tie_or_none": 0,
+   "favorite": 2,
+   "underdog": 22,
+   "pickem": 4,
+   "games_evaluated": 28,
+   "home_need_share": 0.25
+  },
+  "rec_fav_pref_1": {
+   "home": 6,
+   "away": 22,
+   "tie_or_none": 0,
+   "favorite": 0,
+   "underdog": 24,
+   "pickem": 4,
+   "games_evaluated": 28,
+   "home_need_share": 0.214
+  },
+  "hs_risk_half": {
+   "home": 9,
+   "away": 19,
+   "tie_or_none": 0,
+   "favorite": 3,
+   "underdog": 21,
+   "pickem": 4,
+   "games_evaluated": 28,
+   "home_need_share": 0.321
+  }
+ }
+}
