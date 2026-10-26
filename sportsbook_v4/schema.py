@@ -9,7 +9,7 @@ the production `market_snapshots` table unless explicitly allowed, as a
 guard against pointing V4 at the production database by mistake.
 """
 
-SCHEMA_VERSION = 2  # m2: v4_run.rng_key (common random numbers); nothing deployed, no migration
+SCHEMA_VERSION = 3  # m3: totals + moneyline wagers; nothing deployed, no migration
 
 DDL = """
 CREATE TABLE IF NOT EXISTS v4_schema_meta (
@@ -82,11 +82,11 @@ CREATE TABLE IF NOT EXISTS v4_wager (
     arrival_seq         INTEGER NOT NULL CHECK (arrival_seq >= 0),
     canonical_game_id   TEXT NOT NULL,
     sport               TEXT NOT NULL CHECK (sport IN ('nfl','cfb')),
-    market              TEXT NOT NULL CHECK (market = 'spread'),
-    side                TEXT NOT NULL CHECK (side IN ('home','away')),
-    team_id             TEXT NOT NULL,
-    accepted_line       REAL NOT NULL,      -- signed for the side taken
-    accepted_home_spread REAL NOT NULL,
+    market              TEXT NOT NULL CHECK (market IN ('spread','total','moneyline')),
+    side                TEXT NOT NULL CHECK (side IN ('home','away','over','under')),
+    team_id             TEXT NOT NULL,      -- '' for totals
+    accepted_line       REAL NOT NULL,      -- spread: signed for side; total: the total; moneyline: 0
+    accepted_home_spread REAL,              -- spread wagers only
     accepted_price      REAL NOT NULL CHECK (accepted_price >= 100 OR accepted_price <= -100),
     stake               REAL NOT NULL CHECK (stake > 0),
     accepted_at         TEXT NOT NULL,
@@ -96,8 +96,11 @@ CREATE TABLE IF NOT EXISTS v4_wager (
     engine_version      TEXT NOT NULL,
     params_hash         TEXT NOT NULL,
     UNIQUE (run_id, bettor_uid, arrival_seq),
-    CHECK ((side = 'home' AND accepted_line = accepted_home_spread)
-        OR (side = 'away' AND accepted_line = -accepted_home_spread))
+    CHECK ((market = 'spread' AND accepted_home_spread IS NOT NULL
+            AND ((side = 'home' AND accepted_line = accepted_home_spread)
+              OR (side = 'away' AND accepted_line = -accepted_home_spread)))
+        OR (market = 'total' AND side IN ('over','under') AND accepted_home_spread IS NULL AND accepted_line > 0)
+        OR (market = 'moneyline' AND side IN ('home','away') AND accepted_home_spread IS NULL AND accepted_line = 0))
 );
 CREATE INDEX IF NOT EXISTS idx_v4_wager_game_time ON v4_wager (run_id, canonical_game_id, accepted_at);
 CREATE INDEX IF NOT EXISTS idx_v4_wager_bettor ON v4_wager (run_id, bettor_index);

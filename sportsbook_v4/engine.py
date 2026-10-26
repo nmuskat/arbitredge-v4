@@ -40,7 +40,8 @@ from zoneinfo import ZoneInfo
 
 from sportsbook_v4 import ENGINE_VERSION
 from sportsbook_v4.facts import recency_signal
-from sportsbook_v4.market import implied_probability, representative_offer
+from sportsbook_v4.market import (implied_probability, representative_ml_offer, representative_offer,
+                                  representative_total_offer)
 from sportsbook_v4.params import ARCHETYPES, BOOK, TIMING_PROFILES, params_hash
 from sportsbook_v4.population import load_population, team_popularity
 from sportsbook_v4.util import (
@@ -208,9 +209,15 @@ class _MarketView:
         return self._quotes[key]
 
     def offer(self, gid, t, books=None):
+        return self.offers(gid, t, books)["spread"]
+
+    def offers(self, gid, t, books=None):
         key = (gid, t, tuple(books or ()))
         if key not in self._offers:
-            self._offers[key] = representative_offer(self.quotes(gid, t), books=books)
+            q = self.quotes(gid, t)
+            self._offers[key] = {"spread": representative_offer(q, books=books),
+                                 "total": representative_total_offer(q, books=books),
+                                 "moneyline": representative_ml_offer(q, books=books)}
         return self._offers[key]
 
 
@@ -222,23 +229,60 @@ def _side_line(offer_home_spread, side):
     return offer_home_spread if side == "home" else -offer_home_spread
 
 
-def _side_price(offer, side):
+SIDES = {"spread": ("home", "away"), "total": ("over", "under"), "moneyline": ("home", "away")}
+
+
+def _price_of(market, offer, side):
+    if market == "total":
+        return offer["over_price"] if side == "over" else offer["under_price"]
     return offer["home_price"] if side == "home" else offer["away_price"]
 
 
-def _best_alternative(quotes, side):
-    """Best line for `side` across all books, and the cheapest price at that line."""
-    best_line, best_prob = None, None
+def _side_price(offer, side):           # spread offers (kept for callers of the m1 API)
+    return _price_of("spread", offer, side)
+
+
+def _line_of(market, offer, side):
+    if market == "spread":
+        return _side_line(offer["home_spread"], side)
+    if market == "total":
+        return offer["total"]
+    return 0.0
+
+
+def _line_value(market, side, line):
+    """Higher is better for the bettor: more points on a spread, a lower total
+    for an over, a higher total for an under. Moneyline has no line."""
+    if market == "total":
+        return -line if side == "over" else line
+    return line if market == "spread" else 0.0
+
+
+def _quote_offer(market, q):
+    if market == "spread":
+        return None if q.home_spread is None else {"home_spread": float(q.home_spread),
+                                                   "home_price": q.home_price, "away_price": q.away_price}
+    if market == "total":
+        return None if q.total is None else {"total": float(q.total), "over_price": q.over_price,
+                                             "under_price": q.under_price}
+    return None if q.home_ml is None else {"home_price": q.home_ml, "away_price": q.away_ml}
+
+
+def _best_alternative(quotes, side, market="spread"):
+    """Best line value for `side` across all books, and the cheapest price at that line."""
+    best_val, best_prob = None, None
     for q in quotes:
-        price = q.home_price if side == "home" else q.away_price
+        o = _quote_offer(market, q)
+        if o is None:
+            continue
         try:
-            prob = implied_probability(price)
+            prob = implied_probability(_price_of(market, o, side))
         except Exception:
             continue
-        line = _side_line(float(q.home_spread), side)
-        if best_line is None or line > best_line or (line == best_line and prob < best_prob):
-            best_line, best_prob = line, prob
-    return best_line, best_prob
+        val = _line_value(market, side, _line_of(market, o, side))
+        if best_val is None or val > best_val or (val == best_val and prob < best_prob):
+            best_val, best_prob = val, prob
+    return best_val, best_prob
 
 
 def _choose_game(rng, bettor, arch, open_games, t):
@@ -264,6 +308,20 @@ def _choose_game(rng, bettor, arch, open_games, t):
     return open_games[-1]
 
 
+def _choose_market(rng, arch, offers):
+    avail = [(m, arch["market_weights"][m]) for m in ("spread", "total", "moneyline")
+             if offers.get(m) is not None and arch["market_weights"][m] > 0]
+    if not avail:
+        return None
+    target = rng.random() * sum(w for _, w in avail)
+    acc = 0.0
+    for m, w in avail:
+        acc += w
+        if target < acc:
+            return m
+    return avail[-1][0]
+
+
 def _recreational_side(rng, bettor, arch, game, offer, facts):
     tr = bettor["traits"]
     hs = offer["home_spread"]
@@ -285,31 +343,53 @@ def _recreational_side(rng, bettor, arch, game, offer, facts):
     return side, {"u": round(u, 6), "p_home": round(p_home, 6)}
 
 
+def _recreational_pick(rng, bettor, arch, game, market, offer, facts):
+    """Returns (side, p_side, detail) for a non-sharp bettor in the chosen market."""
+    if market == "spread":
+        side, d = _recreational_side(rng, bettor, arch, game, offer, facts)
+        return side, (d["p_home"] if side == "home" else 1.0 - d["p_home"]), d
+    if market == "moneyline":
+        # favourite = higher implied probability; the same antisymmetric utility as spreads
+        ph, pa = implied_probability(offer["home_price"]), implied_probability(offer["away_price"])
+        pseudo = {"home_spread": -1.0 if ph > pa else (1.0 if pa > ph else 0.0)}
+        side, d = _recreational_side(rng, bettor, arch, game, pseudo, facts)
+        return side, (d["p_home"] if side == "home" else 1.0 - d["p_home"]), d
+    u = bettor["traits"].get("over_pref", 0.0)
+    p_over = 1.0 / (1.0 + math.exp(-u))
+    side = "over" if rng.random() < p_over else "under"
+    return side, (p_over if side == "over" else 1.0 - p_over), {"u": round(u, 6), "p_over": round(p_over, 6)}
+
+
+def _max_prob(arch, market):
+    return arch["ml_max_implied_prob"] if market == "moneyline" else arch["max_implied_prob"]
+
+
 def _sharp_pick(arch, open_games, view, ref_t):
-    """Best (game, side) where the book's number is worse than the reference market."""
+    """Best (game, market, side) where the book's number is worse than the reference market."""
     best = None
-    for g, offer in open_games:
-        ref = view.offer(g.canonical_game_id, ref_t, books=BOOK["reference_books"])
-        if ref is None:
-            continue
-        for side in ("home", "away"):
-            price = _side_price(offer, side)
-            ref_price = _side_price(ref, side)
-            if price is None:
+    for g, offers in open_games:
+        refs = view.offers(g.canonical_game_id, ref_t, books=BOOK["reference_books"])
+        for market in ("spread", "total", "moneyline"):
+            offer, ref = offers.get(market), refs.get(market)
+            if offer is None or ref is None:
                 continue
-            pts = _side_line(offer["home_spread"], side) - _side_line(ref["home_spread"], side)
-            prob_edge = 0.0
-            if pts == 0 and ref_price is not None:
-                prob_edge = implied_probability(ref_price) - implied_probability(price)
-            qualifies = pts >= arch["edge_threshold_points"] or (pts == 0 and prob_edge >= arch["edge_threshold_prob"])
-            if not qualifies or implied_probability(price) > arch["max_implied_prob"]:
-                continue
-            units = pts / arch["edge_threshold_points"] + prob_edge / arch["edge_threshold_prob"]
-            key = (units, g.canonical_game_id, side)
-            if best is None or key > best[0]:
-                best = (key, g, offer, side, {"edge_points": pts, "edge_prob": round(prob_edge, 6),
-                                              "edge_units": round(units, 6), "ref_home_spread": ref["home_spread"],
-                                              "ref_books": ref["books"]})
+            for side in SIDES[market]:
+                price, ref_price = _price_of(market, offer, side), _price_of(market, ref, side)
+                if price is None:
+                    continue
+                pts = (_line_value(market, side, _line_of(market, offer, side))
+                       - _line_value(market, side, _line_of(market, ref, side)))
+                prob_edge = 0.0
+                if pts == 0 and ref_price is not None:
+                    prob_edge = implied_probability(ref_price) - implied_probability(price)
+                qualifies = pts >= arch["edge_threshold_points"] or (pts == 0 and prob_edge >= arch["edge_threshold_prob"])
+                if not qualifies or implied_probability(price) > _max_prob(arch, market):
+                    continue
+                units = pts / arch["edge_threshold_points"] + prob_edge / arch["edge_threshold_prob"]
+                key = (units, g.canonical_game_id, market, side)
+                if best is None or key > best[0]:
+                    best = (key, g, market, offer, side, {"edge_points": pts, "edge_prob": round(prob_edge, 6),
+                                                          "edge_units": round(units, 6), "ref_books": ref["books"]})
     return best
 
 
@@ -320,14 +400,15 @@ def _decide(rng_key, bettor, seq, t, games, view, facts_source, staked):
     ref_t = _floor(t, gran)
     offer_t = _floor(t - BOOK["offer_lag_seconds"], gran)
     rng = random.Random(seed_int("v4_decide", rng_key, bettor["bettor_uid"], seq))
+    enabled = set(BOOK["markets"])
 
     open_games = []
     for g in games:
         if t >= to_epoch(g.commence_time):
             continue
-        offer = view.offer(g.canonical_game_id, offer_t)
-        if offer is not None:
-            open_games.append((g, offer))
+        offers = {m: o for m, o in view.offers(g.canonical_game_id, offer_t).items() if m in enabled and o is not None}
+        if offers:
+            open_games.append((g, offers))
     if not open_games:
         return None, "no_open_market"
 
@@ -335,30 +416,33 @@ def _decide(rng_key, bettor, seq, t, games, view, facts_source, staked):
         pick = _sharp_pick(arch, open_games, view, ref_t)
         if pick is None:
             return None, "no_edge"
-        _, game, offer, side, detail = pick
+        _, game, market, offer, side, detail = pick
         stake_mult = 1.0 + arch["edge_stake_multiplier"] * max(0.0, detail["edge_units"] - 1.0)
     else:
-        game, offer = _choose_game(rng, bettor, arch, open_games, t)
+        game, offers = _choose_game(rng, bettor, arch, open_games, t)
+        market = _choose_market(rng, arch, offers)
+        if market is None:
+            return None, "no_open_market"
+        offer = offers[market]
         facts = facts_source.facts(game.canonical_game_id, _floor(t, 3600))
-        side, detail = _recreational_side(rng, bettor, arch, game, offer, facts)
-        p_side = detail["p_home"] if side == "home" else 1.0 - detail["p_home"]
+        side, p_side, detail = _recreational_pick(rng, bettor, arch, game, market, offer, facts)
         if p_side < arch["conviction_threshold"]:
             return None, "low_conviction"
         stake_mult = 1.0
 
-    price = _side_price(offer, side)
+    price = _price_of(market, offer, side)
     if price is None:
         return None, "no_price"
     prob = implied_probability(price)
-    if prob > arch["max_implied_prob"]:
+    if prob > _max_prob(arch, market):
         return None, "price_too_expensive"
-    line = _side_line(offer["home_spread"], side)
+    line = _line_of(market, offer, side)
     if arch["shops"] and not arch["is_sharp"]:
-        alt_line, alt_prob = _best_alternative(view.quotes(game.canonical_game_id, ref_t), side)
-        if alt_line is not None:
-            if alt_line - line >= arch["shop_line_tolerance"]:
+        alt_val, alt_prob = _best_alternative(view.quotes(game.canonical_game_id, ref_t), side, market)
+        if alt_val is not None:
+            if alt_val - _line_value(market, side, line) >= arch["shop_line_tolerance"]:
                 return None, "shopped_elsewhere"
-            if alt_line == line and prob - alt_prob >= arch["shop_prob_tolerance"]:
+            if alt_val == _line_value(market, side, line) and prob - alt_prob >= arch["shop_prob_tolerance"]:
                 return None, "shopped_elsewhere"
 
     raw = bettor["bankroll"] * tr["unit_fraction"] * math.exp(arch["stake_log_sd"] * rng.gauss(0.0, 1.0)) * stake_mult
@@ -371,7 +455,8 @@ def _decide(rng_key, bettor, seq, t, games, view, facts_source, staked):
     detail.update({"p_side_threshold": arch["conviction_threshold"], "raw_stake": round(raw, 4),
                    "limit": limit, "budget_before": round(budget, 4)})
     return {
-        "game": game, "side": side, "line": line, "home_spread": offer["home_spread"], "price": float(price),
+        "game": game, "market": market, "side": side, "line": line,
+        "home_spread": offer["home_spread"] if market == "spread" else None, "price": float(price),
         "stake": stake, "offer_t": offer_t,
         "quote_refs": {"books": offer["books"], "refs": offer["refs"], "book_count": offer["book_count"]},
         "detail": detail,
@@ -429,8 +514,9 @@ def advance(conn, run_id, until, market, facts, data_complete_through, _fail_aft
                 "run_id": run_id, "interval_seq": new_seq, "population_id": run["population_id"],
                 "bettor_index": b["bettor_index"], "bettor_uid": b["bettor_uid"], "archetype": b["archetype"],
                 "arrival_seq": seq, "canonical_game_id": g.canonical_game_id, "sport": slate.sport,
-                "market": "spread", "side": accepted["side"],
-                "team_id": g.home_team_id if accepted["side"] == "home" else g.away_team_id,
+                "market": accepted["market"], "side": accepted["side"],
+                "team_id": (g.home_team_id if accepted["side"] == "home" else
+                            g.away_team_id if accepted["side"] == "away" else ""),
                 "accepted_line": accepted["line"], "accepted_home_spread": accepted["home_spread"],
                 "accepted_price": accepted["price"], "stake": accepted["stake"],
                 "accepted_at": from_epoch(t), "offer_as_of": from_epoch(accepted["offer_t"]),
@@ -447,7 +533,7 @@ def advance(conn, run_id, until, market, facts, data_complete_through, _fail_aft
                 f"INSERT INTO v4_wager ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
                 [w[c] for c in cols],
             )
-        wagers_hash = json_hash([[w["wager_id"], w["side"], w["accepted_line"], w["accepted_price"],
+        wagers_hash = json_hash([[w["wager_id"], w["market"], w["side"], w["accepted_line"], w["accepted_price"],
                                   w["stake"], w["accepted_at"]] for w in wagers])
         conn.execute(
             "INSERT INTO v4_interval (run_id, seq, interval_start, interval_end, arrivals, accepted, passes_json, "

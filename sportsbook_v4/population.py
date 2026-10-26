@@ -60,6 +60,8 @@ def generate_bettor(sport, bettor_index, team_universe):
     if a["loyalty"] > 0 and team_universe:
         loyal_team = _weighted_pick(rng, [(t, team_popularity(t)) for t in sorted(team_universe)])
     traits["loyal_team"] = loyal_team
+    rng_m3 = random.Random(seed_int("v4_bettor_m3", sport, PARAMS_VERSION, bettor_index))
+    traits["over_pref"] = round(_clamped_normal(rng_m3, a["over_pref"]), 6)
     return {
         "bettor_index": bettor_index,
         "bettor_uid": sha256_hex("v4_bettor_uid", sport, PARAMS_VERSION, bettor_index)[:32],

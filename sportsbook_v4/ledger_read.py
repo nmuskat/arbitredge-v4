@@ -12,7 +12,7 @@ import sqlite3
 from sportsbook_v4.settlement import exposure
 from sportsbook_v4.util import from_epoch, to_epoch
 
-_WAGER_COLS = ("wager_id", "bettor_index", "archetype", "canonical_game_id", "side", "team_id",
+_WAGER_COLS = ("wager_id", "bettor_index", "archetype", "canonical_game_id", "market", "side", "team_id",
                "accepted_line", "accepted_home_spread", "accepted_price", "stake", "accepted_at",
                "offer_as_of", "interval_seq")
 
@@ -21,9 +21,13 @@ def open_readonly(db_path):
     return sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
 
 
-def fetch_wagers(conn, run_id, game_id=None, as_of=None):
+def fetch_wagers(conn, run_id, game_id=None, as_of=None, market="spread"):
+    """market: 'spread' (default, the m1/m2 behaviour), 'total', 'moneyline', or None for all."""
     sql = f"SELECT {', '.join(_WAGER_COLS)} FROM v4_wager WHERE run_id=?"
     args = [run_id]
+    if market is not None:
+        sql += " AND market=?"
+        args.append(market)
     if game_id is not None:
         sql += " AND canonical_game_id=?"
         args.append(game_id)

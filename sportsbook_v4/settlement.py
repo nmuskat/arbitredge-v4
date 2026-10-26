@@ -69,7 +69,9 @@ def _stake_stats(stakes):
 
 
 def exposure(wagers, reference_home_spread=None):
-    """Full exposure summary for one game's accepted spread wagers."""
+    """Full exposure summary for one game's accepted SPREAD wagers (other
+    markets are ignored here; see book_need_all for every market)."""
+    wagers = [w for w in wagers if w.get("market", "spread") == "spread"]
     home = [w for w in wagers if w["side"] == "home"]
     away = [w for w in wagers if w["side"] == "away"]
     hh = round(math.fsum(w["stake"] for w in home), 2)
@@ -184,3 +186,141 @@ def _concentration(wagers, handle):
         "bettor_handle_hhi": round(hhi, 6) if hhi is not None else None,
         "distinct_bettors": len(by_bettor),
     }
+
+
+# ----------------------------------------------------------------- m3: totals, moneyline, joint book
+
+def total_result(side, line, total):
+    x = (total - line) if side == "over" else (line - total)
+    return "win" if x > 0 else ("push" if x == 0 else "loss")
+
+
+def moneyline_result(side, home_margin):
+    if home_margin == 0:
+        return "push"          # US books grade a two-way NFL/CFB moneyline tie as no action
+    won = home_margin > 0 if side == "home" else home_margin < 0
+    return "win" if won else "loss"
+
+
+def wager_outcome(w, home_score, away_score):
+    m = w.get("market", "spread")
+    margin = home_score - away_score
+    if m == "spread":
+        return wager_result(w["side"], w["accepted_line"], margin)
+    if m == "total":
+        return total_result(w["side"], w["accepted_line"], home_score + away_score)
+    return moneyline_result(w["side"], margin)
+
+
+def _pnl_of(result, stake, price):
+    if result == "win":
+        return -profit_on_win(stake, price)
+    return float(stake) if result == "loss" else 0.0
+
+
+def book_pnl_scores(wagers, home_score, away_score):
+    return round(math.fsum(_pnl_of(wager_outcome(w, home_score, away_score), w["stake"], w["accepted_price"])
+                           for w in wagers), 2)
+
+
+def total_exposure(wagers):
+    ws = [w for w in wagers if w.get("market") == "total"]
+    over = [w for w in ws if w["side"] == "over"]
+    oh, uh = math.fsum(w["stake"] for w in over), math.fsum(w["stake"] for w in ws if w["side"] == "under")
+    out = {"tickets": len(ws), "over_tickets": len(over), "handle": round(oh + uh, 2),
+           "over_handle": round(oh, 2), "under_handle": round(uh, 2)}
+    if not ws:
+        out.update(status="NO_WAGERS", financial_need_side=None)
+        return out
+    lines = sorted({float(w["accepted_line"]) for w in ws})
+    grid = list(range(max(0, math.floor(lines[0]) - 1), math.ceil(lines[-1]) + 2))
+
+    def pnl_at(t):
+        return round(math.fsum(_pnl_of(total_result(w["side"], w["accepted_line"], t), w["stake"],
+                                       w["accepted_price"]) for w in ws), 2)
+    curve = [(t, pnl_at(t)) for t in grid]
+    p_over, p_under = pnl_at(lines[-1] + CLEAN_MARGIN_PAD), pnl_at(-CLEAN_MARGIN_PAD)
+    lo_clean, hi_clean = min(p_over, p_under), max(p_over, p_under)
+    out.update({
+        "status": "TIE" if p_over == p_under else "DIRECTIONAL",
+        "financial_need_side": None if p_over == p_under else ("over" if p_over > p_under else "under"),
+        "pnl_if_over_all": p_over, "pnl_if_under_all": p_under, "pnl_swing": round(abs(p_over - p_under), 2),
+        "pnl_by_total": curve,
+        "push_totals": [t for t in lines if float(t).is_integer()],
+        "middle_risk_totals": [t for t, p in curve if p < lo_clean],
+        "middle_benefit_totals": [t for t, p in curve if p > hi_clean],
+    })
+    return out
+
+
+def moneyline_exposure(wagers):
+    ws = [w for w in wagers if w.get("market") == "moneyline"]
+    home = [w for w in ws if w["side"] == "home"]
+    hh, ah = math.fsum(w["stake"] for w in home), math.fsum(w["stake"] for w in ws if w["side"] == "away")
+    out = {"tickets": len(ws), "home_tickets": len(home), "handle": round(hh + ah, 2),
+           "home_handle": round(hh, 2), "away_handle": round(ah, 2)}
+    if not ws:
+        out.update(status="NO_WAGERS", financial_need_side=None)
+        return out
+
+    def pnl(margin):
+        return round(math.fsum(_pnl_of(moneyline_result(w["side"], margin), w["stake"], w["accepted_price"])
+                               for w in ws), 2)
+    ph, pa = pnl(1), pnl(-1)
+    out.update({"status": "TIE" if ph == pa else "DIRECTIONAL",
+                "financial_need_side": None if ph == pa else ("home" if ph > pa else "away"),
+                "pnl_if_home_wins": ph, "pnl_if_away_wins": pa, "pnl_if_tie": pnl(0),
+                "pnl_swing": round(abs(ph - pa), 2)})
+    return out
+
+
+def _grouped(wagers):
+    g = {}
+    for w in wagers:
+        k = (w.get("market", "spread"), w["side"], float(w["accepted_line"]), float(w["accepted_price"]))
+        g[k] = g.get(k, 0.0) + float(w["stake"])
+    return [{"market": m, "side": sd, "accepted_line": l, "accepted_price": pr, "stake": st}
+            for (m, sd, l, pr), st in g.items()]
+
+
+def joint_book(wagers, max_score=70, ref_home_spread=None, ref_total=None):
+    """Book P&L over every final score 0..max_score per team (all markets
+    together). Exact for those scores; no score distribution is assumed.
+    Optionally partitions scores by reference spread/total into the four
+    'relevant outcome' regions and reports min/max P&L in each."""
+    gw = _grouped(wagers)
+    if not gw:
+        return {"status": "NO_WAGERS"}
+    best = worst = None
+    regions = {}
+    for h in range(max_score + 1):
+        for a in range(max_score + 1):
+            p = book_pnl_scores(gw, h, a)
+            if best is None or p > best[0]:
+                best = (p, h, a)
+            if worst is None or p < worst[0]:
+                worst = (p, h, a)
+            if ref_home_spread is not None and ref_total is not None:
+                sx = (h - a) + ref_home_spread
+                tx = (h + a) - ref_total
+                if sx == 0 or tx == 0:
+                    continue
+                key = ("home_covers" if sx > 0 else "away_covers") + "+" + ("over" if tx > 0 else "under")
+                r = regions.setdefault(key, [p, p])
+                r[0], r[1] = min(r[0], p), max(r[1], p)
+    out = {"status": "OK", "best_case": {"pnl": best[0], "home_score": best[1], "away_score": best[2]},
+           "worst_case": {"pnl": worst[0], "home_score": worst[1], "away_score": worst[2]},
+           "score_range": [0, max_score]}
+    if regions:
+        out["regions"] = {k: {"min_pnl": v[0], "max_pnl": v[1]} for k, v in sorted(regions.items())}
+        out["reference"] = {"home_spread": ref_home_spread, "total": ref_total}
+    return out
+
+
+def book_need_all(wagers, ref_home_spread=None, ref_total=None, max_score=70):
+    """ArbitrEdge Need for every market plus the joint book. A Need is the
+    outcome most favourable to the synthetic book's P&L: a liability fact,
+    NOT a prediction or a betting recommendation."""
+    return {"spread": exposure(wagers, ref_home_spread), "total": total_exposure(wagers),
+            "moneyline": moneyline_exposure(wagers),
+            "joint": joint_book(wagers, max_score, ref_home_spread, ref_total)}

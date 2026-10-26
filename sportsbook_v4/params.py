@@ -25,7 +25,7 @@ from contextlib import contextmanager
 
 from sportsbook_v4.util import json_hash
 
-PARAMS_VERSION = "v4_params_m1_unvalidated"
+PARAMS_VERSION = "v4_params_m3_unvalidated"  # m3: totals + moneyline markets, over_pref trait
 
 # Trait spec: (mean, sd, lo, hi) -> normal draw clamped to [lo, hi].
 # Bankroll: lognormal with the given median and log-sd.
@@ -68,6 +68,10 @@ ARCHETYPES = {
         "timing": "weekend_late",
         "kickoff_proximity_hours": 36.0,
         "primetime_weight": 0.8, "national_tv_weight": 0.2,
+        # UNVALIDATED: market mix and over/under lean (no observed customer data)
+        "market_weights": {"spread": 0.55, "total": 0.30, "moneyline": 0.15},
+        "over_pref": (0.30, 0.30, -0.5, 1.0),
+        "ml_max_implied_prob": 0.80,
         "is_sharp": False,
     },
     "TEAM_LOYAL": {
@@ -89,6 +93,10 @@ ARCHETYPES = {
         "timing": "weekend_late",
         "kickoff_proximity_hours": 48.0,
         "primetime_weight": 0.5, "national_tv_weight": 0.2,
+        # UNVALIDATED: market mix and over/under lean (no observed customer data)
+        "market_weights": {"spread": 0.50, "total": 0.15, "moneyline": 0.35},
+        "over_pref": (0.10, 0.30, -0.5, 1.0),
+        "ml_max_implied_prob": 0.85,
         "is_sharp": False,
     },
     "UNDERDOG_CONTRARIAN": {
@@ -109,6 +117,10 @@ ARCHETYPES = {
         "timing": "steady",
         "kickoff_proximity_hours": 60.0,
         "primetime_weight": 0.3, "national_tv_weight": 0.1,
+        # UNVALIDATED: market mix and over/under lean (no observed customer data)
+        "market_weights": {"spread": 0.50, "total": 0.15, "moneyline": 0.35},
+        "over_pref": (-0.20, 0.30, -1.0, 0.5),
+        "ml_max_implied_prob": 0.60,
         "is_sharp": False,
     },
     "NARRATIVE_CHASER": {
@@ -129,6 +141,10 @@ ARCHETYPES = {
         "timing": "weekend_late",
         "kickoff_proximity_hours": 30.0,
         "primetime_weight": 1.5, "national_tv_weight": 0.4,
+        # UNVALIDATED: market mix and over/under lean (no observed customer data)
+        "market_weights": {"spread": 0.50, "total": 0.35, "moneyline": 0.15},
+        "over_pref": (0.40, 0.30, -0.5, 1.2),
+        "ml_max_implied_prob": 0.80,
         "is_sharp": False,
     },
     "HIGH_STAKES_REC": {
@@ -150,6 +166,10 @@ ARCHETYPES = {
         "timing": "weekend_late",
         "kickoff_proximity_hours": 40.0,
         "primetime_weight": 1.0, "national_tv_weight": 0.3,
+        # UNVALIDATED: market mix and over/under lean (no observed customer data)
+        "market_weights": {"spread": 0.55, "total": 0.25, "moneyline": 0.20},
+        "over_pref": (0.20, 0.30, -0.5, 1.0),
+        "ml_max_implied_prob": 0.85,
         "is_sharp": False,
     },
     "SELECTIVE_PRICE_SENSITIVE": {
@@ -172,6 +192,10 @@ ARCHETYPES = {
         "timing": "steady",
         "kickoff_proximity_hours": 96.0,
         "primetime_weight": 0.0, "national_tv_weight": 0.0,
+        # UNVALIDATED: market mix and over/under lean (no observed customer data)
+        "market_weights": {"spread": 0.60, "total": 0.30, "moneyline": 0.10},
+        "over_pref": (0.0, 0.30, -0.8, 0.8),
+        "ml_max_implied_prob": 0.70,
         "is_sharp": False,
     },
     "SHARP": {
@@ -197,6 +221,10 @@ ARCHETYPES = {
         "timing": "early_week",
         "kickoff_proximity_hours": 400.0,
         "primetime_weight": 0.0, "national_tv_weight": 0.0,
+        # UNVALIDATED: market mix and over/under lean (no observed customer data)
+        "market_weights": {"spread": 0.50, "total": 0.30, "moneyline": 0.20},
+        "over_pref": (0.0, 0.0, 0.0, 0.0),
+        "ml_max_implied_prob": 0.75,
         "is_sharp": True,
     },
 }
@@ -213,6 +241,7 @@ BOOK = {
     # these books if any quote exists at time t, else across all books.
     "reference_books": ["lowvig", "betonlineag"],
     "decision_time_granularity_seconds": 60,
+    "markets": ["spread", "total", "moneyline"],
 }
 
 TEAM_POPULARITY_PRIOR = {
@@ -243,6 +272,12 @@ def validate_params(archetypes=None, book=None):
             raise ValueError(f"{name}: unknown timing profile {a['timing']}")
         if not (0.5 < a["max_implied_prob"] < 1.0):
             raise ValueError(f"{name}: max_implied_prob out of range")
+        mw = a["market_weights"]
+        if set(mw) != {"spread", "total", "moneyline"} or min(mw.values()) < 0 or sum(mw.values()) <= 0:
+            raise ValueError(f"{name}: market_weights must cover spread/total/moneyline, non-negative")
+        _check_trait(f"{name}.over_pref", a["over_pref"])
+        if not (0.5 < a["ml_max_implied_prob"] < 1.0):
+            raise ValueError(f"{name}: ml_max_implied_prob out of range")
     if book["min_wager"] <= 0:
         raise ValueError("min_wager must be positive")
     return True

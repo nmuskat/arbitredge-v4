@@ -50,6 +50,11 @@ class Quote:
     home_price: float | None
     away_price: float | None
     ref: str  # snapshot id / fixture id -- provenance only
+    total: float | None = None
+    over_price: float | None = None
+    under_price: float | None = None
+    home_ml: float | None = None
+    away_ml: float | None = None
 
 
 def _lower_median(sorted_values):
@@ -96,6 +101,56 @@ def representative_offer(quotes, books=None):
         "refs": [q.ref for q in matching],
         "book_count": len(usable),
     }
+
+
+def representative_total_offer(quotes, books=None):
+    """Same construction as representative_offer, for the game total."""
+    usable = [q for q in quotes if q.total is not None]
+    if books:
+        subset = [q for q in usable if q.book in set(books)]
+        if subset:
+            usable = subset
+    if not usable:
+        return None
+    rep = _lower_median(sorted(float(q.total) for q in usable))
+    matching = sorted((q for q in usable if float(q.total) == rep), key=lambda q: q.book)
+
+    def price(side):
+        c = []
+        for q in matching:
+            pr = q.over_price if side == "over" else q.under_price
+            try:
+                c.append((implied_probability(pr), q.book, pr))
+            except InvalidPrice:
+                continue
+        return _lower_median(sorted(c))[2] if c else None
+
+    return {"total": rep, "over_price": price("over"), "under_price": price("under"),
+            "books": [q.book for q in matching], "refs": [q.ref for q in matching], "book_count": len(usable)}
+
+
+def representative_ml_offer(quotes, books=None):
+    usable = [q for q in quotes if q.home_ml is not None and q.away_ml is not None]
+    if books:
+        subset = [q for q in usable if q.book in set(books)]
+        if subset:
+            usable = subset
+    if not usable:
+        return None
+
+    def price(side):
+        c = []
+        for q in usable:
+            pr = q.home_ml if side == "home" else q.away_ml
+            try:
+                c.append((implied_probability(pr), q.book, pr))
+            except InvalidPrice:
+                continue
+        return _lower_median(sorted(c))[2] if c else None
+
+    usable = sorted(usable, key=lambda q: q.book)
+    return {"home_price": price("home"), "away_price": price("away"),
+            "books": [q.book for q in usable], "refs": [q.ref for q in usable], "book_count": len(usable)}
 
 
 class MarketSource:
@@ -179,8 +234,67 @@ class SnapshotMarket(MarketSource):
         self.conn.close()
 
 
-def quote(book, ts, home_spread, home_price=-110, away_price=-110, ref=None):
+def quote(book, ts, home_spread, home_price=-110, away_price=-110, ref=None,
+          total=None, over_price=-110, under_price=-110, home_ml=None, away_ml=None):
     """Fixture convenience constructor."""
-    return Quote(book=book, effective_epoch=to_epoch(ts), home_spread=float(home_spread),
+    return Quote(book=book, effective_epoch=to_epoch(ts),
+                 home_spread=None if home_spread is None else float(home_spread),
                  home_price=home_price, away_price=away_price,
-                 ref=ref or f"fx:{book}:{parse_ts(ts).isoformat()}")
+                 ref=ref or f"fx:{book}:{parse_ts(ts).isoformat()}",
+                 total=None if total is None else float(total),
+                 over_price=over_price if total is not None else None,
+                 under_price=under_price if total is not None else None,
+                 home_ml=home_ml, away_ml=away_ml)
+
+
+class MarketV4Source(MarketSource):
+    """
+    Adapter over the V4 market store (market_v4.store / mkt_quote): spreads,
+    totals and moneylines from real provider snapshots.
+
+    FRESHNESS: latest_quotes(game, t) returns, per book, the latest
+    observation at or before t ONLY if it was fetched within max_age_seconds
+    of t. During a provider outage every quote goes stale, so the synthetic
+    book has no open market and accepts no wagers -- simulated customers
+    never bet into prices nobody could see.
+    game ids are the provider event ids used in mkt_quote.
+    """
+
+    def __init__(self, conn, max_age_seconds=45 * 60, source_id=None):
+        self.conn, self.max_age = conn, max_age_seconds
+        self.source_id = source_id or f"market_v4:max_age={max_age_seconds}"
+
+    def latest_quotes(self, game_id, as_of_epoch):
+        rows = self.conn.execute(
+            """SELECT q.book, q.market, q.side, q.point, q.price, q.fetched_at, q.request_fp
+                 FROM mkt_quote q
+                 JOIN (SELECT book, market, MAX(fetched_at) fa FROM mkt_quote
+                        WHERE event_id=? AND fetched_at<=? AND market_last_update<=? GROUP BY book, market) l
+                   ON l.book=q.book AND l.market=q.market AND l.fa=q.fetched_at
+                WHERE q.event_id=?""", (game_id, as_of_epoch, as_of_epoch, game_id)).fetchall()
+        books = {}
+        for book, market, side, point, price, fa, fp in rows:
+            if as_of_epoch - fa > self.max_age:
+                continue
+            b = books.setdefault(book, {"t": fa, "refs": set()})
+            b["t"] = max(b["t"], fa)
+            b["refs"].add(f"mkt:{book}:{market}:{int(fa)}")
+            b[(market, side)] = (price, point)
+        out = []
+        for book, b in sorted(books.items()):
+            hs = b.get(("spreads", "home"))
+            aw = b.get(("spreads", "away"))
+            ov, un = b.get(("totals", "over")), b.get(("totals", "under"))
+            hm, am = b.get(("h2h", "home")), b.get(("h2h", "away"))
+            out.append(Quote(book=book, effective_epoch=int(b["t"]),
+                             home_spread=hs[1] if hs and aw else None,
+                             home_price=hs[0] if hs and aw else None, away_price=aw[0] if hs and aw else None,
+                             ref="|".join(sorted(b["refs"])),
+                             total=ov[1] if ov and un else None,
+                             over_price=ov[0] if ov and un else None, under_price=un[0] if ov and un else None,
+                             home_ml=hm[0] if hm and am else None, away_ml=am[0] if hm and am else None))
+        return out
+
+    def first_quote_epoch(self, game_id):
+        r = self.conn.execute("SELECT MIN(fetched_at) FROM mkt_quote WHERE event_id=?", (game_id,)).fetchone()
+        return None if not r or r[0] is None else int(r[0])
