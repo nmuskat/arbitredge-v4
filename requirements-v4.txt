@@ -1,0 +1,11 @@
+# ArbitrEdge V4 -- pinned from the build environment (2026-10-26). Python 3.12+.
+fastapi==0.162.0
+httpx==0.28.1
+Jinja2==3.1.6
+numpy==2.5.4
+pandas==3.1.0
+pyarrow==26.0.0
+pytest==9.1.1
+scipy==1.18.1
+starlette==1.10.0
+uvicorn==0.54.0
