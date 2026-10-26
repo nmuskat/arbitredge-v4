@@ -1,0 +1,9 @@
+[Unit]
+Description=ArbitrEdge V4 dev nightly backup (PostgreSQL dump + repo bundle)
+
+[Service]
+Type=oneshot
+User=arbitredge-dev
+Nice=19
+IOSchedulingClass=idle
+ExecStart=/usr/local/bin/arbitredge-v4-backup

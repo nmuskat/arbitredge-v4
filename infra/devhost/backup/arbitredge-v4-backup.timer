@@ -1,0 +1,9 @@
+[Unit]
+Description=Nightly ArbitrEdge V4 dev backup
+
+[Timer]
+OnCalendar=*-*-* 09:17:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target

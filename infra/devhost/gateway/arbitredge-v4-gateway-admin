@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Owner-only (root, 0700) administration of the V4 Odds API gateway.
+#   arbitredge-v4-gateway-admin status
+#   arbitredge-v4-gateway-admin test-key        # one /v4/sports call, documented cost 0 credits
+#   arbitredge-v4-gateway-admin enable-live | disable-live
+#   arbitredge-v4-gateway-admin set <v4_monthly_cap|v4_daily_cap|v3_floor_remaining|max_single_request> <int>
+#   arbitredge-v4-gateway-admin reset-breaker
+set -euo pipefail
+GW=/opt/arbitredge-v4-gateway/odds_gateway.py
+CFG=/etc/arbitredge-v4/gateway.json
+KEY=/etc/arbitredge-v4/odds_api_key
+[[ $EUID -eq 0 ]] || { echo "root only" >&2; exit 2; }
+as_gw() { runuser -u arbitredge-gw -- env GATEWAY_CONFIG="$CFG" python3 -I "$GW" "$@"; }
+edit_cfg() {
+  python3 -I - "$CFG" "$@" <<'PY'
+import json, os, sys
+path, key, val = sys.argv[1], sys.argv[2], sys.argv[3]
+allowed = {"live_enabled": lambda v: v == "true",
+           "v4_monthly_cap": int, "v4_daily_cap": int, "v3_floor_remaining": int, "max_single_request": int}
+if key not in allowed:
+    sys.exit(f"not an editable setting: {key}")
+cfg = json.load(open(path))
+cfg[key] = allowed[key](val)
+if key == "v4_monthly_cap" and cfg[key] > 20000:
+    sys.exit("cap cannot exceed the 20,000 subscription")
+tmp = path + ".new"
+with open(tmp, "w") as f:
+    json.dump(cfg, f, indent=2)
+st = os.stat(path)
+os.chown(tmp, st.st_uid, st.st_gid); os.chmod(tmp, 0o640); os.replace(tmp, path)
+print(f"{key} = {cfg[key]}")
+PY
+}
+case "${1:-}" in
+  status)        as_gw status
+                 [[ -f $KEY ]] && echo "key file: installed ($KEY, root-only)" || echo "key file: NOT installed"
+                 systemctl is-active -q arbitredge-v4-gateway 2>/dev/null && echo "service: active" || echo "service: not running" ;;
+  reset-breaker) as_gw reset-breaker ;;
+  test-key)      [[ -f $KEY ]] || { echo "no key installed at $KEY" >&2; exit 1; }
+                 as_gw probe < "$KEY" ;;
+  enable-live)   edit_cfg live_enabled true;  systemctl restart arbitredge-v4-gateway ;;
+  disable-live)  edit_cfg live_enabled false; systemctl restart arbitredge-v4-gateway ;;
+  set)           edit_cfg "$2" "$3"; systemctl restart arbitredge-v4-gateway ;;
+  *) sed -n '2,8p' "$0"; exit 64 ;;
+esac

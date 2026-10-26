@@ -1,0 +1,16 @@
+# Installed into /srv/arbitredge_v4/venv by devhost_bootstrap.sh; the exact
+# resolved versions are frozen to /srv/arbitredge_v4/logs/requirements.lock.txt
+# on first install and committed to the repo for reproducibility.
+pytest
+numpy
+scipy
+pandas
+statsmodels
+scikit-learn
+duckdb
+pyarrow
+psycopg[binary]
+fastapi
+uvicorn
+jinja2
+httpx

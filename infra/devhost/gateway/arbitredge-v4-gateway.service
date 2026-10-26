@@ -1,0 +1,42 @@
+[Unit]
+Description=ArbitrEdge V4 Odds API gateway (holds the key; enforces the credit budget)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=arbitredge-gw
+Group=arbitredge-gw
+# Socket access is granted through this separate group; the dev user is a member of
+# arbitredge-gwsock ONLY, never of arbitredge-gw (which would expose the ledger).
+SupplementaryGroups=arbitredge-gwsock
+Environment=GATEWAY_CONFIG=/etc/arbitredge-v4/gateway.json
+# Key is root:root 0600 on disk; systemd hands a private copy to this service only.
+LoadCredential=odds_key:/etc/arbitredge-v4/odds_api_key
+ExecStart=/usr/bin/python3 -I /opt/arbitredge-v4-gateway/odds_gateway.py
+RuntimeDirectory=arbitredge-v4-gateway
+RuntimeDirectoryMode=0755
+StateDirectory=arbitredge-v4-gateway
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=10
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

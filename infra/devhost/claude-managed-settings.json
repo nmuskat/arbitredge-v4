@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "disableBypassPermissionsMode": "disable",
+    "allow": [
+      "Bash(/srv/arbitredge_v4/venv/bin/python *)",
+      "Bash(/srv/arbitredge_v4/venv/bin/pytest *)",
+      "Bash(/srv/arbitredge_v4/venv/bin/pip install *)",
+      "Bash(python *)",
+      "Bash(pytest *)",
+      "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)", "Bash(git show*)",
+      "Bash(git add *)", "Bash(git commit *)", "Bash(git branch*)", "Bash(git switch *)",
+      "Bash(git stash*)", "Bash(git tag *)", "Bash(git bundle *)",
+      "Bash(ls*)", "Bash(cat *)", "Bash(head *)", "Bash(tail *)", "Bash(wc *)", "Bash(grep *)",
+      "Bash(find *)", "Bash(du *)", "Bash(df *)", "Bash(free*)", "Bash(sqlite3 *)", "Bash(psql *)",
+      "Bash(mkdir *)", "Bash(cp *)", "Bash(mv *)", "Bash(touch *)", "Bash(tmux *)",
+      "Bash(systemctl --user *)", "Bash(journalctl --user *)"
+    ],
+    "ask": [
+      "Bash(rm -rf *)", "Bash(rm -r *)",
+      "Bash(git push*)", "Bash(git reset --hard*)", "Bash(git clean*)", "Bash(git rebase*)",
+      "Bash(git filter-branch*)", "Bash(git remote *)",
+      "Bash(curl *)", "Bash(wget *)", "Bash(ssh *)", "Bash(scp *)", "Bash(rsync *)", "Bash(nc *)",
+      "Bash(dropdb *)", "Bash(*DROP DATABASE*)", "Bash(*DROP SCHEMA*)"
+    ],
+    "deny": [
+      "Bash(sudo *)", "Bash(su *)", "Bash(su)", "Bash(pkexec *)",
+      "Bash(*143.244.160.20*)",
+      "Bash(*odds_api_key*)", "Bash(*apiKey=*)", "Bash(*api.the-odds-api.com*)",
+      "WebFetch(domain:api.the-odds-api.com)",
+      "Read(//etc/arbitredge-v4/**)",
+      "Read(//var/lib/arbitredge-v4-gateway/**)",
+      "Edit(//etc/**)", "Edit(//opt/**)", "Edit(//usr/**)",
+      "Read(//root/**)", "Read(//etc/shadow)"
+    ]
+  }
+}

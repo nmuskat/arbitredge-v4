@@ -1,0 +1,15 @@
+{
+  "base_url": "https://api.the-odds-api.com",
+  "socket_path": "/run/arbitredge-v4-gateway/gateway.sock",
+  "socket_group": "arbitredge-gwsock",
+  "state_dir": "/var/lib/arbitredge-v4-gateway",
+  "live_enabled": false,
+  "allowed_sports": ["americanfootball_nfl", "americanfootball_ncaaf"],
+  "v4_monthly_cap": 6000,
+  "v4_daily_cap": 400,
+  "v3_floor_remaining": 2000,
+  "max_single_request": 200,
+  "max_cache_ttl_s": 86400,
+  "rate_limit_cooldown_s": 60,
+  "upstream_timeout_s": 20
+}
