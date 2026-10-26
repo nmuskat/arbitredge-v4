@@ -1,0 +1,36 @@
+# ArbitrEdge V4 -- ONE minimal live request to verify the key: GET /v4/sports
+# (documented cost: 0 credits). Manual only (Actions tab -> odds-verify -> Run workflow).
+name: odds-verify
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v4-odds-state
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Load ledger and state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/state_load.sh
+      - name: Verify key (0-credit request)
+        env:
+          V4_LIVE: "on"             # this manual job is itself the owner's approval for ONE free request
+          V4_MONTHLY_CAP: ${{ vars.V4_MONTHLY_CAP }}
+          ODDS_KEY_ENV: ODDS_API_KEY
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python3 -m collect_v4.actions_run --state-in state --out out --probe
+      - name: Save ledger
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/state_save.sh

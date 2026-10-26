@@ -5,14 +5,14 @@ The owner (nmuskat) has no coding background. You do the engineering, testing an
 ## Hard rules
 
 1. **V3 production is off-limits.** Never connect to 143.244.160.20, `/opt/arbitredge`, or its database, services or credentials. V3 code in this repository is reference only.
-2. **The Odds API key:**
-   - It lives only in the macOS Keychain (service `arbitredge-v4-odds-api`) and is read only by the gateway (`infra/devhost/gateway/odds_gateway.py`).
-   - Never read, print, log, copy or commit it. Never call the Odds API directly.
-   - All requests go through `edge_v4.odds_client.OddsClient` (socket `~/ArbitrEdgeV4/run/gateway.sock`).
-   - On a single-user Mac these are policy guardrails, not OS isolation: follow them strictly.
+2. **The Odds API key** lives only in the GitHub Actions secret `ODDS_API_KEY`. The Mac/Keychain path is retired: the owner's Mac cannot run macOS 13.
+   - Only `.github/workflows/odds-collect.yml` and `odds-verify.yml` may reference it, through `collect_v4/actions_run.py` and the credit gate.
+   - Never read, print, log or commit it. Never call the Odds API outside the gate.
+   - Never add a workflow, step or trigger that exposes it (pull_request triggers, third-party actions, debug printing).
+   - **Never start `odds-verify` or `odds-collect` yourself, and never change the `V4_LIVE` variable.** Live activation is the owner's decision.
 3. **Credits** (shared 20,000/month subscription with V3):
-   - The owner approved a V4 cap of 6,000/month, starting with a test budget of 500/month (150/day, 30 per request) set by `mac/bootstrap.sh`.
-   - Raise caps only with `mac/set_budget.sh`, never above 6,000, and only after the test phase shows provider-reported costs matching estimates (no `cost mismatch` in `~/ArbitrEdgeV4/data/collector_log.jsonl`) and V3's floor is untouched.
+   - The owner approved a V4 cap of 6,000/month, starting with a test budget of 500/month (60/day, 10 per request).
+   - The caps come from repository variables (`V4_MONTHLY_CAP`, default 500; the code hard-limits it to 6,000). Recommend raising it only after the test phase shows provider-reported costs matching estimates and V3's floor untouched. The owner changes the variable.
    - Report every budget change to the owner. Never weaken the gateway's caps, V3 floor or breaker.
 4. **No paid services or subscriptions.** No new hosting.
 5. **Never fabricate data.** Missing quotes, closes or results are reported as unavailable. Demo/simulated data is always labelled.
@@ -20,21 +20,19 @@ The owner (nmuskat) has no coding background. You do the engineering, testing an
 7. **Tests:** never claim a test passed unless it ran; report exact counts. Run `.venv/bin/python -m pytest -q tests_v4 tests_edge tests_market tests_sharp tests_sims tests_web tests_collect` before every push.
 8. **Commit** to branch `v4-dev` and push to `origin` (github.com/nmuskat/arbitredge-v4). Never force-push. Never commit anything from `~/ArbitrEdgeV4/`, `.venv/` or `data/`.
 
-## Mac layout
+## Live collection layout (GitHub Actions; see docs_v4/GITHUB_ACTIONS_PLAN.md)
 
 | What | Where |
 |---|---|
-| Code | this repository |
-| Python | `.venv/` (made by `mac/bootstrap.sh`) |
-| Live market data | `~/ArbitrEdgeV4/data/market_live.db` (append-only quote store) |
-| Collector state and log | `~/ArbitrEdgeV4/data/collector_state.json`, `collector_log.jsonl` |
-| Gateway config, ledger, log | `~/ArbitrEdgeV4/gateway/`, `~/ArbitrEdgeV4/logs/gateway.log` |
-| Background agents | `~/Library/LaunchAgents/com.arbitredge.v4.{gateway,collector}.plist` |
+| Collection | `.github/workflows/odds-collect.yml` → `collect_v4/actions_run.py` (schedule in `collect_v4/cron_plan.py`, policy in `collect_v4/schedule_policy.py`) |
+| Odds data | release assets `odds-data-YYYY-Www/quotes_*.jsonl.gz` (one per run, never modified) |
+| Credit ledger and state | release `v4-state`: `ledger.jsonl`, `collector_state.json` |
+| Daily analysis | `.github/workflows/odds-analyze.yml` → `analysis_v4/actions_analyze.py` → `v4-state/line_shop_latest.json` |
 
 ## Current priority: does line shopping produce positive EV on real odds?
 
 1. Collect NFL and CFB odds: 10 books × spreads/totals/moneyline, 3 credits per fetch. The cadence speeds up near kickoff so every game's close is observed (`collect_v4/collector.py`).
-2. Every day, run `python -m analysis_v4.line_shop --out docs_v4/line_shop_latest.json`:
+2. The daily `odds-analyze` workflow runs the line-shopping report:
    - opportunities are counted once, at first sighting;
    - the main test is **closing EV** (the price taken, evaluated at the observed closing consensus), with game-clustered confidence intervals;
    - break results down by book, market and hours to kickoff.

@@ -369,13 +369,17 @@ def key_from_keychain(service, account=None):
 
 def load_key():
     """Key sources, in order: systemd credential (Linux server), macOS Keychain
-    (ODDS_KEY_KEYCHAIN_SERVICE). The value never reaches stdout or a log."""
+    (ODDS_KEY_KEYCHAIN_SERVICE), GitHub Actions secret exposed as an env var
+    whose NAME is in ODDS_KEY_ENV. The value never reaches stdout or a log."""
     cred_dir = os.environ.get("CREDENTIALS_DIRECTORY")
     if cred_dir and os.path.exists(os.path.join(cred_dir, "odds_key")):
         return read_key(os.path.join(cred_dir, "odds_key"))
     svc = os.environ.get("ODDS_KEY_KEYCHAIN_SERVICE")
     if svc:
         return key_from_keychain(svc)
+    env_name = os.environ.get("ODDS_KEY_ENV")          # GitHub Actions: name of the env var holding the secret
+    if env_name and os.environ.get(env_name):
+        return parse_key(os.environ[env_name])
     return None
 
 

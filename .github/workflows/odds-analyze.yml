@@ -1,0 +1,40 @@
+# ArbitrEdge V4 -- daily line-shopping analysis of all collected odds (no API calls, no secret).
+name: odds-analyze
+on:
+  schedule:
+    - cron: "23 13 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v4-odds-state
+  cancel-in-progress: false
+jobs:
+  analyze:
+    if: vars.V4_LIVE == 'on'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write           # publish the report to the v4-state release
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Download all odds shards
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p shards report
+          for tag in $(gh release list --limit 200 --json tagName --jq '.[].tagName | select(startswith("odds-data-"))'); do
+            gh release download "$tag" -p 'quotes_*.jsonl.gz' -D "shards/$tag"
+          done
+      - name: Analyze
+        run: |
+          python3 -m pip install --quiet "$(grep -i '^numpy==' requirements-v4.txt)"
+          python3 -m analysis_v4.actions_analyze --shards shards --out report
+      - name: Publish report
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v4-state >/dev/null 2>&1 || gh release create v4-state --prerelease --title "V4 state (do not delete)" --notes "Managed by workflows."
+          gh release upload v4-state report/line_shop_latest.json report/line_shop_summary.md --clobber
