@@ -25,12 +25,36 @@ TIERS = {
 }
 
 
+DEFAULT_TIER = "test"        # the LOWEST-spending tier; never a fallback to anything higher
+
+
+class InvalidTier(ValueError):
+    pass
+
+
+def resolve_tier(value):
+    """Turn the V4_TIER setting into a tier name.
+
+    GitHub Actions passes an UNDEFINED repository variable as an empty string, so
+    unset/empty/whitespace all mean "not configured" -> DEFAULT_TIER ("test").
+    Any other value must name a known tier exactly (case/space-insensitive);
+    otherwise InvalidTier is raised so the run stops before any request."""
+    if value is None or not str(value).strip():
+        return DEFAULT_TIER, "default (V4_TIER not set)"
+    name = str(value).strip().lower()
+    if name not in TIERS:
+        raise InvalidTier(f"V4_TIER={value!r} is not a known tier {sorted(TIERS)}; refusing to collect")
+    return name, "V4_TIER"
+
+
 def due(now, kickoffs, last_fetch, tier="test"):
     """Returns (is_due, reason). kickoffs: epoch seconds (any order); last_fetch: epoch or None.
 
     close: some kickoff k is <= CLOSE_WINDOW_MIN away and the last fetch was taken before
     k - CLOSE_WINDOW_MIN (so it does not already count as k's observed close). One fetch
     covers every kickoff in the next 45 minutes."""
+    if tier not in TIERS:
+        raise InvalidTier(f"unknown tier {tier!r}")
     t = TIERS[tier]
     future = sorted(k for k in kickoffs if k > now)
     if last_fetch is None:

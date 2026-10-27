@@ -345,3 +345,88 @@ def test_worst_case_month_cannot_exceed_caps(run_chain, monkeypatch):
     total = sum(per_day.values())
     assert total <= 500 and max(per_day.values()) <= 60
     assert total >= 450              # and the budget is actually usable, not blocked by a bug
+
+
+# ---------------------------------------------------------------- regression: V4_TIER empty (GitHub undefined variable)
+
+def _workflow_vars(wf="odds-collect.yml"):
+    """env names the workflow fills from repository variables, e.g. V4_TIER: ${{ vars.V4_TIER }}"""
+    return re.findall(r"^\s+(\w+): \$\{\{ vars\.\w+ \}\}", _wf(wf), flags=re.M)
+
+
+def test_workflow_variable_list_is_what_we_test():
+    assert set(_workflow_vars()) == {"V4_LIVE", "V4_MONTHLY_CAP", "V4_DAILY_CAP", "V4_TIER"}
+
+
+def _main_like_workflow(tmp_path, monkeypatch, overrides, live="on"):
+    """Run collect_v4.actions_run.main() exactly as the workflow does: every vars.* env present,
+    undefined ones as EMPTY STRINGS (GitHub's behaviour), upstream faked at the HTTPS layer."""
+    calls = []
+    up = Upstream(lambda: NOW)
+    monkeypatch.setattr(og.Gateway, "_https_get", lambda self, path, q: (calls.append(path), up(path, q))[1])
+    monkeypatch.setattr(AR.time, "time", lambda: NOW)
+    for name in _workflow_vars():
+        monkeypatch.setenv(name, "")
+    monkeypatch.setenv("V4_LIVE", live)
+    monkeypatch.setenv("ODDS_KEY_ENV", "ODDS_API_KEY")
+    monkeypatch.setenv("ODDS_API_KEY", KEY)
+    for k, v in overrides.items():
+        monkeypatch.setenv(k, v)
+    state, out = tmp_path / "state", tmp_path / "out"
+    state.mkdir(exist_ok=True)
+    rc = AR.main(["--state-in", str(state), "--out", str(out)])
+    summary = json.load(open(out / "run_summary.json")) if (out / "run_summary.json").exists() else None
+    return rc, summary, calls
+
+
+def test_empty_tier_runs_on_lowest_tier(tmp_path, monkeypatch):
+    rc, s, calls = _main_like_workflow(tmp_path, monkeypatch, {})          # every variable empty, as on GitHub
+    assert rc == 0 and s["tier"] == "test" and s["tier_source"].startswith("default")
+    assert s["caps"]["v4_monthly_cap"] == 500 and s["caps"]["v4_daily_cap"] == 60   # empty caps -> safe defaults
+    assert len(s["fetches"]) == 2 and s["usage"]["v4"] == 6
+
+
+@pytest.mark.parametrize("value", ["", "   ", None])
+def test_missing_tier_resolves_to_test(value):
+    assert SP.resolve_tier(value)[0] == "test"
+
+
+@pytest.mark.parametrize("value,expected", [("test", "test"), (" Standard ", "standard"), ("TEST", "test")])
+def test_valid_tier_names(value, expected):
+    assert SP.resolve_tier(value)[0] == expected
+
+
+@pytest.mark.parametrize("value", ["premium", "max", "6000", "standard2", "unlimited"])
+def test_invalid_tier_stops_before_any_request(tmp_path, monkeypatch, value):
+    rc, s, calls = _main_like_workflow(tmp_path, monkeypatch, {"V4_TIER": value})
+    assert rc == 2 and calls == [] and s is None                          # no request, no summary, no ledger write
+    assert not (tmp_path / "out" / "ledger.jsonl").exists()
+    with pytest.raises(SP.InvalidTier):
+        SP.resolve_tier(value)
+
+
+def test_invalid_tier_rejected_even_when_live_is_off(tmp_path, monkeypatch):
+    rc, s, calls = _main_like_workflow(tmp_path, monkeypatch, {"V4_TIER": "premium"}, live="off")
+    assert rc == 2 and calls == []
+
+
+def test_due_rejects_unknown_tier_with_clear_error():
+    with pytest.raises(SP.InvalidTier):
+        SP.due(NOW, [], None, "")
+
+
+def test_empty_cap_variables_never_raise_spending():
+    c = AR.caps_from_env({"V4_MONTHLY_CAP": "", "V4_DAILY_CAP": "", "V4_MAX_REQUEST": "", "V4_V3_FLOOR": ""})
+    assert c == {"v4_monthly_cap": 500, "v4_daily_cap": 60, "max_single_request": 10, "v3_floor_remaining": 2000}
+
+
+def test_probe_path_also_tolerates_empty_tier(tmp_path, monkeypatch):
+    calls = []
+    up = Upstream(lambda: NOW)
+    monkeypatch.setattr(og.Gateway, "_https_get", lambda self, path, q: (calls.append(path), up(path, q))[1])
+    for k, v in {"V4_LIVE": "on", "V4_TIER": "", "V4_MONTHLY_CAP": "", "ODDS_KEY_ENV": "ODDS_API_KEY",
+                 "ODDS_API_KEY": KEY}.items():
+        monkeypatch.setenv(k, v)
+    (tmp_path / "s").mkdir()
+    assert AR.main(["--state-in", str(tmp_path / "s"), "--out", str(tmp_path / "o"), "--probe"]) == 0
+    assert calls == ["/v4/sports"]

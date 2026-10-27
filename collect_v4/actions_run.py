@@ -114,11 +114,15 @@ def export_shard(conn, path):
     return n
 
 
-def run(state_in, out, env=os.environ, clock=time.time, opener=None, tier="test", sports=SPORTS, probe=False):
+def run(state_in, out, env=os.environ, clock=time.time, opener=None, tier=None, sports=SPORTS, probe=False):
+    """tier: None -> read V4_TIER from env. Resolved and validated BEFORE anything else,
+    so a bad setting can never reach the API or the scheduler."""
     os.makedirs(out, exist_ok=True)
+    tier, tier_source = schedule_policy.resolve_tier(env.get("V4_TIER") if tier is None else tier)
     work = os.path.join(out, ".work")
     os.makedirs(work, exist_ok=True)
-    summary = {"at": _iso(clock()), "tier": tier, "fetches": [], "skipped": [], "refused": []}
+    summary = {"at": _iso(clock()), "tier": tier, "tier_source": tier_source, "fetches": [], "skipped": [],
+               "refused": []}
     if env.get("V4_LIVE") != "on":
         summary["status"] = "live collection is OFF (repository variable V4_LIVE != 'on'); nothing requested"
         _write_summary(out, summary)
@@ -189,9 +193,14 @@ def main(argv=None):
     ap.add_argument("--state-in", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--probe", action="store_true")
-    ap.add_argument("--tier", default=os.environ.get("V4_TIER", "test"), choices=sorted(schedule_policy.TIERS))
+    ap.add_argument("--tier", default=None,
+                    help="override V4_TIER; unset/empty means 'test'. Unknown values stop the run.")
     a = ap.parse_args(argv)
-    s = run(a.state_in, a.out, tier=a.tier, probe=a.probe)
+    try:
+        s = run(a.state_in, a.out, tier=a.tier, probe=a.probe)
+    except schedule_policy.InvalidTier as e:
+        print(f"::error::{e}")
+        return 2
     printable = {k: v for k, v in s.items() if k != "probe"}
     if "probe" in s:
         printable["probe"] = {k: s["probe"].get(k) for k in ("provider_status", "usage", "provider_error_code")}
