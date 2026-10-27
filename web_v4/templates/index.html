@@ -1,22 +1,67 @@
-{% extends "base.html" %}
+{% extends base_tpl | default("base.html") %}
 {% import "_macros.html" as mx %}
 {% block title %}Dashboard · ArbitrEdge V4{% endblock %}
 {% block body %}
 {% set wk = s.games | map(attribute="week") | unique | list %}<h1>NFL slate · Week{{ "s" if wk|length > 1 else "" }} {{ wk | join(" – ") }}</h1>
 <p class="lede">Every number on this site is labelled by where it comes from. Real games and listed lines are <b>observed</b>; projections are <b>model</b> output; the
-synthetic book's tickets are <b>synthetic</b>; multi-book quotes are <b>demo data</b> until a live odds feed is connected.</p>
-{% set watch = s.scanner | selectattr("decision", "equalto", "WATCH") | list %}
+synthetic book's tickets are <b>synthetic</b>; {% if s.live %}multi-book odds are <b>observed</b> by the V4 collector (The Odds API), except on the
+ArbitrEdge Need page, which still runs on <b>demo</b> quotes until enough history exists.{% else %}multi-book quotes are <b>demo data</b> until a live odds feed is connected.{% endif %}</p>
+{% set scan = s.live.scanner if s.live else s.scanner %}
+{% set watch = scan | selectattr("decision", "equalto", "WATCH") | list %}
 <div class="grid g4" style="margin-bottom:14px">
   <div class="panel kpi"><div class="v blue">{{ s.games|length }}</div><div class="l">NFL games with a listed line {{ mx.badge("observed") }}</div></div>
   <div class="panel kpi"><div class="v">{{ "{:,}".format(s.health.synthetic_book.wagers) }}</div><div class="l">synthetic wagers accepted · {{ "{:,}".format(s.health.synthetic_book.bettors) }} bettors {{ mx.badge("synthetic") }}</div></div>
-  <div class="panel kpi"><div class="v orange">{{ watch|length }}</div><div class="l">prices beating consensus (WATCH) {{ mx.badge("demo") }}</div></div>
+  <div class="panel kpi"><div class="v orange">{{ watch|length }}</div><div class="l">prices beating consensus (WATCH) {{ mx.badge("observed" if s.live else "demo") }}</div></div>
   <div class="panel kpi"><div class="v red">0</div><div class="l">official plays · edge status <b>NOT PROVEN</b></div></div>
 </div>
+{% if s.live %}
+{% for sport, b in s.live.boards.items() %}
+<section class="panel" style="margin-bottom:14px">
+  <div class="panel-h"><h2>Live odds board · {{ b.label }} {{ mx.badge("observed") }}</h2>
+    <span class="ko">{% if b.observed_at %}observed {{ b.observed_at | et("%a %-I:%M %p ET") }} · {{ b.age_min }} min ago{% else %}not collected yet{% endif %}</span></div>
+  <p class="note">Sharp no-vig consensus and the best price available for each side across 10 books, from the last collection run.
+  {% if sport == "americanfootball_ncaaf" %}All FBS games the provider lists; Top-25 filtering arrives with a rankings source.{% endif %}</p>
+  {% if b.games %}
+  <div class="cards-mobile">
+    {% for g in b.games %}{% set sp = g.markets.spreads %}{% set tt = g.markets.totals %}{% set ml = g.markets.h2h %}
+    <article class="mcard">
+      <div class="mcard-h"><span class="teams">{{ g.away }} @ {{ g.home }}</span><span class="ko">{{ g.kickoff | et("%a %-I:%M %p") }}</span></div>
+      <div class="kv">
+        <span>Spread (home)</span><b>{{ sp.line | line if sp.status == "OK" else sp.status }}</b>
+        <span>Best home / away</span><b>{% if sp.best.home %}{{ sp.best.home.price | odds }} {{ sp.best.home.book }}{% else %}—{% endif %} · {% if sp.best.away %}{{ sp.best.away.price | odds }} {{ sp.best.away.book }}{% else %}—{% endif %}</b>
+        <span>Total</span><b>{{ tt.line | line(False) if tt.status == "OK" else tt.status }}</b>
+        <span>Best over / under</span><b>{% if tt.best.over %}{{ tt.best.over.price | odds }} {{ tt.best.over.book }}{% else %}—{% endif %} · {% if tt.best.under %}{{ tt.best.under.price | odds }} {{ tt.best.under.book }}{% else %}—{% endif %}</b>
+        <span>Home win (fair)</span><b>{{ ml.fair.home | pct if ml.status == "OK" else "—" }}</b>
+      </div>
+    </article>{% endfor %}
+  </div>
+  <div class="table-wrap table-desktop"><table>
+    <tr><th>Game</th><th>Kickoff</th><th class="n">Spread (home)</th><th>Best home</th><th>Best away</th><th class="n">Total</th><th>Best over</th><th>Best under</th><th class="n">Home win (fair)</th><th class="n">Books</th></tr>
+    {% for g in b.games %}{% set sp = g.markets.spreads %}{% set tt = g.markets.totals %}{% set ml = g.markets.h2h %}
+    <tr>
+      <td>{{ g.away }} @ {{ g.home }}</td>
+      <td class="mono">{{ g.kickoff | et("%a %-I:%M %p") }}</td>
+      <td class="n">{{ sp.line | line if sp.status == "OK" else sp.status }}</td>
+      <td class="mono">{% if sp.best.home %}{{ sp.best.home.price | odds }} <span class="muted">{{ sp.best.home.book }}</span>{% else %}—{% endif %}</td>
+      <td class="mono">{% if sp.best.away %}{{ sp.best.away.price | odds }} <span class="muted">{{ sp.best.away.book }}</span>{% else %}—{% endif %}</td>
+      <td class="n">{{ tt.line | line(False) if tt.status == "OK" else tt.status }}</td>
+      <td class="mono">{% if tt.best.over %}{{ tt.best.over.price | odds }} <span class="muted">{{ tt.best.over.book }}</span>{% else %}—{% endif %}</td>
+      <td class="mono">{% if tt.best.under %}{{ tt.best.under.price | odds }} <span class="muted">{{ tt.best.under.book }}</span>{% else %}—{% endif %}</td>
+      <td class="n">{{ ml.fair.home | pct if ml.status == "OK" else "—" }}</td>
+      <td class="n">{{ sp.n_books }}</td>
+    </tr>{% endfor %}
+  </table></div>
+  {% else %}<p class="note">No upcoming games in the collected data.</p>{% endif %}
+</section>
+{% endfor %}
+{% endif %}
+<h2 style="margin:18px 0 10px">NFL game cards</h2>
 <div class="grid g3">
 {% for g in s.games %}
   {% set sa = g.sims.anchored if g.sims else None %}
   {% set sp = g.need.spread if g.need else None %}
-  {% set sh = g.sharp.spreads %}
+  {% set sh = g.sharp_live.spreads if g.sharp_live and g.sharp_live.spreads else g.sharp.spreads %}
+  {% set sh_kind = "observed" if g.sharp_live and g.sharp_live.spreads else "demo" %}
   <article class="panel game">
     <div class="matchup">{{ mx.matchup(g) }}<span class="ko">{{ g.kickoff | et("%a %-I:%M %p") }}</span></div>
     <div class="rows">
@@ -24,7 +69,7 @@ synthetic book's tickets are <b>synthetic</b>; multi-book quotes are <b>demo dat
       {% if sa %}<span class="k">SIMS fair</span><span class="mono">{{ g.home }} {{ sa.fair_home_spread | line }} · {{ sa.fair_total | round(1) }} · win {{ sa.p_home_win | pct }} {{ mx.badge("model") }}</span>{% endif %}
       <span class="k">Need</span><span>{% if sp and sp.financial_need_side %}<span class="pill need">{{ g.home if sp.financial_need_side == 'home' else g.away }} spread</span>
         <span class="note">{{ sp.home_ticket_pct | round(0) | int }}% tickets on {{ g.home }}</span>{% else %}<span class="pill none">none</span>{% endif %} {{ mx.badge("synthetic") }}</span>
-      <span class="k">Sharp</span><span>{% if sh.status == 'SIGNAL' %}<span class="pill sharp">{{ g.home if sh.suspected_side == 'home' else g.away }} · {{ sh.score }}</span>{% else %}<span class="pill none">insufficient evidence</span>{% endif %} {{ mx.badges("experimental", "demo") }}</span>
+      <span class="k">Sharp</span><span>{% if sh.status == 'SIGNAL' %}<span class="pill sharp">{{ g.home if sh.suspected_side == 'home' else g.away }} · {{ sh.score }}</span>{% else %}<span class="pill none">insufficient evidence</span>{% endif %} {{ mx.badges("experimental", sh_kind) }}</span>
     </div>
   </article>
 {% endfor %}

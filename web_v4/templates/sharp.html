@@ -1,18 +1,20 @@
-{% extends "base.html" %}
+{% extends base_tpl | default("base.html") %}
 {% import "_macros.html" as mx %}
 {% block title %}Sharp Money · V4{% endblock %}
 {% block body %}
-<h1>Sharp Money Tracker {{ mx.badges("experimental", "demo") }}</h1>
+<h1>Sharp Money Tracker {{ mx.badges("experimental", "observed" if s.live else "demo") }}</h1>
 <p class="lede">Evidence of informed betting is read only from real price movement: which books moved first, steam across books, key-number crossings, buybacks,
 and market-making vs recreational disagreement. The 0–100 score is an <b>uncalibrated heuristic</b>. Simulated sportsbook customers are never used as evidence.
-In this build the quotes are demo data, so the signals demonstrate the method only.</p>
+{% if s.live %}Quotes are real collected odds. Movement signals need several snapshots per game, so most games show
+<b>insufficient evidence</b> until a few days of collection exist.{% else %}In this build the quotes are demo data, so the signals demonstrate the method only.{% endif %}</p>
 <div class="callout">Not available: reverse line movement and ticket-vs-money splits (no licensed betting-splits source), and injury news (no feed).
 The engine reports these as unavailable; it never estimates them.</div>
 <div class="table-wrap"><table>
 <tr><th>Game</th><th>Market</th><th>Suspected side</th><th class="n">Score</th><th>Detected</th><th>Supporting evidence</th><th>Contradicting</th><th>Books</th></tr>
-{% for g in s.games %}{% for mk in ("spreads", "totals") %}{% set r = g.sharp[mk] %}
+{% if s.live %}{% set srows = s.live.sharp %}{% else %}{% set srows = [] %}{% for g in s.games %}{% for mk in ("spreads", "totals") %}{% set _ = srows.append(dict(g.sharp[mk], home=g.home, away=g.away, sport="nfl")) %}{% endfor %}{% endfor %}{% endif %}
+{% for r in srows %}{% set mk = r.market %}{% set g = r %}
 <tr>
-  <td>{{ mx.matchup(g) }}</td><td>{{ mk }}</td>
+  <td><span class="teams">{{ r.away }}<span class="at">@</span>{{ r.home }}</span></td><td>{{ mk }}</td>
   <td>{% if r.status == 'SIGNAL' %}<span class="pill sharp">{{ (g.home if r.suspected_side == 'home' else g.away) if r.suspected_side in ('home','away') else r.suspected_side | upper }}</span>{% else %}<span class="pill none">INSUFFICIENT EVIDENCE</span>{% endif %}</td>
   <td class="n">{{ r.score if r.score is not none else "—" }}</td>
   <td class="mono">{{ r.detected_at | et("%a %-I:%M %p") if r.detected_at else "—" }}</td>
@@ -20,7 +22,7 @@ The engine reports these as unavailable; it never estimates them.</div>
   <td class="reasons">{% if r.contradicting %}<ul class="ev con">{% for e in r.contradicting %}<li>{{ e }}</li>{% endfor %}</ul>{% else %}—{% endif %}</td>
   <td class="reasons">{% for b, v in r.books.items() %}{{ b }}<span class="muted">({{ v.class }})</span>{{ ", " if not loop.last }}{% endfor %}</td>
 </tr>
-{% endfor %}{% endfor %}
+{% endfor %}
 </table></div>
 <p class="note">Historical effectiveness of similar signals: <b>not yet measured</b>. That needs multi-book quote history with observed closes; see Performance.</p>
 {% endblock %}

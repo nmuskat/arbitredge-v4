@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends base_tpl | default("base.html") %}
 {% import "_macros.html" as mx %}
 {% block title %}Performance · V4{% endblock %}
 {% block body %}
@@ -6,6 +6,20 @@
 <p class="lede">Every number here comes from real NFL outcomes or from controls with a known answer. Bets are graded in an append-only ledger. "SUPPORTED" requires ≥ 500 bets,
 a ROI confidence interval above zero after a multiple-testing correction, and positive closing-line value. Nothing real has met that bar.</p>
 
+{% if s.live %}
+<section class="panel" style="margin-bottom:14px">
+  <div class="panel-h"><h2>Line shopping on real odds: closing EV</h2>{{ mx.badge("observed") }}</div>
+  <p class="note">Each price that beat the sharp consensus is counted once, when first seen, then scored against the observed closing consensus.
+  This is the main test of whether line shopping finds real value.</p>
+  <div class="table-wrap"><table>
+    <tr><th>Sport</th><th class="n">Opportunities</th><th class="n">Close observed</th><th class="n">Mean closing EV</th><th class="n">95% CI</th><th>Verdict</th></tr>
+    {% for sport, h in s.live.history.items() %}{% set ci = h.closing_ev %}
+    <tr><td>{{ s.live.boards[sport].label }}</td><td class="n">{{ h.opportunities }}</td><td class="n">{{ h.close_observed }}</td>
+      <td class="n">{{ ci.mean | pct(2) if ci else "—" }}</td><td class="n">{{ (ci.lo | pct(2)) ~ " – " ~ (ci.hi | pct(2)) if ci else "—" }}</td>
+      <td><span class="dec NOBET">{{ h.verdict }}</span></td></tr>{% endfor %}
+  </table></div>
+</section>
+{% endif %}
 <section class="panel" style="margin-bottom:14px">
   <div class="panel-h"><h2>1 · Framework controls (simulated market, known truth)</h2>{{ mx.badge("synthetic") }}</div>
   {% set c = s.performance.controls %}

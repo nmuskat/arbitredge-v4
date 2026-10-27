@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends base_tpl | default("base.html") %}
 {% import "_macros.html" as mx %}
 {% block title %}Official Plays · V4{% endblock %}
 {% block body %}

@@ -60,7 +60,7 @@ def _events(conn, sport):
         "SELECT event_id, MIN(commence), home, away FROM mkt_quote WHERE sport=? GROUP BY event_id", (sport,))]
 
 
-def find_opportunities(conn, sport, policy=ev.DecisionPolicy(), max_age_s=asof.DEFAULT_MAX_AGE_S):
+def find_opportunities(conn, sport, policy=ev.LIVE_POLICY, max_age_s=asof.DEFAULT_MAX_AGE_S):
     mk, ms, tk, ts, model_label = models(sport)
     events = _events(conn, sport)
     times = [t for (t,) in conn.execute(
@@ -112,7 +112,7 @@ def _cluster_ci(values_by_game, n_boot=2000, seed=5):
             "p_le_0": (sum(m <= 0 for m in means) + 1) / (n_boot + 1), "n": len(flat), "games": len(games)}
 
 
-def report(conn, sport, policy=ev.DecisionPolicy()):
+def report(conn, sport, policy=ev.LIVE_POLICY):
     opps, mods = find_opportunities(conn, sport, policy)
     by_game, unobserved, rows = {}, 0, []
     for o in opps:

@@ -1,11 +1,13 @@
-{% extends "base.html" %}
+{% extends base_tpl | default("base.html") %}
 {% import "_macros.html" as mx %}
 {% block title %}System Health · V4{% endblock %}
 {% block body %}
 {% set h = s.health %}
 <h1>System Health</h1>
 <div class="grid g4" style="margin-bottom:14px">
-  <div class="panel kpi"><div class="v red">OFF</div><div class="l">Odds API feed (no dev server)</div></div>
+  {% if s.live %}{% set c = s.live.collection %}
+  <div class="panel kpi"><div class="v blue">{{ c.v4_credits_this_month }}</div><div class="l">V4 credits used in {{ c.month }} (cap {{ h.odds_api.v4_monthly_cap }})</div></div>
+  {% else %}<div class="panel kpi"><div class="v red">OFF</div><div class="l">Odds API feed</div></div>{% endif %}
   <div class="panel kpi"><div class="v">{{ "{:,}".format(h.odds_api.v4_monthly_cap) }}</div><div class="l">V4 monthly credit cap · V3 floor {{ "{:,}".format(h.odds_api.v3_floor_remaining) }}</div></div>
   <div class="panel kpi"><div class="v blue">{{ h.git_commit or "—" }}</div><div class="l">code version (git)</div></div>
   <div class="panel kpi"><div class="v">{{ h.build_seconds }} s</div><div class="l">snapshot build time</div></div>
@@ -28,8 +30,22 @@
     <span class="k">Live calls</span><span>{{ "enabled" if h.odds_api.live_enabled else "disabled (owner switch)" }}</span>
   </div>
 </section>
+{% if s.live %}{% set c = s.live.collection %}
 <section class="panel">
-  <h2>Demo market {{ mx.badge("demo") }}</h2>
+  <h2>Live collection {{ mx.badge("observed") }}</h2>
+  <div class="rows" style="margin-top:10px">
+    <span class="k">Account credits remaining</span><span class="num">{{ "{:,}".format(c.provider_remaining) if c.provider_remaining is not none else "—" }}{% if c.provider_checked_at %} <span class="muted">(at {{ c.provider_checked_at | et("%b %-d %-I:%M %p") }})</span>{% endif %}</span>
+    <span class="k">V4 requests this month</span><span class="num">{{ c.requests_this_month }}</span>
+    <span class="k">Cost mismatches</span><span class="num">{{ c.cost_mismatches }}</span>
+    <span class="k">Malformed records</span><span class="num">{{ c.anomalies }}</span>
+    {% for f in c.fetches %}<span class="k">{{ f.sport }} snapshots</span><span class="num">{{ f.fetches }} · last {{ f.last | et("%b %-d %-I:%M %p") }} · {{ "{:,}".format(f.quotes) }} quotes</span>{% endfor %}
+    {% for b in c.books %}<span class="k">{{ b.sport }} books</span><span>{{ b.count }}: {{ b.books | join(", ") }}</span>{% endfor %}
+  </div>
+  <p class="note">V3 protection: V4 refuses any request that would leave fewer than {{ "{:,}".format(h.odds_api.v3_floor_remaining) }} credits in the shared account.</p>
+</section>
+{% endif %}
+<section class="panel">
+  <h2>Demo market (Need page only) {{ mx.badge("demo") }}</h2>
   <div class="rows" style="margin-top:10px">
     <span class="k">Quote rows</span><span class="num">{{ "{:,}".format(h.demo_market.rows) }}</span>
     <span class="k">Collection gaps</span><span>{{ h.demo_market.gaps | length }} {{ "(none)" if not h.demo_market.gaps }}</span>

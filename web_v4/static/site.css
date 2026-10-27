@@ -127,3 +127,13 @@ footer { border-top: 1px solid var(--line); margin-top: 32px; padding-top: 14px;
   main { padding: 14px 16px 40px; }
   h1 { font-size: 19px; }
 }
+
+/* phone cards for wide tables */
+.cards-mobile { display: none; gap: 10px; }
+.mcard { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--r); padding: 12px; display: grid; gap: 6px; min-width: 0; }
+.mcard-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.mcard .big { font-size: 15px; }
+.mcard .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 13px; }
+.mcard .kv span { color: var(--muted); font-size: 12px; }
+.mcard .kv b { font: 600 13px var(--mono); text-align: right; overflow-wrap: anywhere; }
+@media (max-width: 700px) { .cards-mobile { display: grid; } .table-desktop { display: none; } }

@@ -1,13 +1,30 @@
-{% extends "base.html" %}
+{% extends base_tpl | default("base.html") %}
 {% import "_macros.html" as mx %}
 {% block title %}EV Scanner · V4{% endblock %}
 {% block body %}
-<h1>EV Opportunity Scanner {{ mx.badges("demo", "notvalid") }}</h1>
+<h1>EV Opportunity Scanner {{ mx.badges("observed" if s.live else "demo", "notvalid") }}</h1>
 <p class="lede">Every fresh book price is compared with the sharp-weighted no-vig consensus, re-priced to that book's own number with Engine C's key-number distribution
 (so −2.5 and −3 are not treated as the same bet). EV = P(win)·profit − P(loss)·stake, with pushes refunded. A price becomes <b>BET</b> only if EV stays above
 2% at the pessimistic end of the uncertainty interval <i>and</i> the strategy has passed validation. Nothing has passed yet, so the best result possible today is <b>WATCH</b> (paper tracking).</p>
-{% set shown = s.scanner | rejectattr("decision", "equalto", "NO BET") | list %}
-<div class="table-wrap"><table>
+{% set allrows = s.live.scanner if s.live else s.scanner %}
+{% set shown = allrows | rejectattr("decision", "equalto", "NO BET") | list %}
+{% if s.live %}<div class="callout blue">Real prices from the last collection run (NFL {{ s.live.boards.americanfootball_nfl.observed_at | et("%a %-I:%M %p ET") }},
+college {{ s.live.boards.americanfootball_ncaaf.observed_at | et("%a %-I:%M %p ET") }}). A price that beats the consensus at one moment is a candidate;
+the real test is whether it still looks good against the <b>observed closing line</b> (Performance page).</div>{% endif %}
+<div class="cards-mobile">
+{% for r in shown %}
+<article class="mcard">
+  <div class="mcard-h"><span class="dec {{ r.decision.replace(' ', '') }}">{{ r.decision }}</span><span class="ko">{{ r.kickoff | et("%a %-I:%M %p") if r.kickoff else "" }}</span></div>
+  <div class="teams">{{ r.away }} @ {{ r.home }}</div>
+  <div class="mono big">{{ (r.home if r.selection == 'home' else r.away if r.selection == 'away' else r.selection|upper) }}{% if r.market != 'h2h' %} {{ r.line | line(r.market == 'spreads') }}{% else %} ML{% endif %} · {{ r.american | odds }} <span class="muted">{{ r.book }}</span></div>
+  <div class="kv"><span>EV / unit</span><b class="pos">{{ r.ev_per_unit | pct(1) }}</b><span>EV range</span><b>{{ r.ev_interval[0] | pct(1) }} – {{ r.ev_interval[1] | pct(1) }}</b>
+    <span>Win prob</span><b>{{ r.p_win_model | pct }}</b><span>Break-even</span><b>{{ r.breakeven_win_prob | pct }}</b></div>
+  <p class="note">{{ r.reasons | join("; ") }}.</p>
+</article>
+{% else %}<p class="note">No price currently beats the consensus by the required margin.</p>
+{% endfor %}
+</div>
+<div class="table-wrap table-desktop"><table>
 <tr><th>Decision</th><th>Game</th><th>Market</th><th>Selection</th><th>Book</th><th class="n">Odds</th><th class="n">Model p</th><th class="n">Break-even</th>
 <th class="n">Push p</th><th class="n">EV / unit</th><th class="n">EV range</th><th class="n">Stake</th><th>Price age</th><th>Signals</th><th>Why</th></tr>
 {% for r in shown %}
@@ -27,6 +44,6 @@
 <tr><td colspan="15" class="muted">No price currently beats the consensus by the required margin.</td></tr>
 {% endfor %}
 </table></div>
-<p class="note">{{ s.scanner | selectattr("decision", "equalto", "NO BET") | list | length }} other priced selections evaluated → NO BET (no uncertainty-adjusted edge, stale or missing market).
+<p class="note">{{ allrows | selectattr("decision", "equalto", "NO BET") | list | length if not s.live else "All" }} other priced selections evaluated → NO BET (no uncertainty-adjusted edge, stale or missing market).
 Each decision is written to the append-only paper ledger.</p>
 {% endblock %}

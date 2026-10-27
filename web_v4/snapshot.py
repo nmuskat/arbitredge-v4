@@ -87,7 +87,29 @@ def sims_block(pred, r):
             "most_likely_margins": [[m, round(p, 4)] for m, p in top]}
 
 
-def build(as_of_iso, out_dir="data/site", features_path="data/derived/features.parquet", bettors=10_000):
+def live_block(live_db, ledger_path, T):
+    """Views over GENUINE collected odds (OBSERVED). None when no live store is given."""
+    from web_v4 import live
+    conn = sqlite3.connect(f"file:{live_db}?mode=ro", uri=True)
+    ledger_rows = []
+    if ledger_path and os.path.exists(ledger_path):
+        ledger_rows = [json.loads(x) for x in open(ledger_path) if x.strip()]
+    out = {"boards": {}, "scanner": [], "history": {}, "sharp": []}
+    for sport in ("americanfootball_nfl", "americanfootball_ncaaf"):
+        out["boards"][sport] = live.board(conn, sport, T)
+        rows, hist = live.scanner_rows(conn, sport, T)
+        out["scanner"] += rows
+        out["history"][sport] = hist
+        out["sharp"] += live.sharp_rows(conn, sport, T)
+    order = {"BET": 0, "WATCH": 1, "NO BET": 2}
+    out["scanner"].sort(key=lambda r: (order[r["decision"]], -(r.get("ev_interval") or (0, 0))[0]))
+    out["collection"] = live.collection_health(conn, ledger_rows, T)
+    conn.close()
+    return out
+
+
+def build(as_of_iso, out_dir="data/site", features_path="data/derived/features.parquet", bettors=10_000,
+          live_db=None, ledger_path=None):
     t0 = time.time()
     os.makedirs(out_dir, exist_ok=True)
     T = store.iso_to_epoch(as_of_iso)
@@ -201,7 +223,22 @@ def build(as_of_iso, out_dir="data/site", features_path="data/derived/features.p
                            "passes": adv["passes"]},
         "tests": _load("data/site/test_summary.json"),
     }
-    snap = {"as_of": as_of_iso, "generated_at": _iso(time.time()), "season": season,
+    lv = live_block(live_db, ledger_path, T) if live_db else None
+    if lv:
+        # Odds API team names -> nflverse codes, so real sharp evidence can sit on the NFL game cards
+        code = {v: k for k, v in TEAMS.items()}
+        by_teams = {(code.get(r["home"]), code.get(r["away"]), r["market"]): r for r in lv["sharp"]
+                    if r["sport"] == "americanfootball_nfl"}
+        for g in out_games:
+            for m in ("spreads", "totals"):
+                hit = by_teams.get((g["home"], g["away"], m))
+                if hit:
+                    g["sharp_live"] = g.get("sharp_live", {})
+                    g["sharp_live"][m] = hit
+        health["odds_api"]["status"] = "CONNECTED through GitHub Actions (credit-gated collector)"
+        health["odds_api"]["live_enabled"] = True
+    snap = {"as_of": as_of_iso, "generated_at": _iso(time.time()), "season": season, "live": lv,
+            "data_mode": "live" if lv else "demo",
             "games": out_games, "scanner": scan_rows, "plays": [],
             "plays_note": "No strategy has passed the evidence gate (rebuild plan §G). Official plays: none.",
             "performance": perf, "health": health,
@@ -220,8 +257,11 @@ def main(argv=None):
     ap.add_argument("--as-of", default="2026-10-26T21:00:00Z")
     ap.add_argument("--out", default="data/site")
     ap.add_argument("--bettors", type=int, default=10_000)
+    ap.add_argument("--features", default="data/derived/features.parquet")
+    ap.add_argument("--live-db", default=None, help="market store rebuilt from collected shards (real odds)")
+    ap.add_argument("--ledger", default=None, help="credit ledger (ledger.jsonl from release v4-state)")
     a = ap.parse_args(argv)
-    s = build(a.as_of, a.out, bettors=a.bettors)
+    s = build(a.as_of, a.out, a.features, bettors=a.bettors, live_db=a.live_db, ledger_path=a.ledger)
     print(f"snapshot: {len(s['games'])} games, {len(s['scanner'])} scanner rows, "
           f"{s['health']['synthetic_book']['wagers']} synthetic wagers, {s['health']['build_seconds']} s")
 

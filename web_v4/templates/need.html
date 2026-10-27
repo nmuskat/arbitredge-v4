@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends base_tpl | default("base.html") %}
 {% import "_macros.html" as mx %}
 {% block title %}ArbitrEdge Need · V4{% endblock %}
 {% block body %}
@@ -6,6 +6,7 @@
 <p class="lede">The synthetic sportsbook accepts wagers from {{ "{:,}".format(s.health.synthetic_book.bettors) }} persistent simulated NFL customers. Each wager is accepted at a time-stamped
 price (here from demo quotes), and every ticket is kept in an append-only ledger. <b>Need</b> is the outcome that pays the book best. It is a liability
 fact about simulated customers, <b>not</b> a prediction and <b>not</b> a bet recommendation. Customer behaviour parameters are unvalidated assumptions.</p>
+<div class="callout">This page still uses <b>demo</b> quotes. It switches to real collected odds once a few days of multi-book history exist.</div>
 <div class="callout blue">The book closes to new wagers whenever quotes go stale (no fresh price within 45 minutes), so simulated customers never bet into prices that weren't posted.</div>
 {% for g in s.games %}{% if g.need %}
 {% set n = g.need %}

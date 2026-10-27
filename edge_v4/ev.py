@@ -66,6 +66,12 @@ class DecisionPolicy:
     max_divergence: float = 0.08      # |p_model - p_market| beyond this => suspect model
     max_price_age_s: int = 15 * 60
     op_cost_per_unit: float = 0.0     # fees / transfer costs, per unit staked
+    max_plausible_ev: float | None = None   # pessimistic EV above this => suspect stale/erroneous quote
+    max_american: int | None = None         # longer prices (thin longshot markets) are not evaluated
+
+
+# Live line shopping on real multi-book odds: same thresholds, plus plausibility guards.
+LIVE_POLICY = DecisionPolicy(version="policy_v4.1_live_line_shop", max_plausible_ev=0.10, max_american=1000)
 
 
 @dataclass
@@ -98,7 +104,9 @@ def evaluate(c: Candidate, policy: DecisionPolicy = DecisionPolicy()):
     implied = pricing.implied_prob(c.american)
 
     decision = NO_BET
-    if c.price_age_s > policy.max_price_age_s:
+    if policy.max_american is not None and c.american > policy.max_american:
+        reasons.append(f"longshot price {c.american:+d} beyond +{policy.max_american}: thin market, not evaluated")
+    elif c.price_age_s > policy.max_price_age_s:
         reasons.append(f"stale price ({int(c.price_age_s)}s old)")
     elif c.p_win_market is None:
         reasons.append("no no-vig market benchmark for this line")
@@ -107,6 +115,9 @@ def evaluate(c: Candidate, policy: DecisionPolicy = DecisionPolicy()):
             f"model disagrees with market by {abs(c.p_win_model - c.p_win_market):.3f}"
             " > max_divergence; treated as probable model error"
         )
+    elif policy.max_plausible_ev is not None and ev_lo > policy.max_plausible_ev:
+        reasons.append(f"EV {ev_lo:.1%} even at the pessimistic bound is implausibly large: "
+                       "check for a stale or erroneous quote")
     elif ev_lo >= policy.min_edge_lo:
         if c.validated_strategy:
             decision = BET
