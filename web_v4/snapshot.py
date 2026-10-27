@@ -87,8 +87,18 @@ def sims_block(pred, r):
             "most_likely_margins": [[m, round(p, 4)] for m, p in top]}
 
 
-def live_block(live_db, ledger_path, T):
-    """Views over GENUINE collected odds (OBSERVED). None when no live store is given."""
+def load_rankings(rankings_dir):
+    """CFBD AP-poll snapshots (rankings_*.json from release cfb-rankings); [] when none."""
+    if not rankings_dir or not os.path.isdir(rankings_dir):
+        return []
+    return [json.load(open(os.path.join(rankings_dir, f))) for f in sorted(os.listdir(rankings_dir))
+            if f.startswith("rankings_") and f.endswith(".json")]
+
+
+def live_block(live_db, ledger_path, T, rankings_dir=None, book_path=None, bettors=10_000):
+    """Views over GENUINE collected odds (OBSERVED), plus the synthetic book run on them (MODELED).
+    None when no live store is given."""
+    from sportsbook_v4 import live_book
     from web_v4 import live
     conn = sqlite3.connect(f"file:{live_db}?mode=ro", uri=True)
     ledger_rows = []
@@ -104,12 +114,18 @@ def live_block(live_db, ledger_path, T):
     order = {"BET": 0, "WATCH": 1, "NO BET": 2}
     out["scanner"].sort(key=lambda r: (order[r["decision"]], -(r.get("ev_interval") or (0, 0))[0]))
     out["collection"] = live.collection_health(conn, ledger_rows, T)
+    if book_path and os.path.exists(book_path):
+        os.remove(book_path)              # rebuilt deterministically from the immutable shards every time
+    bconn = sqlite3.connect(book_path or ":memory:")
+    ensure_schema(bconn)
+    out["book"] = live_book.build(bconn, conn, T, load_rankings(rankings_dir), bettors=bettors)
+    bconn.close()
     conn.close()
     return out
 
 
 def build(as_of_iso, out_dir="data/site", features_path="data/derived/features.parquet", bettors=10_000,
-          live_db=None, ledger_path=None):
+          live_db=None, ledger_path=None, rankings_dir=None):
     t0 = time.time()
     os.makedirs(out_dir, exist_ok=True)
     T = store.iso_to_epoch(as_of_iso)
@@ -223,7 +239,8 @@ def build(as_of_iso, out_dir="data/site", features_path="data/derived/features.p
                            "passes": adv["passes"]},
         "tests": _load("data/site/test_summary.json"),
     }
-    lv = live_block(live_db, ledger_path, T) if live_db else None
+    lv = live_block(live_db, ledger_path, T, rankings_dir, os.path.join(out_dir, "live_book.db"),
+                    bettors) if live_db else None
     if lv:
         # Odds API team names -> nflverse codes, so real sharp evidence can sit on the NFL game cards
         code = {v: k for k, v in TEAMS.items()}
@@ -260,8 +277,10 @@ def main(argv=None):
     ap.add_argument("--features", default="data/derived/features.parquet")
     ap.add_argument("--live-db", default=None, help="market store rebuilt from collected shards (real odds)")
     ap.add_argument("--ledger", default=None, help="credit ledger (ledger.jsonl from release v4-state)")
+    ap.add_argument("--rankings-dir", default=None, help="CFBD AP-poll snapshots (release cfb-rankings)")
     a = ap.parse_args(argv)
-    s = build(a.as_of, a.out, a.features, bettors=a.bettors, live_db=a.live_db, ledger_path=a.ledger)
+    s = build(a.as_of, a.out, a.features, bettors=a.bettors, live_db=a.live_db, ledger_path=a.ledger,
+              rankings_dir=a.rankings_dir)
     print(f"snapshot: {len(s['games'])} games, {len(s['scanner'])} scanner rows, "
           f"{s['health']['synthetic_book']['wagers']} synthetic wagers, {s['health']['build_seconds']} s")
 
