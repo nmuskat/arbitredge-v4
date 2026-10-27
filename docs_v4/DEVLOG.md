@@ -55,3 +55,18 @@ The cheapest options, in order:
 - **Totals:** 129 V4 tests passing (64 sportsbook + 42 edge + 23 market).
 
 **Blocked on owner:** droplet approval; GitHub repository; SIMS code.
+
+## 2026-10-27: Top-25 rankings, synthetic book on real quotes, automatic site
+
+- **CFB AP Top-25** (`data_v4/rankings.py`, workflow `cfb-rankings`, off until the owner adds a free CollegeFootballData key and sets `CFBD_ENABLED=on`). Each game uses the poll fetched before kickoff and no more than 10 days old. Missing or unmatched rankings mean UNAVAILABLE, never guessed.
+- **Synthetic sportsbook on real collected quotes** (`sportsbook_v4/live_book.py`):
+  - separate persistent populations, 10,000 NFL and 10,000 CFB bettors; CFB Top-25 games only;
+  - the offered price is the latest real quote no older than 6 hours, and nobody bets while no fresh quote exists;
+  - tickets come from wager counts and handle from stakes; Need comes from liability;
+  - sensitivity bands from 4 behaviour variants; audit hashes per run.
+  - All output is labelled MODELED. First real run: 333 modeled NFL wagers (one collection snapshot so far).
+- **Automatic site** (`web_v4/live_site.py`, workflow `site-build`, release `v4-site`):
+  - rebuilt only after an `odds-collect` run that saved new odds, or after new rankings; about 25 seconds per build, no secrets;
+  - the page is self-contained, with an NFL / CFB-Top-25 switch, 8 sections plus health, game detail and filters;
+  - LIVE / DELAYED / STALE labels are computed in the browser, so an old page marks itself stale.
+- Tests: 295 passed, 21 skipped (older demo-site page tests that need a local nflverse build). Mutation checks: 11 of 11 deliberately broken copies were caught.
