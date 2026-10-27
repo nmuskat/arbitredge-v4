@@ -1,0 +1,39 @@
+# ArbitrEdge V4 -- weekly AP Top-25 snapshot from CollegeFootballData (3 free-tier calls per run).
+# OFF until the owner adds secret CFBD_API_KEY and sets repository variable CFBD_ENABLED = on.
+# No Odds API credits are used.
+name: cfb-rankings
+on:
+  schedule:
+    - cron: "41 21 * * 0"        # Sunday afternoon ET, after the AP poll is released
+    - cron: "41 13 * * 2"        # Tuesday backup
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v4-rankings
+  cancel-in-progress: false
+jobs:
+  rankings:
+    if: vars.CFBD_ENABLED == 'on'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write           # release assets only
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Fetch AP poll
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+        run: python3 -m data_v4.rankings_run --out rankings
+      - name: Save snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          files=(rankings/rankings_*.json)
+          (( ${#files[@]} )) || exit 0
+          gh release view cfb-rankings >/dev/null 2>&1 || gh release create cfb-rankings --prerelease \
+            --title "CFB AP Top-25 snapshots" --notes "AP poll snapshots from CollegeFootballData, one file per fetch."
+          gh release upload cfb-rankings "${files[@]}"

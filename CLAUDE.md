@@ -10,6 +10,7 @@ The owner (nmuskat) has no coding background. You do the engineering, testing an
    - Never read, print, log or commit it. Never call the Odds API outside the gate.
    - Never add a workflow, step or trigger that exposes it (pull_request triggers, third-party actions, debug printing).
    - **Never start `odds-verify` or `odds-collect` yourself, and never change the `V4_LIVE` variable.** Live activation is the owner's decision.
+2b. **CollegeFootballData key** (secret `CFBD_API_KEY`, free tier): only `.github/workflows/cfb-rankings.yml` may use it, through `data_v4/rankings_run.py`. It is switched on by the owner's variable `CFBD_ENABLED`. Never print it, never change that variable yourself.
 3. **Credits** (shared 20,000/month subscription with V3):
    - The owner approved a V4 cap of 6,000/month, starting with a test budget of 500/month (60/day, 10 per request).
    - The caps come from repository variables (`V4_MONTHLY_CAP`, default 500; the code hard-limits it to 6,000). Recommend raising it only after the test phase shows provider-reported costs matching estimates and V3's floor untouched. The owner changes the variable.
