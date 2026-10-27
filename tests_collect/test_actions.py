@@ -7,6 +7,7 @@ import os
 import random
 import re
 import shutil
+import subprocess
 
 import pytest
 
@@ -198,7 +199,7 @@ def test_secret_only_in_collect_and_verify_steps_and_never_on_pull_requests():
 def test_actions_pinned_and_permissions_minimal(wf):
     text = _wf(wf)
     for ref in re.findall(r"uses: ([^\s]+)", text):
-        assert re.fullmatch(r"actions/checkout@[0-9a-f]{40}", ref), ref
+        assert re.fullmatch(r"actions/checkout@[0-9a-f]{40}", ref) or ref == "./.github/workflows/site-build.yml", ref
     assert "permissions:\n  contents: read" in text
     assert "persist-credentials: false" in text
     assert re.search(r"cancel-in-progress: false", text) and "group: v4-odds-state" in text
@@ -430,3 +431,92 @@ def test_probe_path_also_tolerates_empty_tier(tmp_path, monkeypatch):
     (tmp_path / "s").mkdir()
     assert AR.main(["--state-in", str(tmp_path / "s"), "--out", str(tmp_path / "o"), "--probe"]) == 0
     assert calls == ["/v4/sports"]
+
+
+# ---------------------------------------------------------------- automatic site build
+
+def _yaml(name):
+    import yaml
+    return yaml.safe_load(_wf(name))
+
+
+def test_site_build_workflow_has_no_secrets_and_is_pinned():
+    text = _wf("site-build.yml")
+    assert "secrets." not in text and "ODDS_API_KEY" not in text and "CFBD_API_KEY" not in text
+    assert "pull_request" not in text
+    for ref in re.findall(r"uses: ([^\s]+)", text):
+        assert re.fullmatch(r"actions/checkout@[0-9a-f]{40}", ref), ref
+    assert "permissions:\n  contents: read" in text and "persist-credentials: false" in text
+    on = _yaml("site-build.yml")[True]
+    assert set(on) == {"workflow_call", "workflow_dispatch"}          # never on a schedule of its own
+
+
+@pytest.mark.parametrize("wf,need,output", [("odds-collect.yml", "collect", "fetched"),
+                                            ("cfb-rankings.yml", "rankings", "saved")])
+def test_site_job_runs_only_after_new_data_and_gets_no_secrets(wf, need, output):
+    site = _yaml(wf)["jobs"]["site"]
+    assert site["uses"] == "./.github/workflows/site-build.yml"
+    assert site["needs"] == need and site["if"] == f"needs.{need}.outputs.{output} == 'true'"
+    assert "secrets" not in site                                     # no 'secrets: inherit', no key passed
+    assert site["permissions"] == {"contents": "write"}
+
+
+FAKE_GH_OK = "#!/bin/bash\nexit 0\n"
+
+
+@pytest.mark.parametrize("with_shard", [True, False])
+def test_state_save_signals_new_shard(tmp_path, with_shard):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text(FAKE_GH_OK)
+    (bin_dir / "gh").chmod(0o755)
+    (tmp_path / "out").mkdir()
+    if with_shard:
+        (tmp_path / "out" / "quotes_20261027T004034Z.jsonl.gz").write_bytes(b"x")
+    gho = tmp_path / "gh_output"
+    gho.write_text("")
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", GITHUB_OUTPUT=str(gho))
+    r = subprocess.run(["bash", os.path.join(REPO, ".github", "scripts", "state_save.sh")], cwd=tmp_path, env=env,
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert ("fetched=true" in gho.read_text()) == with_shard
+    env.pop("GITHUB_OUTPUT")                                          # outside Actions: still succeeds
+    assert subprocess.run(["bash", os.path.join(REPO, ".github", "scripts", "state_save.sh")], cwd=tmp_path,
+                          env=env, capture_output=True).returncode == 0
+
+
+FAKE_GH_SITE = r"""#!/bin/bash
+case "$1" in
+  api) printf '%s\n' $FAKE_TAGS; exit 0 ;;
+  release)
+    for a in "$@"; do last="$a"; done
+    case "$*" in
+      *v4-state*) [[ "${FAKE_NO_LEDGER:-0}" == 1 ]] && exit 1; mkdir -p "$last"; echo '{}' > "$last/ledger.jsonl" ;;
+      *cfb-rankings*) [[ "${FAKE_RANKINGS:-0}" == 1 ]] || exit 1; mkdir -p "$last"; echo '{}' > "$last/rankings_x.json" ;;
+      *) mkdir -p "$last"; echo x > "$last/quotes_1.jsonl.gz" ;;
+    esac; exit 0 ;;
+esac
+exit 0
+"""
+
+
+@pytest.mark.parametrize("tags,no_ledger,rankings,ok", [
+    ("odds-data-2026-W44 odds-data-2026-W45", 0, 0, True),    # no rankings yet: still builds (CFB shows UNAVAILABLE)
+    ("odds-data-2026-W44", 0, 1, True),
+    ("", 0, 0, False),                                       # no shards: refuse (never an empty "live" page)
+    ("odds-data-2026-W44", 1, 0, False),                     # ledger missing: refuse (health would be wrong)
+])
+def test_site_inputs(tmp_path, tags, no_ledger, rankings, ok):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text(FAKE_GH_SITE)
+    (bin_dir / "gh").chmod(0o755)
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_TAGS=tags, FAKE_NO_LEDGER=str(no_ledger),
+               FAKE_RANKINGS=str(rankings), GITHUB_REPOSITORY="o/r")
+    r = subprocess.run(["bash", os.path.join(REPO, ".github", "scripts", "site_inputs.sh")], cwd=tmp_path, env=env,
+                       capture_output=True, text=True)
+    assert (r.returncode == 0) == ok, r.stdout + r.stderr
+    if ok:
+        assert len(list((tmp_path / "shards").rglob("quotes_*.jsonl.gz"))) == len(tags.split())
+        assert (tmp_path / "state" / "ledger.jsonl").exists()
+        assert len(list((tmp_path / "rankings").glob("rankings_*.json"))) == rankings

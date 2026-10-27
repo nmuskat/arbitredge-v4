@@ -1,0 +1,38 @@
+# ArbitrEdge V4 -- rebuild the private site from already-collected data.
+# No Odds API calls and no secrets: it is called by odds-collect only after a run that
+# saved a new odds shard (callers pass no secrets), or started by hand.
+# Output: release v4-site, assets index.html (self-contained page) and site_snapshot.json.
+name: site-build
+on:
+  workflow_call:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: v4-site
+      cancel-in-progress: false
+    permissions:
+      contents: write           # release assets only (the built page); no code changes
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Download collected data
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/site_inputs.sh
+      - name: Build site
+        run: |
+          python3 -m pip install --quiet "$(grep -i '^numpy==' requirements-v4.txt)"
+          python3 -m web_v4.live_site --shards shards --ledger state/ledger.jsonl --rankings-dir rankings --out site
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view v4-site >/dev/null 2>&1 || gh release create v4-site --prerelease \
+            --title "V4 site (private)" --notes "Rebuilt automatically from collected data. Download index.html and open it."
+          gh release upload v4-site site/index.html site/site_snapshot.json --clobber

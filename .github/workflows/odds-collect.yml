@@ -30,6 +30,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write           # release assets only (data shards + ledger/state); no code changes
+    outputs:
+      fetched: ${{ steps.save.outputs.fetched }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
         with:
@@ -48,7 +50,16 @@ jobs:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python3 -m collect_v4.actions_run --state-in state --out out
       - name: Save data shard, ledger and state
+        id: save
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/state_save.sh
+  site:
+    # Rebuild the site only when this run saved new odds (a skipped job costs no minutes).
+    # No secrets are passed to it.
+    needs: collect
+    if: needs.collect.outputs.fetched == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/site-build.yml

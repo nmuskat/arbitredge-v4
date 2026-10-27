@@ -56,7 +56,9 @@ def board(conn, sport, now):
                                "fair": st.get("fair"), "basis": st.get("consensus_basis"),
                                "consensus_books": st.get("consensus_books", []),
                                "n_books": st.get("n_books_on_line", 0),
-                               "best": {a: _side_quote(st, a), b: _side_quote(st, b)}}
+                               "best": {a: _side_quote(st, a), b: _side_quote(st, b)},
+                               "books": {k: {"age_s": round(v["age_s"]), "fresh": v["fresh"], a: v.get(a), b: v.get(b)}
+                                         for k, v in sorted((st.get("books") or {}).items())}}
         rows.append(g)
     return {"sport": sport, "label": SPORT_LABEL[sport], "observed_at": _iso(T), "age_min": round((now - T) / 60),
             "games": rows}

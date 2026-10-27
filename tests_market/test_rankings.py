@@ -121,7 +121,9 @@ def test_rankings_workflow_is_gated_pinned_and_only_place_with_cfbd_key():
     wf_dir = os.path.join(os.path.dirname(__file__), "..", ".github", "workflows")
     text = open(os.path.join(wf_dir, "cfb-rankings.yml")).read()
     assert "if: vars.CFBD_ENABLED == 'on'" in text and "pull_request" not in text
-    assert all(re.fullmatch(r"actions/checkout@[0-9a-f]{40}", u) for u in re.findall(r"uses: (\S+)", text))
+    assert all(re.fullmatch(r"actions/checkout@[0-9a-f]{40}", u) or u == "./.github/workflows/site-build.yml"
+               for u in re.findall(r"uses: (\S+)", text))
+    assert text.count("secrets.") == 1                    # the key, in the fetch step only
     for f in os.listdir(wf_dir):
         if f != "cfb-rankings.yml":
             assert "CFBD_API_KEY" not in open(os.path.join(wf_dir, f)).read()

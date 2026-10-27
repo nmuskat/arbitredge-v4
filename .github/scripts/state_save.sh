@@ -9,6 +9,7 @@ if (( ${#shards[@]} )); then
   gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --prerelease --title "$tag" \
     --notes "Timestamped multi-book odds collected by ArbitrEdge V4 (The Odds API). One file per collection run."
   gh release upload "$tag" "${shards[@]}"
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then echo "fetched=true" >> "$GITHUB_OUTPUT"; fi   # triggers the site rebuild
 fi
 if [[ -f out/ledger.jsonl ]]; then
   gh release upload v4-state out/ledger.jsonl out/collector_state.json --clobber

@@ -19,6 +19,8 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: write           # release assets only
+    outputs:
+      saved: ${{ steps.save.outputs.saved }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
         with:
@@ -28,6 +30,7 @@ jobs:
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
         run: python3 -m data_v4.rankings_run --out rankings
       - name: Save snapshot
+        id: save
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -37,3 +40,11 @@ jobs:
           gh release view cfb-rankings >/dev/null 2>&1 || gh release create cfb-rankings --prerelease \
             --title "CFB AP Top-25 snapshots" --notes "AP poll snapshots from CollegeFootballData, one file per fetch."
           gh release upload cfb-rankings "${files[@]}"
+          echo "saved=true" >> "$GITHUB_OUTPUT"
+  site:
+    # New rankings change which CFB games are in scope: rebuild the site (no secrets passed).
+    needs: rankings
+    if: needs.rankings.outputs.saved == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/site-build.yml
