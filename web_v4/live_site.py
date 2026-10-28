@@ -210,7 +210,9 @@ function freshBanner(){const s=S(),f=freshness(s.observed_at),a=fmtAge(ageMin(s.
  if(f==="DELAYED")return el("div",{class:"banner delayed"},badge("DELAYED")," Odds observed "+a+" ago. Prices may have moved since.");
  return el("div",{class:"banner info"},badge("LIVE")," Odds observed "+a+" ago (collection cadence varies; faster near kickoff).")}
 function cfbBanner(){if(st.sport!=="cfb")return null;const r=S().rankings||{};
+ const pend=(S().games||[]).filter(g=>upcoming(g)&&g.rankings&&g.rankings.status==="PENDING").length;
  if(r.status==="OK")return el("div",{class:"banner info"},"AP Top-25 per game uses the poll applicable at kickoff. Source: "+r.source+", fetched "+local(r.fetched_at)+".",
+  pend?" "+pend+" later game(s) wait for next week's poll (PENDING; shown with the non-Top-25 games).":"",
   st.f.unfiltered?el("b",{}," Showing ALL collected FBS games (unfiltered)."):null);
  return el("div",{class:"banner stale"},badge("UNAVAILABLE")," "+(r.reason||"AP rankings unavailable")+" CFB Top-25 views are empty until rankings are connected; nothing is guessed.",
   st.f.unfiltered?el("b",{}," Showing ALL collected FBS games, Top-25 status UNKNOWN."):null)}
@@ -300,7 +302,8 @@ R.sharp=()=>{const f=st.f;const rows=(S().sharp||[]).filter(r=>cfbGate(r.top25)&
   el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Market"),el("th",{},"Status"),el("th",{class:"hide-s"},"Detail"))),
    el("tbody",{},rows.map(r=>el("tr",{class:"game",on:{click:()=>openGame(r.event_id)}},el("td",{},r.away+" @ "+r.home),el("td",{},MK[r.market]),
     el("td",{},r.status==="INSUFFICIENT EVIDENCE"?badge("INSUFFICIENT EVIDENCE","INFO"):el("span",{},badge(r.status,"WATCH")," "+(r.suspected_side||""))),
-    el("td",{class:"hide-s small mute"},(r.supporting||[]).slice(0,2).join("; ")||(r.reason||""))))))))]};
+    el("td",{class:"hide-s small mute"},(r.supporting||[]).slice(0,2).join("; ")||(r.reason||""),
+     (r.timing_unresolved||[]).length?el("div",{},"Timing unresolved: "+r.timing_unresolved.join("; ")):null)))))))]};
 R.ev=()=>{const f=st.f;const rows=(S().scanner||[]).filter(r=>cfbGate(r.top25)&&(!f.market||r.market===f.market)&&(!f.book||r.book===f.book)
   &&upcoming(r)&&gameMatch(r)&&(r.ev_interval?r.ev_interval[0]:0)>=parseFloat(f.strength));
  const stale=freshness(S().observed_at)!=="LIVE";
@@ -332,7 +335,9 @@ R.game=(id)=>{const g=gameById(id);if(!g)return[card(el("p",{},"Game not found (
  const sp=Object.entries(D.sports).find(([k,s])=>(s.games||[]).includes(g));const s=sp[1];
  const bkg=((s.book||{}).games||[]).find(x=>x.event_id===id);
  const out=[el("p",{},el("a",{href:"#"+(st.prev||"odds")},"← Back")),card(el("h2",{},gameHead(g)),el("p",{class:"mute"},local(g.kickoff)+" · "+s.label+" · observed "+fmtAge(ageMin(s.observed_at))+" ago ",badge(freshness(s.observed_at))),
-  g.rankings?el("p",{class:"small"},g.rankings.status==="OK"?"AP poll week "+g.rankings.poll_week+" ("+g.rankings.season_type+"), fetched "+local(new Date(g.rankings.fetched_at*1000).toISOString())+", source "+g.rankings.source:badge("UNAVAILABLE")," "+(g.rankings.reason||"")):null)];
+  g.rankings?el("p",{class:"small"},g.rankings.status==="OK"?"AP poll week "+g.rankings.poll_week+" ("+g.rankings.season_type+"), fetched "+local(new Date(g.rankings.fetched_at*1000).toISOString())+", source "+g.rankings.source:
+   [badge(g.rankings.status==="PENDING"?"PENDING":"UNAVAILABLE",g.rankings.status==="PENDING"?"WATCH":"UNAVAILABLE")," "+(g.rankings.reason||""),
+    g.rankings.provisional?el("span",{class:"mute"}," Provisional (current poll week "+g.rankings.provisional.poll_week+"): "+g.away+" "+(g.rankings.provisional.away_rank?"#"+g.rankings.provisional.away_rank:"NR")+", "+g.home+" "+(g.rankings.provisional.home_rank?"#"+g.rankings.provisional.home_rank:"NR")+"."):null]):null)];
  for(const m of["spreads","totals","h2h"]){const x=g.markets[m]||{};const sides=m==="totals"?["over","under"]:["home","away"];
   const rows=Object.entries(x.books||{}).map(([b,q])=>el("tr",{class:q.fresh?"":"dim"},el("td",{},b,(x.consensus_books||[]).includes(b)?el("span",{class:"mute small"}," (consensus)"):null),
    ...sides.map(sd=>el("td",{class:"num"},q[sd]?(m==="h2h"?"":ln(q[sd][1])+" ")+am(q[sd][0]):"–")),el("td",{class:"num small mute"},fmtAge(q.age_s/60))));

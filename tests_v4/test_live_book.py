@@ -96,7 +96,7 @@ def test_nfl_all_games_cfb_top25_only(built):
     cfb = out["cfb"]
     ids = {g["event_id"] for g in cfb["games"]}
     assert ids == {_eid("c1"), _eid("c2"), _eid("c4")}          # unranked-vs-unranked c3 excluded
-    assert cfb["coverage"]["excluded"] == {"unranked": 1, "rank_unavailable": 0}
+    assert cfb["coverage"]["excluded"] == {"unranked": 1, "rank_unavailable": 0, "rank_pending": 0}
     g = next(g for g in cfb["games"] if g["event_id"] == _eid("c2"))
     assert (g["rankings"]["home_rank"], g["rankings"]["away_rank"]) == (2, 9)
     assert g["rankings"]["source"] == "CollegeFootballData API" and g["rankings"]["fetched_at"] == T0 - 86400
@@ -253,3 +253,13 @@ def test_variants_do_not_touch_the_baseline_book(built):
 def test_no_games_before_any_collection():
     out = LB.build(new_book(), build_store(), T0 - 10 * 86400, [poll(T0 - 86400)], bettors=500, variants={})
     assert out["nfl"]["status"] == "NO_GAMES" and out["nfl"]["audit"] is None
+
+
+def test_next_week_games_are_pending_not_in_the_book(monkeypatch):
+    # poll fetched Monday 2026-10-26; Alabama-LSU moved to Monday 2026-11-02, after the Sunday release
+    import tests_v4.test_live_book as me
+    monkeypatch.setitem(me.KICK, "c1", T0 + 6 * 86400)
+    out = LB.build(new_book(), build_store(), T0, [poll(T0 - 86400)], bettors=300, variants={})
+    cov = out["cfb"]["coverage"]
+    assert cov["excluded"] == {"unranked": 1, "rank_unavailable": 0, "rank_pending": 1}
+    assert _eid("c1") not in {g["event_id"] for g in out["cfb"]["games"]}

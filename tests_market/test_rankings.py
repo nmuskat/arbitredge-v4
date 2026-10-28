@@ -5,6 +5,11 @@ from data_v4 import rankings as R
 DAY = 86400
 T0 = 1_793_000_000
 
+
+def _utc(y, mo, d, h, mi=0):
+    import calendar
+    return calendar.timegm((y, mo, d, h, mi, 0))
+
 TEAMS = [{"school": s, "mascot": m} for s, m in [
     ("Texas", "Longhorns"), ("Texas A&M", "Aggies"), ("Miami", "Hurricanes"), ("Miami (OH)", "RedHawks"),
     ("Ohio State", "Buckeyes"), ("Ohio", "Bobcats"), ("Navy", "Midshipmen"), ("Notre Dame", "Fighting Irish"),
@@ -58,9 +63,15 @@ def test_latest_applicable_poll_wins_rank_changes():
     assert not late["top25"] and late["poll_week"] == 10       # dropped out of the poll
 
 
-def test_stale_poll_is_unavailable_not_unranked():
+def test_stale_poll_is_never_unranked():
     s = R.top25_status("Texas Longhorns", "Navy Midshipmen", T0 + 30 * DAY, [snap(T0, 9, ["Texas"])])
-    assert s["status"] == "UNAVAILABLE"
+    assert s["status"] == "PENDING" and s["top25"] is None      # a newer weekly poll is due before kickoff
+
+
+def test_old_poll_in_bowl_season_beyond_limit_is_unavailable():
+    fetched = _utc(2026, 12, 7, 0)
+    assert R.top25_status("Texas Longhorns", "Navy Midshipmen", fetched + 60 * DAY,
+                          [snap(fetched, 16, ["Texas"])])["status"] == "UNAVAILABLE"
 
 
 def test_no_rankings_at_all_is_unavailable():
@@ -127,3 +138,57 @@ def test_rankings_workflow_is_gated_pinned_and_only_place_with_cfbd_key():
     for f in os.listdir(wf_dir):
         if f != "cfb-rankings.yml":
             assert "CFBD_API_KEY" not in open(os.path.join(wf_dir, f)).read()
+
+
+# ---- real cases from the first live CFBD snapshot (2026-10-28)
+
+REAL_TEAMS = [
+    {"school": "Southern Miss", "mascot": "Golden Eagles", "alternate_names": ["Southern Mississippi", "USM", "Southern Miss"]},
+    {"school": "San José State", "mascot": "Spartans", "alternate_names": ["San Jose St.", "SJSU", "San José St"]},
+    {"school": "App State", "mascot": "Mountaineers", "alternate_names": ["Appalachian State", "APP", "App State"]},
+    {"school": "Louisiana", "mascot": "Ragin' Cajuns", "alternate_names": ["UL Lafayette", "UL", "Louisiana"]},
+    {"school": "UL Monroe", "mascot": "Warhawks", "alternate_names": ["La.-Monroe", "ULM", "UL Monroe"]},
+    {"school": "Louisiana Tech", "mascot": "Bulldogs", "alternate_names": ["LT", "Louisiana Tech"]},
+    {"school": "Miami", "mascot": "Hurricanes", "alternate_names": ["Miami (FL)", "MIA", "Miami"]},
+    {"school": "Miami (OH)", "mascot": "RedHawks", "alternate_names": ["M-OH", "Miami OH"]},
+    {"school": "Hawai'i", "mascot": "Rainbow Warriors", "alternate_names": ["HAW", "Hawai'i"]},
+    {"school": "Georgia Southern", "mascot": "Eagles", "alternate_names": ["GASO", "GA Southern"]},
+]
+
+
+@pytest.mark.parametrize("name,school", [
+    ("Southern Mississippi Golden Eagles", "Southern Miss"), ("San Jose State Spartans", "San José State"),
+    ("Appalachian State Mountaineers", "App State"), ("UL Monroe Warhawks", "UL Monroe"),
+    ("Louisiana Ragin' Cajuns", "Louisiana"), ("Louisiana Tech Bulldogs", "Louisiana Tech"),
+    ("Miami (OH) RedHawks", "Miami (OH)"), ("Miami Hurricanes", "Miami"), ("Hawaii Rainbow Warriors", "Hawai'i"),
+    ("Georgia Southern Eagles", "Georgia Southern"), ("Southern Eagles", None)])
+def test_real_provider_names_match_cfbd(name, school):
+    assert R.TeamMatcher(REAL_TEAMS).school_for(name) == school
+
+
+def test_name_fitting_two_schools_is_unmatched():
+    teams = [{"school": "Alpha", "mascot": "Owls", "alternate_names": ["Central"]},
+             {"school": "Beta", "mascot": "Owls", "alternate_names": ["Central"]}]
+    assert R.TeamMatcher(teams).school_for("Central Owls") is None
+
+
+def _wk(fetched_at, kickoff):
+    return R.top25_status("Texas Longhorns", "Navy Midshipmen", kickoff, [snap(fetched_at, 9, ["Texas"])])
+
+
+def test_poll_week_rule():
+    tue = _utc(2026, 10, 27, 13, 41)                        # Tuesday backup fetch of the week-9 poll
+    assert _wk(tue, _utc(2026, 10, 31, 19, 30))["status"] == "OK"            # this Saturday
+    assert _wk(tue, _utc(2026, 11, 1, 16, 0))["status"] == "OK"              # Sunday before the release
+    nxt = _wk(tue, _utc(2026, 11, 7, 19, 30))                                # next Saturday: new poll due
+    assert nxt["status"] == "PENDING" and nxt["top25"] is None
+    assert nxt["provisional"]["away_rank"] is None and nxt["provisional"]["home_rank"] == 1
+    sun = _utc(2026, 11, 1, 21, 41)                         # Sunday fetch after the release
+    assert _wk(sun, _utc(2026, 11, 7, 19, 30))["status"] == "OK"
+
+
+def test_bowl_season_uses_final_poll():
+    final = _utc(2026, 12, 6, 21, 41)
+    assert _wk(final, _utc(2026, 12, 12, 20, 0))["status"] == "OK"           # Army-Navy week
+    assert _wk(final, _utc(2026, 12, 27, 20, 0))["status"] == "OK"           # bowl, 3 weeks later
+    assert _wk(final, _utc(2027, 1, 12, 0, 30))["status"] == "OK"            # title game

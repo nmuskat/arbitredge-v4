@@ -70,3 +70,20 @@ The cheapest options, in order:
   - the page is self-contained, with an NFL / CFB-Top-25 switch, 8 sections plus health, game detail and filters;
   - LIVE / DELAYED / STALE labels are computed in the browser, so an old page marks itself stale.
 - Tests: 295 passed, 21 skipped (older demo-site page tests that need a local nflverse build). Mutation checks: 11 of 11 deliberately broken copies were caught.
+
+## 2026-10-28: CFBD connected; first real Top-25 verification
+
+- **CFBD.** The owner added `CFBD_API_KEY` and `CFBD_ENABLED=on`.
+  - A manual `cfb-rankings` run authenticated and saved `rankings_20261028T133307Z.json`.
+  - Contents: AP Top 25 for 2026 regular-season weeks 1–9 and 138 FBS teams. No key-like strings are in the snapshot.
+  - Cost: 3 free-tier calls, 0 Odds API credits.
+- **Found and fixed:**
+  - **Name matching.** 3 provider names did not match (Southern Mississippi, San Jose State, Appalachian State). The fail-safe marked them UNAVAILABLE. Matching now uses CFBD alternate names plus the mascot, with accents and punctuation removed; a name that fits two schools stays unmatched.
+  - **Next week's games.** These were "UNAVAILABLE: poll older than 10 days". They are now **PENDING**: next Sunday's poll applies, and current ranks are attached only as provisional. Bowl season uses the final poll for up to 45 days.
+  - **Need reference line.** It was empty between collection runs. It now uses the consensus at the game's last observation, labelled with that time.
+  - **Sharp money.** All 7 Top-25 college SIGNALs were artifacts: snapshots 12 h apart made every move look like "steam within 15 min" or "X moved first".
+    - Steam and first-mover claims now require observations close enough in time to show them; otherwise the row reports "timing unresolved".
+    - College football needs a 1.0-point minimum move, against 0.5 for the NFL (unvalidated).
+    - Result: 0 of 36 Top-25 college and 0 of 58 NFL game-markets show evidence. This is correct at the current cadence.
+- **Top-25 slate (Oct 31):** 18 of 54 candidate games are in scope: 17 ranked vs unranked, 1 ranked vs ranked (Arizona #22 @ Texas Tech #13). The book's college run on real quotes has 1,151 modeled wagers; every market is LOW sample except two spreads.
+- **Model observation, not changed:** retail books dealt Indiana and Texas 1 point off the market makers. The simulated sharps (3% of bettors) bet into those lines early in the week, so their handle dominates those two Needs. The simulated book never moves its line in response to its own liability, an unvalidated simplification.

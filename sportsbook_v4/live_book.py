@@ -119,11 +119,13 @@ def select_games(live_conn, sport, T, rankings_snapshots=None):
         return [], {"status": "UNAVAILABLE", "rule": "AP Top-25 games only",
                     "reason": "no AP rankings snapshot available (CollegeFootballData key not connected)",
                     "candidates": len(games), "included": 0}
-    keep, excluded = [], {"unranked": 0, "rank_unavailable": 0}
+    keep, excluded = [], {"unranked": 0, "rank_unavailable": 0, "rank_pending": 0}
     for g in games:
         st = rankings.top25_status(g["home"], g["away"], g["kickoff"], rankings_snapshots)
         g["rankings"] = st
-        if st["status"] != "OK":
+        if st["status"] == "PENDING":
+            excluded["rank_pending"] += 1          # next week's poll not out yet: joins once it is
+        elif st["status"] != "OK":
             excluded["rank_unavailable"] += 1
         elif st["top25"]:
             keep.append(g)
@@ -178,10 +180,16 @@ def splits(wagers):
 
 
 def _reference(live_conn, gid, T):
-    sp = asof.market_state(live_conn, gid, "spreads", T)
-    to = asof.market_state(live_conn, gid, "totals", T)
+    """Consensus spread and total as of the game's LAST OBSERVATION at or before T (labelled with
+    that time). Between collection runs the build time can be hours after it, when a fresh-only
+    view would be empty."""
+    r = live_conn.execute("SELECT MAX(fetched_at) FROM mkt_quote WHERE event_id=? AND fetched_at<=?",
+                          (gid, T)).fetchone()
+    at = r[0] if r and r[0] is not None else T
+    sp = asof.market_state(live_conn, gid, "spreads", at)
+    to = asof.market_state(live_conn, gid, "totals", at)
     return (sp.get("line") if sp.get("status") == "OK" else None,
-            to.get("line") if to.get("status") == "OK" else None)
+            to.get("line") if to.get("status") == "OK" else None, at)
 
 
 def _need_summary(need):
@@ -278,7 +286,7 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
 
         for g in games:
             ws = per_game.get(g["event_id"], [])
-            ref_spread, ref_total = _reference(live_conn, g["event_id"], T)
+            ref_spread, ref_total, ref_at = _reference(live_conn, g["event_id"], T)
             sp = splits(ws)
             bands = _bands(sp, var_splits.get(g["event_id"], {}))
             need = book_need_all(ws, ref_home_spread=ref_spread, ref_total=ref_total,
@@ -286,7 +294,8 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
             block["games"].append({
                 "event_id": g["event_id"], "home": g["home"], "away": g["away"], "kickoff": _iso(g["kickoff"]),
                 "rankings": g.get("rankings"), "reference": {"home_spread": ref_spread, "total": ref_total,
-                                                            "as_of": _iso(T), "basis": "observed consensus"},
+                                                            "as_of": _iso(ref_at),
+                                                            "basis": "observed consensus at last collection"},
                 "splits": sp, "bands": bands, "need": _need_summary(need) if need else None,
                 "label": LABEL})
         out[sport] = block

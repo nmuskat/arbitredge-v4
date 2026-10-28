@@ -15,6 +15,17 @@ books vs recreational books) to be tested against CLV once history exists.
 
 Signals that need betting splits (reverse line movement, ticket vs money)
 or injury feeds are reported as UNAVAILABLE -- never estimated.
+
+TIMING RESOLUTION: a move is only known to have happened somewhere between
+two observations. "Steam" (books moving together within steam_window_s) and
+"moved first" are claimed only when the observation before the move is close
+enough in time to show it (steam_window_s, LEAD_RESOLUTION_S). With sparse
+collection (hours between snapshots) they are reported as unresolved, never
+inferred from simultaneous snapshots.
+
+SPORT THRESHOLDS (UNVALIDATED, to be calibrated against closing-line results):
+the minimum meaningful move is larger for college football, whose spreads and
+totals are bigger and move more on less money.
 """
 
 from collections import defaultdict
@@ -25,6 +36,9 @@ SHARP_BOOKS = {"pinnacle", "circasports", "betonlineag", "lowvig", "bookmaker"}
 REC_BOOKS = {"draftkings", "fanduel", "betmgm", "williamhill_us", "caesars", "betrivers", "pointsbetus",
              "espnbet", "fanatics", "hardrockbet", "ballybet", "betparx", "unibet_us", "superbook", "wynnbet"}
 PROB_PER_POINT = 0.03
+LEAD_RESOLUTION_S = 3600
+SPORT_THRESHOLDS = {"americanfootball_nfl": {"min_move": 0.5},
+                    "americanfootball_ncaaf": {"min_move": 1.0}}
 KEY_NUMBERS = {"spreads": (3.0, 7.0, 10.0, 6.0, 14.0), "totals": (41.0, 44.0, 37.0, 47.0, 51.0)}
 REAL_SOURCES = ("odds_api", "v3_copy")
 
@@ -80,10 +94,19 @@ def _consensus(series, books, t):
     return sum(vals) / len(vals) if vals else None
 
 
-def analyse(conn, event_id, market, T, min_books=3, min_move=0.5, steam_window_s=900, steam_books=3,
+def _sport(conn, event_id):
+    r = conn.execute("SELECT sport FROM mkt_quote WHERE event_id=? LIMIT 1", (event_id,)).fetchone()
+    return r[0] if r else None
+
+
+def analyse(conn, event_id, market, T, min_books=3, min_move=None, steam_window_s=900, steam_books=3,
             allow_demo=False):
     """allow_demo: accept rows explicitly tagged 'demo_sim' (simulated quotes for UI demonstration).
-    The result is then labelled DEMO. The synthetic sportsbook's own data is never accepted."""
+    The result is then labelled DEMO. The synthetic sportsbook's own data is never accepted.
+    min_move: None = the sport's threshold (SPORT_THRESHOLDS; NFL value for unknown sports)."""
+    sport = _sport(conn, event_id)
+    if min_move is None:
+        min_move = SPORT_THRESHOLDS.get(sport, SPORT_THRESHOLDS["americanfootball_nfl"])["min_move"]
     s = _series(conn, event_id, market, T, allow_demo)
     side_pos, side_neg = ("home", "away") if market in ("spreads", "h2h") else ("over", "under")
     res = {"event_id": event_id, "market": market, "as_of": T, "status": "INSUFFICIENT EVIDENCE",
@@ -93,7 +116,8 @@ def analyse(conn, event_id, market, T, min_books=3, min_move=0.5, steam_window_s
            "unavailable": ["reverse line movement (needs ticket/handle splits: no licensed source)",
                            "ticket vs money divergence (no licensed source)",
                            "injury/lineup news (no feed integrated)"],
-           "historical_effectiveness": "not yet measured: needs multi-book quote history with closes"}
+           "historical_effectiveness": "not yet measured: needs multi-book quote history with closes",
+           "sport": sport, "min_move": min_move, "timing_unresolved": []}
     books = sorted(s)
     res["books"] = {b: {"class": _class(b), "observations": len(s[b]),
                         "open_pe": round(s[b][0][1], 2), "now_pe": round(s[b][-1][1], 2)} for b in books}
@@ -127,6 +151,12 @@ def analyse(conn, event_id, market, T, min_books=3, min_move=0.5, steam_window_s
         lead_t = min(v[0] for v in first.values())
         leaders = [b for b, v in first.items() if v[0] == lead_t]
         dirs = {first[b][1] for b in leaders}
+        prev_t = max((t for t in times if t < lead_t), default=None)
+        if prev_t is None or lead_t - prev_t > LEAD_RESOLUTION_S:
+            res["timing_unresolved"].append(
+                f"first mover: observations {((lead_t - prev_t) / 3600 if prev_t else 0):.1f} h apart around the "
+                f"move (need <= {LEAD_RESOLUTION_S // 60} min); ordering of books not claimed")
+            dirs = set()
         if len(dirs) == 1:
             d = dirs.pop()
             followers = [b for b, v in first.items() if v[0] > lead_t and v[1] == d]
@@ -139,12 +169,21 @@ def analyse(conn, event_id, market, T, min_books=3, min_move=0.5, steam_window_s
                                    "(weaker: may reflect public flow or risk management)", lead_t))
         res["detected_at"] = lead_t
 
-    # 3. steam: >= steam_books books move >= min_move the same way within a window
+    # 3. steam: >= steam_books books move >= min_move the same way within a window. A book counts
+    #    only if its previous observation is inside the window, so the move is KNOWN to be that fast.
+    coarse = 0
     for t in times:
         movers = defaultdict(set)
         for b in books:
-            before = [p for p in s[b] if p[0] <= t - steam_window_s] or s[b][:1]
-            after = [p for p in s[b] if t - steam_window_s < p[0] <= t]
+            prev = [p for p in s[b] if p[0] < t]
+            after = [p for p in s[b] if p[0] == t]
+            if not prev or not after:
+                continue
+            if t - prev[-1][0] > steam_window_s:
+                if abs(after[-1][1] - prev[-1][1]) >= min_move:
+                    coarse += 1
+                continue
+            before = prev
             if before and after:
                 d = after[-1][1] - before[-1][1]
                 if abs(d) >= min_move:
@@ -157,6 +196,10 @@ def analyse(conn, event_id, market, T, min_books=3, min_move=0.5, steam_window_s
         else:
             continue
         break
+    if coarse and not any(e[2].startswith("steam") for e in ev):
+        res["timing_unresolved"].append(
+            f"steam: {coarse} book move(s) seen only between observations more than "
+            f"{steam_window_s // 60} min apart; speed of the move unknown")
 
     # 4. key-number crossing of the consensus line
     if market in KEY_NUMBERS:

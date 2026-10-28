@@ -15,7 +15,7 @@ def iso(t):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
 
 
-def build(timeline, source="odds_api", market="spreads"):
+def build(timeline, source="odds_api", market="spreads", sport="americanfootball_nfl"):
     """timeline: {minutes_after_T0: {book: (home_line, home_price, away_price)}}"""
     conn = store.connect()
     for minute, books in sorted(timeline.items()):
@@ -23,10 +23,10 @@ def build(timeline, source="odds_api", market="spreads"):
         qs = []
         for book, (line, hp, ap) in books.items():
             a, b = ("home", "away") if market == "spreads" else ("over", "under")
-            qs.append(Quote(EID, "americanfootball_nfl", KICK, "H", "A", book, market, a, line, hp, iso(t), iso(t), source, "fp"))
-            qs.append(Quote(EID, "americanfootball_nfl", KICK, "H", "A", book, market, b,
+            qs.append(Quote(EID, sport, KICK, "H", "A", book, market, a, line, hp, iso(t), iso(t), source, "fp"))
+            qs.append(Quote(EID, sport, KICK, "H", "A", book, market, b,
                             -line if market == "spreads" else line, ap, iso(t), iso(t), source, "fp"))
-        store.ingest(conn, qs, [], iso(t), "americanfootball_nfl", "odds", f"fp{minute}")
+        store.ingest(conn, qs, [], iso(t), sport, "odds", f"fp{minute}")
     return conn
 
 
@@ -97,7 +97,7 @@ def test_splits_based_signals_always_marked_unavailable():
 
 def test_price_only_move_counts_as_movement():
     tl = steady([0, 30])
-    tl[60] = {b: (-2.5, -135, 115) for b in ("pinnacle", *REC)}   # juice moved toward home, line unchanged
+    tl[40] = {b: (-2.5, -135, 115) for b in ("pinnacle", *REC)}   # juice moved toward home, line unchanged
     r = S.analyse(build(tl), EID, "spreads", T0 + 7200)
     assert r["suspected_side"] == "home"
 
@@ -111,7 +111,7 @@ def test_sharp_vs_rec_disagreement():
 
 def test_totals_direction_is_over_under():
     tl = steady([0, 30], q=(44.5, -110, -110))
-    tl[60] = {b: (46.5, -110, -110) for b in ("pinnacle", *REC)}
+    tl[40] = {b: (46.5, -110, -110) for b in ("pinnacle", *REC)}
     r = S.analyse(build(tl, market="totals"), EID, "totals", T0 + 7200)
     assert r["suspected_side"] == "over"
 
@@ -143,3 +143,36 @@ def test_demo_rows_need_explicit_opt_in_and_are_labelled():
     assert r["label"].startswith("DEMO DATA")
     with pytest.raises(S.SyntheticSourceRejected):          # the synthetic sportsbook is never evidence
         S.analyse(build(steady([0, 30]), source="synthetic_v4"), EID, "spreads", T0 + 3600, allow_demo=True)
+
+
+# ---- timing resolution: sparse snapshots (the real collection cadence far from kickoff)
+
+ALL = ("pinnacle", "lowvig", "betonlineag", *REC)
+
+
+def test_sparse_snapshots_never_claim_steam_or_first_mover():
+    # three snapshots 12 h apart; every book moved between them (as in the real 2026-10-28 data)
+    tl = {0: {b: FLAT for b in ALL}, 720: {b: (-3.5, -110, -110) for b in ALL},
+          1440: {b: (-3.5, -110, -110) for b in ALL}}
+    tl[720]["draftkings"] = FLAT                 # one rec book lags a snapshot
+    r = S.analyse(build(tl), EID, "spreads", T0 + 1441 * 60)
+    texts = r["supporting"] + r["contradicting"]
+    assert not any(e.startswith("steam") for e in texts)
+    assert not any("moved first" in e for e in texts)
+    assert any(u.startswith("steam") for u in r["timing_unresolved"])
+    assert any(u.startswith("first mover") for u in r["timing_unresolved"])
+
+
+def test_dense_snapshots_still_detect_steam():
+    tl = {0: {b: FLAT for b in ALL}, 600: {b: FLAT for b in ALL}, 605: {b: (-1.5, -110, -110) for b in ALL}}
+    r = S.analyse(build(tl), EID, "spreads", T0 + 610 * 60)
+    assert any(e.startswith("steam") for e in r["supporting"]) and r["timing_unresolved"] == []
+
+
+@pytest.mark.parametrize("sport,expect_move", [("americanfootball_nfl", True), ("americanfootball_ncaaf", False)])
+def test_sport_specific_minimum_move(sport, expect_move):
+    tl = {0: {b: (-20.5, -110, -110) for b in ALL}, 10: {b: (-21.25, -110, -110) for b in ALL}}   # 0.75 pt
+    r = S.analyse(build(tl, sport=sport), EID, "spreads", T0 + 20 * 60)
+    assert r["sport"] == sport and r["min_move"] == S.SPORT_THRESHOLDS[sport]["min_move"]
+    assert any(e.startswith("consensus moved") for e in r["supporting"] + [r.get("reason", "")]) or not expect_move
+    assert (r["status"] == "SIGNAL") == expect_move
