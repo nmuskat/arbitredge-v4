@@ -237,9 +237,12 @@ BOOK = {
     # The synthetic book re-quotes the representative market with this lag;
     # sharps compare it with the reference market at their own decision time.
     "offer_lag_seconds": 600,
-    # Reference market for sharp/shopper comparisons: lower-median across
-    # these books if any quote exists at time t, else across all books.
-    "reference_books": ["lowvig", "betonlineag"],
+    # Reference market for sharp/shopper comparisons: the representative quote across
+    # these market-making books if any is quoted at time t, else across all books.
+    "reference_books": ["pinnacle", "circasports", "betonlineag", "lowvig", "bookmaker"],   # market makers
+    # After respected (SHARP) action a retail book copies the market makers' quote for that market
+    # until the retail market moves (engine._book_offers). UNVALIDATED policy, like everything here.
+    "respected_action": "copy_reference",
     "decision_time_granularity_seconds": 60,
     "markets": ["spread", "total", "moneyline"],
 }

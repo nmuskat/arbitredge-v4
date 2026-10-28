@@ -35,6 +35,7 @@ here is an observed betting split, and the output says so on every row.
 """
 
 import calendar
+import math
 import re
 import sqlite3
 import time
@@ -44,7 +45,7 @@ from sportsbook_v4 import ENGINE_VERSION, params as P, persist
 from sportsbook_v4.engine import GameSpec, RunMismatch, SlateSpec, advance, create_run, load_run
 from sportsbook_v4.facts import NoFacts
 from sportsbook_v4.ledger_read import fetch_wagers
-from sportsbook_v4.market import MarketV4Source
+from sportsbook_v4.market import MarketV4Source, profit_on_win
 from sportsbook_v4.population import ensure_population
 from sportsbook_v4.schema import ensure_schema
 from sportsbook_v4.settlement import book_need_all
@@ -204,7 +205,8 @@ def _team_key(sport, name, matcher):
 
 
 def splits(wagers):
-    """MODELED splits per market and side: tickets % from wager counts, handle % from stakes."""
+    """MODELED splits per market and side: tickets % from wager counts, handle % from stakes, potential
+    payout and the book's P&L if that side wins, all from each wager's accepted price."""
     out = {}
     for m, sides in SPLIT_SIDES.items():
         ws = [w for w in wagers if w["market"] == m]
@@ -217,9 +219,14 @@ def splits(wagers):
         for s in sides:
             sw = [w for w in ws if w["side"] == s]
             st = sum(w["stake"] for w in sw)
+            # each wager at ITS OWN accepted price: stake back plus winnings
+            pay = math.fsum(w["stake"] + profit_on_win(w["stake"], w["accepted_price"]) for w in sw)
             row["sides"][s] = {"tickets": len(sw), "handle": round(st, 2),
                                "ticket_pct": round(100 * len(sw) / n, 1), "handle_pct": round(100 * st / h, 1),
-                               "avg_stake": round(st / len(sw), 2) if sw else None}
+                               "avg_stake": round(st / len(sw), 2) if sw else None,
+                               "potential_payout": round(pay, 2),
+                               # book keeps every stake, pays this side's winners (pushes not modelled here)
+                               "book_pnl_if_side_wins": round(h - pay, 2)}
         a = sides[0]
         row["handle_minus_tickets_pct"] = round(row["sides"][a]["handle_pct"] - row["sides"][a]["ticket_pct"], 1)
         row["of_side"] = a
@@ -263,17 +270,40 @@ def _market(live_conn, sport):
                           source_id=f"live_quotes:{sport}:max_age={LIVE_MAX_AGE}")
 
 
+def model_tag():
+    """Engine + parameter identity of a weekly run. A model change opens a NEW run for the week; runs
+    from earlier model versions stay in the ledger, immutable, and are reported as superseded."""
+    return f"{ENGINE_VERSION.rsplit('.', 1)[-1]}_{P.params_hash()[:8]}"
+
+
 def slate_id(sport, ws):
-    return f"week_{sport}_{time.strftime('%Y%m%d', time.gmtime(ws))}"
+    return f"week_{sport}_{time.strftime('%Y%m%d', time.gmtime(ws))}_{model_tag()}"
 
 
-def open_run(book_conn, live_conn, sport, ws, we, games, team_universe, bettors=10_000, matcher=None):
+def _current_model(book_conn, run_id):
+    ev, ph = book_conn.execute("SELECT engine_version, params_hash FROM v4_run WHERE run_id=?", (run_id,)).fetchone()
+    return ev == ENGINE_VERSION and ph == P.params_hash()
+
+
+STANDALONE_GAP_S = 90 * 60     # no other game of the sport kicks off within 90 min: a standalone window
+
+
+def standalone_ids(all_week_games):
+    """Games alone in their kickoff window (TNF/SNF/MNF, lone night games), from the full week's
+    collected schedule of the sport. National-TV assignments are not in the data: not inferred."""
+    ks = [(g["event_id"], g["kickoff"]) for g in all_week_games]
+    return {e for e, k in ks if not any(o != e and abs(k2 - k) < STANDALONE_GAP_S for o, k2 in ks)}
+
+
+def open_run(book_conn, live_conn, sport, ws, we, games, team_universe, bettors=10_000, matcher=None,
+             standalone=frozenset()):
     pid = ensure_population(book_conn, sport, team_universe, bettor_count=bettors)
     # times in the engine's canonical format: the run id is hashed from these strings and a replay
     # rebuilds the slate from the stored run row, so both must be byte-identical
     slate = SlateSpec(sport, slate_id(sport, ws), from_epoch(ws), from_epoch(we),
                       tuple(GameSpec(g["event_id"], _team_key(sport, g["home"], matcher),
-                                     _team_key(sport, g["away"], matcher), from_epoch(g["kickoff"])) for g in games))
+                                     _team_key(sport, g["away"], matcher), from_epoch(g["kickoff"]),
+                                     standalone=g["event_id"] in standalone) for g in games))
     return create_run(book_conn, pid, slate, _market(live_conn, sport))
 
 
@@ -369,9 +399,17 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
             continue
         D = complete_through(L, T)
         ws, we = week_window(D)
-        # finish earlier weeks that were still open at the previous build
-        for rid, in book_conn.execute("SELECT run_id FROM v4_run WHERE sport=? AND window_start<?",
-                                      (sport, from_epoch(ws))).fetchall():
+        # runs from earlier model versions: kept as an immutable record, never advanced or shown
+        block["superseded_runs"] = [
+            {"run_id": rid[:12], "slate_id": sid, "engine_version": ev, "wagers": n}
+            for rid, sid, ev, n in book_conn.execute(
+                "SELECT r.run_id, r.slate_id, r.engine_version, (SELECT COUNT(*) FROM v4_wager w WHERE w.run_id=r.run_id) "
+                "FROM v4_run r WHERE r.sport=? AND NOT (r.engine_version=? AND r.params_hash=?) ORDER BY r.window_start",
+                (sport, ENGINE_VERSION, P.params_hash())).fetchall()]
+        # finish earlier weeks (current model) that were still open at the previous build
+        for rid, in book_conn.execute("SELECT run_id FROM v4_run WHERE sport=? AND window_start<? "
+                                      "AND engine_version=? AND params_hash=?",
+                                      (sport, from_epoch(ws), ENGINE_VERSION, P.params_hash())).fetchall():
             st, _ = advance_and_export(book_conn, live_conn, rid, D, book_out)
             if st != "OK":
                 block.update(status="INTEGRITY_FAILED" if st.startswith("INTEGRITY") else "FROZEN", reason=st)
@@ -391,7 +429,8 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                 latest = max(snaps, key=lambda x: x["fetched_at"], default=None)
                 matcher = rankings.TeamMatcher(latest["teams"]) if latest else None
             run_id = open_run(book_conn, live_conn, sport, ws, we, games,
-                              universe(sport, rankings_snapshots, games), bettors, matcher)
+                              universe(sport, rankings_snapshots, games), bettors, matcher,
+                              standalone=standalone_ids(week_games(live_conn, sport, ws, we, L)))
             ranks = {g["event_id"]: g.get("rankings") for g in games}
         else:
             run_id, ranks = row[0], {}

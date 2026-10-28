@@ -19,4 +19,4 @@ ISOLATION (milestone 1)
   operations (enforced by tests_v4/test_isolation.py).
 """
 
-ENGINE_VERSION = "sportsbook_v4.m1"
+ENGINE_VERSION = "sportsbook_v4.m4"   # m4: coherent side-neutral offer; book moves on respected action

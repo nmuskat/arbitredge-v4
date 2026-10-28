@@ -147,9 +147,15 @@ def test_tickets_from_counts_handle_from_stakes(built):
 
 
 def test_splits_unit_tickets_vs_handle():
-    ws = [{"market": "spread", "side": "home", "stake": 20.0}] * 8 + [{"market": "spread", "side": "away", "stake": 500.0}] * 2
+    ws = [{"market": "spread", "side": "home", "stake": 20.0, "accepted_price": -110}] * 8 + \
+        [{"market": "spread", "side": "away", "stake": 500.0, "accepted_price": +120}] * 2
     s = LB.splits(ws)["spread"]
     assert s["sides"]["home"]["ticket_pct"] == 80.0 and s["sides"]["home"]["handle_pct"] == pytest.approx(13.8, abs=0.1)
+    # payouts at each wager's own price: home 8 x (20 + 18.18), away 2 x (500 + 600); handle 1160
+    assert s["sides"]["home"]["potential_payout"] == pytest.approx(305.45, abs=0.01)
+    assert s["sides"]["away"]["potential_payout"] == 2200.0
+    assert s["sides"]["home"]["book_pnl_if_side_wins"] == pytest.approx(1160 - 305.45, abs=0.01)
+    assert s["sides"]["away"]["book_pnl_if_side_wins"] == -1040.0
     assert s["sample"] == "LOW" and LB.splits([])["spread"]["status"] == "NO_WAGERS"
 
 
@@ -214,7 +220,8 @@ def test_wagers_only_inside_the_week_and_up_to_complete_data(built):
     _, book, out = built
     for sport in ("nfl", "cfb"):
         a = out[sport]["audit"]
-        assert a["window"] == [iso(T0), iso(T0 + 7 * 86400)] and a["slate_id"] == f"week_{sport}_20261027"
+        assert a["window"] == [iso(T0), iso(T0 + 7 * 86400)]
+        assert a["slate_id"] == f"week_{sport}_20261027_{LB.model_tag()}"
         assert a["data_complete_through"] == iso(NOW) and a["advanced_to"] == iso(NOW)
         for w in fetch_wagers(book, a["run_id"], market=None):
             assert T0 <= to_epoch(w["accepted_at"]) <= NOW
@@ -416,3 +423,10 @@ def test_book_advances_only_to_complete_data_not_build_time():
     assert a["last_observation"] == iso(NOW)
     assert a["data_complete_through"] == a["advanced_to"] == iso(T - LB.DATA_SAFETY_S)
     assert LB.DATA_SAFETY_S >= 15 * 60
+
+
+
+def test_standalone_games_detected_from_the_schedule():
+    g = [{"event_id": "tnf", "kickoff": 1000 * 3600}, {"event_id": "e1", "kickoff": 1100 * 3600},
+         {"event_id": "e2", "kickoff": 1100 * 3600 + 3600}, {"event_id": "snf", "kickoff": 1105 * 3600}]
+    assert LB.standalone_ids(g) == {"tnf", "snf"}        # e1/e2 overlap (60 min apart); snf is 4 h after e2

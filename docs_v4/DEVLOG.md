@@ -117,3 +117,24 @@ The cheapest options, in order:
   - The NFL book trades only about 6 h after each ~24-hourly NFL fetch.
   - No close-snapshot attempts for the Sun 11-08 14:30 UTC NFL game, or for several weekday-night non-Top-25 college games.
 - Tests: 358 passed, 21 skipped. Mutation checks: 9 of 9 new ledger protections caught.
+
+## 2026-10-28: Synthetic sportsbook audit; engine m4
+
+See `docs_v4/SPORTSBOOK_AUDIT.md`.
+
+- **Verified on the real ledger:**
+  - 20,000 persistent identities (hash-verified);
+  - every accepted price equals the real quote at its offer time;
+  - an independent recomputation of splits, payouts, book P&L and Need matches the dashboard (0 mismatches).
+- **Fixed (engine m4, no API spend):**
+  - a one-sided offered line, always the lower middle value;
+  - offered price pairs mixed from two books;
+  - a single-operator sharp reference;
+  - no book reaction to sharp action. In m1 that left 89–95% of handle sharp and 100% on underdogs; m4 gives about 47%, on both sides.
+  - Also: standalone (primetime) games are now detected from the schedule, and payouts and book P&L are shown per side.
+  - m1 runs stay in `v4-book`, unchanged and marked superseded.
+- **Collection plan** (planning only):
+  - the current test tier projects to about 509 credits a month and will meet its 500 cap;
+  - Top-25-targeted CFB closes give about 340;
+  - balanced about 757, aggressive about 979.
+  - Awaiting owner decision.

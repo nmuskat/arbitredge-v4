@@ -48,13 +48,22 @@ def test_line_moves_create_multiple_accepted_numbers_and_wagers_keep_theirs(full
     flip = fetch_wagers(conn, run_id, "g_sun2")
     spreads = {w["accepted_home_spread"] for w in flip}
     assert {2.5, 1.0, -1.0} <= spreads          # favourite flipped mid-week; old numbers persist
-    # Every wager carries exactly the number the book offered at ITS offer time.
+    # Every wager carries exactly the number the book offered at ITS offer time: the retail re-quote, or
+    # (engine m4, after respected action) the market makers' quote -- the mode is recorded on the wager.
+    import json
+    from sportsbook_v4.params import BOOK
+    copied = 0
     for w in fetch_wagers(conn, run_id):
-        offer = representative_offer(market.latest_quotes(w["canonical_game_id"], to_epoch(w["offer_as_of"])))
+        mode = json.loads(conn.execute("SELECT decision_json FROM v4_wager WHERE wager_id=?",
+                                       (w["wager_id"],)).fetchone()[0])["book_mode"]
+        quotes = market.latest_quotes(w["canonical_game_id"], to_epoch(w["offer_as_of"]))
+        offer = representative_offer(quotes, books=BOOK["reference_books"] if mode == "reference" else None)
+        copied += mode == "reference"
         assert w["accepted_home_spread"] == offer["home_spread"]
         price = offer["home_price"] if w["side"] == "home" else offer["away_price"]
         assert w["accepted_price"] == price
         assert to_epoch(w["offer_as_of"]) <= to_epoch(w["accepted_at"])
+    assert copied > 0                           # the book did react to sharp action
 
 
 def test_append_only_triggers(full_week):

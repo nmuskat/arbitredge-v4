@@ -17,6 +17,7 @@ Two implementations:
 """
 
 import bisect
+import hashlib
 import sqlite3
 from dataclasses import dataclass, field
 
@@ -62,18 +63,67 @@ def _lower_median(sorted_values):
     return sorted_values[n // 2] if n % 2 == 1 else sorted_values[n // 2 - 1]
 
 
-def _representative_price(matching, side):
-    cands = []
-    for q in matching:
-        price = q.home_price if side == "home" else q.away_price
+# ---------------------------------------------------------------- the synthetic book's offered market
+#
+# The book re-quotes the market as ONE coherent two-way quote (line and both prices from the same real
+# sportsbook), chosen side-neutrally:
+#   line   the median line across books; when the two middle values differ, the line offered by more
+#          books, then the one nearer the mean; an exact tie is broken by a hash of the quote set, so
+#          no side is systematically favoured (the previous rule always took the LOWER middle value:
+#          fewer points for the home side, a lower total for the over).
+#   prices of the books on that line, the one with the median no-vig probability; with two middle
+#          books, the higher-margin quote (a retail book prices to its own margin), then by book name.
+# Mirroring a market (home <-> away, over <-> under) mirrors the offer, apart from exact-tie coin flips.
+
+def _novig_first(p_a, p_b):
+    pa, pb = implied_probability(p_a), implied_probability(p_b)
+    return pa / (pa + pb), pa + pb - 1.0
+
+
+def _pick_line(values, quotes):
+    vals = sorted(values)
+    n = len(vals)
+    if n % 2 == 1:
+        return vals[n // 2]
+    a, b = vals[n // 2 - 1], vals[n // 2]
+    if a == b:
+        return a
+    ca, cb = vals.count(a), vals.count(b)
+    if ca != cb:
+        return a if ca > cb else b
+    mean = sum(vals) / n
+    if abs(a - mean) != abs(b - mean):
+        return a if abs(a - mean) < abs(b - mean) else b
+    h = hashlib.sha256("|".join(sorted(f"{q.book}:{q.ref}" for q in quotes)).encode()).digest()
+    return (a, b)[h[0] % 2]
+
+
+def _pick_book(cands):
+    """cands: [(book, price_a, price_b)] at one line -> the representative (book, price_a, price_b) or None."""
+    rows = []
+    for book, pa, pb in cands:
         try:
-            cands.append((implied_probability(price), q.book, price))
-        except InvalidPrice:
+            p, margin = _novig_first(pa, pb)
+        except (InvalidPrice, ZeroDivisionError):
             continue
-    if not cands:
+        rows.append((p, margin, book, pa, pb))
+    if not rows:
         return None
-    cands.sort()
-    return _lower_median(cands)[2]
+    rows.sort(key=lambda r: (r[0], r[2]))
+    n = len(rows)
+    if n % 2 == 1:
+        r = rows[n // 2]
+    else:
+        r = max(rows[n // 2 - 1], rows[n // 2], key=lambda x: (x[1], x[2]))
+    return r[2], r[3], r[4]
+
+
+def _subset(usable, books):
+    if books:
+        subset = [q for q in usable if q.book in set(books)]
+        if subset:
+            return subset
+    return usable
 
 
 def representative_offer(quotes, books=None):
@@ -81,22 +131,20 @@ def representative_offer(quotes, books=None):
     quotes: latest Quote per book (as returned by MarketSource.latest_quotes).
     books:  optional subset of books to use; falls back to all books when no
             quote from the subset exists.
-    Returns {home_spread, home_price, away_price, books, refs, book_count}
+    Returns {home_spread, home_price, away_price, price_book, books, refs, book_count}
     or None when no book has a usable spread.
     """
-    usable = [q for q in quotes if q.home_spread is not None]
-    if books:
-        subset = [q for q in usable if q.book in set(books)]
-        if subset:
-            usable = subset
+    usable = _subset([q for q in quotes if q.home_spread is not None], books)
     if not usable:
         return None
-    rep = _lower_median(sorted(float(q.home_spread) for q in usable))
+    rep = _pick_line([float(q.home_spread) for q in usable], usable)
     matching = sorted((q for q in usable if float(q.home_spread) == rep), key=lambda q: q.book)
+    pick = _pick_book([(q.book, q.home_price, q.away_price) for q in matching])
     return {
         "home_spread": rep,
-        "home_price": _representative_price(matching, "home"),
-        "away_price": _representative_price(matching, "away"),
+        "home_price": pick[1] if pick else None,
+        "away_price": pick[2] if pick else None,
+        "price_book": pick[0] if pick else None,
         "books": [q.book for q in matching],
         "refs": [q.ref for q in matching],
         "book_count": len(usable),
@@ -105,51 +153,25 @@ def representative_offer(quotes, books=None):
 
 def representative_total_offer(quotes, books=None):
     """Same construction as representative_offer, for the game total."""
-    usable = [q for q in quotes if q.total is not None]
-    if books:
-        subset = [q for q in usable if q.book in set(books)]
-        if subset:
-            usable = subset
+    usable = _subset([q for q in quotes if q.total is not None], books)
     if not usable:
         return None
-    rep = _lower_median(sorted(float(q.total) for q in usable))
+    rep = _pick_line([float(q.total) for q in usable], usable)
     matching = sorted((q for q in usable if float(q.total) == rep), key=lambda q: q.book)
-
-    def price(side):
-        c = []
-        for q in matching:
-            pr = q.over_price if side == "over" else q.under_price
-            try:
-                c.append((implied_probability(pr), q.book, pr))
-            except InvalidPrice:
-                continue
-        return _lower_median(sorted(c))[2] if c else None
-
-    return {"total": rep, "over_price": price("over"), "under_price": price("under"),
+    pick = _pick_book([(q.book, q.over_price, q.under_price) for q in matching])
+    return {"total": rep, "over_price": pick[1] if pick else None, "under_price": pick[2] if pick else None,
+            "price_book": pick[0] if pick else None,
             "books": [q.book for q in matching], "refs": [q.ref for q in matching], "book_count": len(usable)}
 
 
 def representative_ml_offer(quotes, books=None):
-    usable = [q for q in quotes if q.home_ml is not None and q.away_ml is not None]
-    if books:
-        subset = [q for q in usable if q.book in set(books)]
-        if subset:
-            usable = subset
+    usable = sorted(_subset([q for q in quotes if q.home_ml is not None and q.away_ml is not None], books),
+                    key=lambda q: q.book)
     if not usable:
         return None
-
-    def price(side):
-        c = []
-        for q in usable:
-            pr = q.home_ml if side == "home" else q.away_ml
-            try:
-                c.append((implied_probability(pr), q.book, pr))
-            except InvalidPrice:
-                continue
-        return _lower_median(sorted(c))[2] if c else None
-
-    usable = sorted(usable, key=lambda q: q.book)
-    return {"home_price": price("home"), "away_price": price("away"),
+    pick = _pick_book([(q.book, q.home_ml, q.away_ml) for q in usable])
+    return {"home_price": pick[1] if pick else None, "away_price": pick[2] if pick else None,
+            "price_book": pick[0] if pick else None,
             "books": [q.book for q in usable], "refs": [q.ref for q in usable], "book_count": len(usable)}
 
 

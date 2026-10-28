@@ -393,7 +393,54 @@ def _sharp_pick(arch, open_games, view, ref_t):
     return best
 
 
-def _decide(rng_key, bettor, seq, t, games, view, facts_source, staked):
+# ----------------------------------------------------------------- the book's own line management
+#
+# The book re-quotes the retail market (representative_offer). Like a real retail book, after
+# RESPECTED action (an accepted SHARP wager) it stops dealing its own number in that game/market and
+# copies the market makers (the representative quote of BOOK["reference_books"], line AND prices)
+# until the retail market itself moves to a new quote; then it re-bases. Every customer sees the
+# copied number. Sharps can then only beat the book's re-quote lag (offer_lag_seconds).
+# State comes only from accepted wagers (decision_json), so advance(a->c) == advance(a->b->c).
+
+def _book_key(market, offer):
+    if market == "spread":
+        return [offer["home_spread"], offer["home_price"], offer["away_price"]]
+    if market == "total":
+        return [offer["total"], offer["over_price"], offer["under_price"]]
+    return [offer["home_price"], offer["away_price"]]
+
+
+def _book_offers(view, gid, offer_t, book_state, enabled):
+    """The book's offers for a game at offer_t: retail re-quote, or the market makers' quote for a
+    market where respected action hit the current retail quote. Returns (offers, {market: (key, mode)})."""
+    out, base = {}, {}
+    refs = None
+    for m, o in view.offers(gid, offer_t).items():
+        if m not in enabled or o is None or None in _book_key(m, o):
+            continue
+        key, mode = _book_key(m, o), "market"
+        if book_state.get((gid, m)) == key:
+            if refs is None:
+                refs = view.offers(gid, offer_t, books=BOOK["reference_books"])
+            r = refs.get(m)
+            if r is not None and None not in _book_key(m, r):
+                o, mode = r, "reference"
+        out[m] = o
+        base[m] = (key, mode)
+    return out, base
+
+
+def book_state_from_wagers(rows):
+    """rows: (canonical_game_id, market, decision_json) of accepted SHARP wagers in acceptance order."""
+    state = {}
+    for gid, m, dj in rows:
+        d = json.loads(dj)
+        if "book_base" in d:
+            state[(gid, m)] = d["book_base"]
+    return state
+
+
+def _decide(rng_key, bettor, seq, t, games, view, facts_source, staked, book_state=None):
     arch = ARCHETYPES[bettor["archetype"]]
     tr = bettor["traits"]
     gran = BOOK["decision_time_granularity_seconds"]
@@ -402,13 +449,15 @@ def _decide(rng_key, bettor, seq, t, games, view, facts_source, staked):
     rng = random.Random(seed_int("v4_decide", rng_key, bettor["bettor_uid"], seq))
     enabled = set(BOOK["markets"])
 
-    open_games = []
+    book_state = {} if book_state is None else book_state
+    open_games, bases = [], {}
     for g in games:
         if t >= to_epoch(g.commence_time):
             continue
-        offers = {m: o for m, o in view.offers(g.canonical_game_id, offer_t).items() if m in enabled and o is not None}
+        offers, base = _book_offers(view, g.canonical_game_id, offer_t, book_state, enabled)
         if offers:
             open_games.append((g, offers))
+            bases[g.canonical_game_id] = base
     if not open_games:
         return None, "no_open_market"
 
@@ -454,6 +503,10 @@ def _decide(rng_key, bettor, seq, t, games, view, facts_source, staked):
 
     detail.update({"p_side_threshold": arch["conviction_threshold"], "raw_stake": round(raw, 4),
                    "limit": limit, "budget_before": round(budget, 4)})
+    key, mode = bases[game.canonical_game_id][market]
+    detail["book_mode"] = mode          # "market": retail re-quote; "reference": copying the market makers
+    if arch["is_sharp"]:                # respected action: copy the makers on this market from now on
+        detail["book_base"] = key
     return {
         "game": game, "market": market, "side": side, "line": line,
         "home_spread": offer["home_spread"] if market == "spread" else None, "price": float(price),
@@ -499,15 +552,20 @@ def advance(conn, run_id, until, market, facts, data_complete_through, _fail_aft
         events.sort(key=lambda e: (e[0], e[1], e[2]))
 
         view = _MarketView(market)
+        book_state = book_state_from_wagers(conn.execute(
+            "SELECT canonical_game_id, market, decision_json FROM v4_wager WHERE run_id=? AND archetype='SHARP' "
+            "ORDER BY accepted_at, bettor_index, arrival_seq", (run_id,)).fetchall())     # = acceptance order
         games = sorted(slate.games, key=lambda g: g.canonical_game_id)
         new_seq = last_seq + 1
         passes, wagers = {}, []
         for t, _, seq, b in events:
-            accepted, reason = _decide(run["rng_key"], b, seq, t, games, view, facts, staked)
+            accepted, reason = _decide(run["rng_key"], b, seq, t, games, view, facts, staked, book_state)
             if accepted is None:
                 passes[reason] = passes.get(reason, 0) + 1
                 continue
             staked[b["bettor_index"]] = staked.get(b["bettor_index"], 0.0) + accepted["stake"]
+            if "book_base" in accepted["detail"]:
+                book_state[(accepted["game"].canonical_game_id, accepted["market"])] = accepted["detail"]["book_base"]
             g = accepted["game"]
             wagers.append({
                 "wager_id": sha256_hex("v4_wager", run_id, b["bettor_uid"], seq)[:40],

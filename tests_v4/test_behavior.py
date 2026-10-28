@@ -101,7 +101,10 @@ def test_ticket_and_handle_shares_can_diverge(full_week):
     for g in full_week["slate"].games:
         e = exposure(fetch_wagers(full_week["conn"], full_week["run_id"], g.canonical_game_id))
         gaps.append(abs(e["home_ticket_pct"] - e["home_handle_pct"]))
-    assert max(gaps) >= 10.0, gaps
+    # tickets come from counts and handle from stakes, so they are not identical by construction. Since
+    # engine m4 the book moves after sharp action, so sharp volume (the largest source of divergence in
+    # m1) is bounded and the fixture's largest gap is ~8.5 points.
+    assert max(gaps) >= 5.0 and sum(g > 1.0 for g in gaps) >= len(gaps) // 2, gaps
 
 
 def test_sharps_only_bet_when_book_number_is_off_market(full_week):
