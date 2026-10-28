@@ -87,3 +87,13 @@ The cheapest options, in order:
     - Result: 0 of 36 Top-25 college and 0 of 58 NFL game-markets show evidence. This is correct at the current cadence.
 - **Top-25 slate (Oct 31):** 18 of 54 candidate games are in scope: 17 ranked vs unranked, 1 ranked vs ranked (Arizona #22 @ Texas Tech #13). The book's college run on real quotes has 1,151 modeled wagers; every market is LOW sample except two spreads.
 - **Model observation, not changed:** retail books dealt Indiana and Texas 1 point off the market makers. The simulated sharps (3% of bettors) bet into those lines early in the week, so their handle dominates those two Needs. The simulated book never moves its line in response to its own liability, an unvalidated simplification.
+
+## 2026-10-28: Cloudflare Pages (owner-only) live
+
+- The first deploys came from `site-build` started by hand: run 40760306951, then run 40761149952 with the audit report. Both succeeded.
+- The report (`v4-site/deploy_report.jsonl`) shows HTTP 302 to the Cloudflare Access login for:
+  - `arbitredge-v4-staging.pages.dev` and a random `*.arbitredge-v4-staging.pages.dev` address, before upload;
+  - the production address and the new deployment's own URL (`4dcdff47.…`), after upload.
+- Production branch `main` (Direct Upload project). Deployment `4dcdff47-848a-4a20-904e-ef4514770b67`, status success.
+- From now on every `odds-collect` run that saves new odds, and every new AP poll, rebuilds and redeploys the page automatically.
+- Viewing the page after login can only be checked by the owner.
