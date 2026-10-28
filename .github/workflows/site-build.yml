@@ -2,7 +2,8 @@
 # has switched it on) deploy it to the owner-only Cloudflare Pages project.
 # No Odds API calls. Called by odds-collect only after a run that saved a new odds shard, by
 # cfb-rankings after a new poll, or started by hand. Callers pass ONLY the two Cloudflare secrets.
-# Output: release v4-site (index.html, site_snapshot.json); Cloudflare Pages production deployment.
+# Output: release v4-site (index.html, site_snapshot.json); release v4-book (synthetic-book ledger files);
+# Cloudflare Pages production deployment.
 # Deploy is OFF unless repository variable CF_PAGES_DEPLOY = on, and refused unless both
 # <project>.pages.dev and *.<project>.pages.dev send unauthenticated visitors to Cloudflare Access.
 name: site-build
@@ -36,7 +37,18 @@ jobs:
       - name: Build site
         run: |
           python3 -m pip install --quiet "$(grep -i '^numpy==' requirements-v4.txt)"
-          python3 -m web_v4.live_site --shards shards --ledger state/ledger.jsonl --rankings-dir rankings --out site
+          python3 -m web_v4.live_site --shards shards --ledger state/ledger.jsonl --rankings-dir rankings --out site \
+            --book-dir book --book-out book_new
+      - name: Save synthetic-book ledger (new files only, never overwritten)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          files=(book_new/book_*.json.gz)
+          (( ${#files[@]} )) || { echo "no new ledger intervals"; exit 0; }
+          gh release view v4-book >/dev/null 2>&1 || gh release create v4-book --prerelease \
+            --title "V4 synthetic-book ledger (do not delete)" --notes "Immutable MODELED wager files, one per advance of a weekly run."
+          gh release upload v4-book "${files[@]}"
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

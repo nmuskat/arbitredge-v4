@@ -12,7 +12,8 @@ from sportsbook_v4.schema import ensure_schema
 from sportsbook_v4.settlement import book_need_all
 from sportsbook_v4.util import json_hash, to_epoch
 
-T0 = store.iso_to_epoch("2026-10-27T12:00:00Z")
+T0 = store.iso_to_epoch("2026-10-27T12:00:00Z")          # a Tuesday 12:00 UTC: start of the betting week
+NOW = T0 + 2 * 86400                                      # builds run two days into the week
 NFL = [("n1", "Kansas City Chiefs", "Denver Broncos", -7.5, 47.5, (-380, 300)),
        ("n2", "Buffalo Bills", "Miami Dolphins", -3.0, 44.5, (-165, 140)),
        ("n3", "Chicago Bears", "Detroit Lions", 2.5, 49.5, (120, -140))]
@@ -51,7 +52,7 @@ def payload(t, games, sport, drift):
     return out
 
 
-def build_store(gap=None, start=T0 - 3 * 86400, end=T0, step=3 * 3600):
+def build_store(gap=None, start=T0 - 86400, end=NOW, step=3 * 3600):
     """Hourly-ish snapshots of every game; `gap` = (lo, hi) epoch window with NO collection."""
     conn = store.connect()
     t, n = start, 0
@@ -86,7 +87,7 @@ def new_book():
 def built():
     live = build_store()
     book = new_book()
-    out = LB.build(book, live, T0, [poll(T0 - 86400)], bettors=3000)
+    out = LB.build(book, live, NOW, [poll(T0 - 86400)], bettors=3000)
     return live, book, out
 
 
@@ -108,8 +109,8 @@ def test_separate_persistent_populations(built):
     assert a["population_id"].startswith("nfl|") and b["population_id"].startswith("cfb|")
     assert a["population_hash"] != b["population_hash"]
     # a later build (more data, later T) uses the SAME bettors
-    live2 = build_store(end=T0 + 6 * 3600)
-    out2 = LB.build(new_book(), live2, T0 + 6 * 3600, [poll(T0 - 86400)], bettors=3000, variants={})
+    live2 = build_store(end=NOW + 6 * 3600)
+    out2 = LB.build(new_book(), live2, NOW + 6 * 3600, [poll(T0 - 86400)], bettors=3000, variants={})
     assert out2["nfl"]["audit"]["population_hash"] == a["population_hash"]
     assert out2["cfb"]["audit"]["population_hash"] == b["population_hash"]
 
@@ -177,24 +178,23 @@ def test_need_matches_book_pnl(built):
 
 
 def test_cfb_unavailable_without_rankings():
-    out = LB.build(new_book(), build_store(), T0, None, bettors=500, variants={})
+    out = LB.build(new_book(), build_store(), NOW, None, bettors=500, variants={})
     assert out["cfb"]["status"] == "UNAVAILABLE" and out["cfb"]["games"] == [] and out["cfb"]["audit"] is None
     assert "not connected" in out["cfb"]["coverage"]["reason"]
     assert out["nfl"]["status"] == "OK"
 
 
 def test_poll_fetched_after_now_is_not_used():
-    # the only poll was fetched after every kickoff: rank unavailable, no CFB game is guessed in
-    out = LB.build(new_book(), build_store(), T0, [poll(T0 + 30 * 86400)], bettors=500, variants={})
-    assert out["cfb"]["games"] == []
-    assert out["cfb"]["coverage"]["excluded"]["rank_unavailable"] == 4
+    # the only poll was fetched after the build time: unknown at L, so nothing is guessed in
+    out = LB.build(new_book(), build_store(), NOW, [poll(NOW + 30 * 86400)], bettors=500, variants={})
+    assert out["cfb"]["status"] == "UNAVAILABLE" and out["cfb"]["games"] == []
 
 
 def test_collection_gap_means_no_wagers(built):
-    gap = (T0 - 2 * 86400, T0 - 86400)                 # 24h without any collection
+    gap = (T0 + 6 * 3600, T0 + 36 * 3600)               # 30 h without any collection, inside the week
     live = build_store(gap=gap)
     book = new_book()
-    out = LB.build(book, live, T0, [poll(T0 - 86400)], bettors=3000, variants={})
+    out = LB.build(book, live, NOW, [poll(T0 - 86400)], bettors=3000, variants={})
     for sport in ("nfl", "cfb"):
         ws = fetch_wagers(book, out[sport]["audit"]["run_id"], market=None)
         assert ws
@@ -210,12 +210,14 @@ def test_quote_age_policy_is_six_hours():
     assert LB.LIVE_MAX_AGE == 6 * 3600
 
 
-def test_no_wagers_before_first_quote_or_after_now(built):
-    live, book, out = built
-    first = live.execute("SELECT MIN(fetched_at) FROM mkt_quote").fetchone()[0]
+def test_wagers_only_inside_the_week_and_up_to_complete_data(built):
+    _, book, out = built
     for sport in ("nfl", "cfb"):
-        for w in fetch_wagers(book, out[sport]["audit"]["run_id"], market=None):
-            assert first <= to_epoch(w["accepted_at"]) <= T0
+        a = out[sport]["audit"]
+        assert a["window"] == [iso(T0), iso(T0 + 7 * 86400)] and a["slate_id"] == f"week_{sport}_20261027"
+        assert a["data_complete_through"] == iso(NOW) and a["advanced_to"] == iso(NOW)
+        for w in fetch_wagers(book, a["run_id"], market=None):
+            assert T0 <= to_epoch(w["accepted_at"]) <= NOW
 
 
 def test_audit_ledger_hash_and_determinism(built):
@@ -225,7 +227,7 @@ def test_audit_ledger_hash_and_determinism(built):
     assert a["wagers"] == len(ws)
     assert a["ledger_hash"] == json_hash([[w["wager_id"], w["market"], w["side"], w["accepted_line"],
                                            w["accepted_price"], w["stake"], w["accepted_at"]] for w in ws])
-    again = LB.build(new_book(), live, T0, [poll(T0 - 86400)], bettors=3000, variants={})
+    again = LB.build(new_book(), live, NOW, [poll(T0 - 86400)], bettors=3000, variants={})
     assert again["nfl"]["audit"]["ledger_hash"] == a["ledger_hash"]
     assert again["cfb"]["audit"]["ledger_hash"] == out["cfb"]["audit"]["ledger_hash"]
 
@@ -250,16 +252,167 @@ def test_variants_do_not_touch_the_baseline_book(built):
     assert pops == {out["nfl"]["audit"]["population_id"], out["cfb"]["audit"]["population_id"]}
 
 
-def test_no_games_before_any_collection():
+def test_no_data_before_any_collection():
     out = LB.build(new_book(), build_store(), T0 - 10 * 86400, [poll(T0 - 86400)], bettors=500, variants={})
-    assert out["nfl"]["status"] == "NO_GAMES" and out["nfl"]["audit"] is None
+    assert out["nfl"]["status"] == "NO_DATA" and out["nfl"]["audit"] is None
 
 
-def test_next_week_games_are_pending_not_in_the_book(monkeypatch):
-    # poll fetched Monday 2026-10-26; Alabama-LSU moved to Monday 2026-11-02, after the Sunday release
+def test_game_after_next_poll_release_is_excluded_not_guessed(monkeypatch):
+    # Alabama-LSU moved to Monday 2026-11-02, after Sunday's poll release: its poll does not exist yet
     import tests_v4.test_live_book as me
     monkeypatch.setitem(me.KICK, "c1", T0 + 6 * 86400)
-    out = LB.build(new_book(), build_store(), T0, [poll(T0 - 86400)], bettors=300, variants={})
+    out = LB.build(new_book(), build_store(), NOW, [poll(T0 - 86400)], bettors=300, variants={})
     cov = out["cfb"]["coverage"]
+    assert out["cfb"]["status"] in ("OK", "NO_WAGERS")
     assert cov["excluded"] == {"unranked": 1, "rank_unavailable": 0, "rank_pending": 1}
     assert _eid("c1") not in {g["event_id"] for g in out["cfb"]["games"]}
+
+
+def test_released_but_unfetched_poll_makes_the_week_wait():
+    # only last week's poll was fetched (Sun 10-18); this week's poll (released Sun 10-25) is missing
+    old = poll(T0 - 9 * 86400)
+    out = LB.build(new_book(), build_store(), NOW, [old], bettors=300, variants={})
+    assert out["cfb"]["status"] == "WAITING_FOR_POLL" and out["cfb"]["games"] == []
+    assert out["nfl"]["status"] == "OK"
+
+
+# ---------------------------------------------------------------- persistent ledger (sportsbook_v4.persist)
+
+def _incremental(tmp_path, times, gap=None):
+    live = build_store(gap=gap)
+    d = tmp_path / "ledger"
+    d.mkdir(exist_ok=True)
+    outs = []
+    for t in times:
+        book = new_book()
+        outs.append((LB.build(book, live, t, [poll(T0 - 86400)], bettors=1500, variants={}, book_in=str(d),
+                              book_out=str(d)), book))
+    return live, d, outs
+
+
+def test_wagers_survive_later_builds_and_match_one_shot(tmp_path):
+    times = [T0 + 9 * 3600, T0 + 30 * 3600, NOW]
+    live, d, outs = _incremental(tmp_path, times)
+    for sport in ("nfl", "cfb"):
+        seen = set()
+        for out, book in outs:
+            a = out[sport]["audit"]
+            now = {w["wager_id"] for w in fetch_wagers(book, a["run_id"], market=None)}
+            assert seen <= now                                 # nothing committed earlier is lost or re-drawn
+            assert a["wagers_loaded_from_ledger"] == len(seen) and a["new_wagers_this_build"] == len(now - seen)
+            seen = now
+        one = LB.build(new_book(), live, NOW, [poll(T0 - 86400)], bettors=1500, variants={})
+        assert one[sport]["audit"]["ledger_hash"] == outs[-1][0][sport]["audit"]["ledger_hash"]
+    files = sorted(p.name for p in d.iterdir())
+    assert len(files) == 6 and all(f.startswith(("book_nfl_20261027_", "book_cfb_20261027_")) for f in files)
+
+
+def test_rebuild_with_no_new_data_adds_nothing(tmp_path):
+    _, d, outs = _incremental(tmp_path, [NOW, NOW])
+    for sport in ("nfl", "cfb"):
+        a1, a2 = outs[0][0][sport]["audit"], outs[1][0][sport]["audit"]
+        assert a2["new_wagers_this_build"] == 0 and a2["ledger_hash"] == a1["ledger_hash"]
+    assert len(list(d.iterdir())) == 2
+
+
+def test_membership_is_fixed_when_the_week_opens(tmp_path, monkeypatch):
+    # c4 is first listed after the week's CFB book opened: reported, not added
+    import tests_v4.test_live_book as me
+    live = store.connect()
+    for t, games in ((T0 + 3 * 3600, [g for g in CFB if g[0] != "c4"]), (T0 + 30 * 3600, CFB)):
+        q, an = normalize.normalize(payload(t, games, "americanfootball_ncaaf", 0), iso(t))
+        store.ingest(live, q, an, iso(t), "americanfootball_ncaaf", "odds", "fp")
+    d = tmp_path / "l"
+    out1 = LB.build(new_book(), live, T0 + 4 * 3600, [poll(T0 - 86400)], bettors=300, variants={},
+                    book_in=str(d), book_out=str(d))
+    out2 = LB.build(new_book(), live, NOW, [poll(T0 - 86400)], bettors=300, variants={}, book_in=str(d),
+                    book_out=str(d))
+    ids = {g["event_id"] for g in out2["cfb"]["games"]}
+    assert _eid("c4") not in ids and out2["cfb"]["coverage"]["listed_after_open"] == 1
+    assert out2["cfb"]["audit"]["run_id"] == out1["cfb"]["audit"]["run_id"]
+
+
+def _rewrite(path, fn):
+    import gzip
+    import json
+    d = json.load(gzip.open(path, "rt"))
+    fn(d)
+    with gzip.open(path, "wt") as fh:
+        json.dump(d, fh)
+
+
+@pytest.mark.parametrize("tamper", ["stake", "rehash_stake", "delete_middle", "rename"])
+def test_tampered_or_incomplete_ledger_is_refused(tmp_path, tamper):
+    from sportsbook_v4 import persist
+    live, d, _ = _incremental(tmp_path, [T0 + 9 * 3600, T0 + 30 * 3600, NOW])
+    files = sorted(d.glob("book_nfl_*"))
+    if tamper == "stake":
+        _rewrite(files[0], lambda x: x["wagers"][0].update(stake=x["wagers"][0]["stake"] * 10))
+    elif tamper == "rehash_stake":            # forger also fixes the file hash: interval hash still catches it
+        def f(x):
+            x["wagers"][0]["stake"] *= 10
+            x["rows_sha256"] = persist._body_hash(x)
+        _rewrite(files[0], f)
+    elif tamper == "delete_middle":
+        files[1].unlink()
+    else:
+        files[0].rename(files[0].with_name(files[0].name.replace("_00000", "_00009")))
+    out = LB.build(new_book(), live, NOW, [poll(T0 - 86400)], bettors=1500, variants={}, book_in=str(d))
+    assert out["nfl"]["status"] == "INTEGRITY_FAILED" and out["nfl"]["audit"] is None
+
+
+def test_ledger_from_changed_engine_code_fails_replay_and_is_not_extended(tmp_path, monkeypatch):
+    # engine behaviour changed without a version bump: replaying the week no longer reproduces the stored
+    # wagers, so the build refuses to show or extend the ledger
+    live, d, _ = _incremental(tmp_path, [T0 + 30 * 3600])
+    before = sorted(p.name for p in d.iterdir())
+    import sportsbook_v4.engine as E
+    real = E._decide
+
+    def changed(*a, **k):
+        acc, why = real(*a, **k)
+        if acc is not None:
+            acc = dict(acc, stake=round(acc["stake"] * 1.01, 2))
+        return acc, why
+    monkeypatch.setattr(E, "_decide", changed)
+    out = LB.build(new_book(), live, NOW, [poll(T0 - 86400)], bettors=1500, variants={}, book_in=str(d),
+                   book_out=str(d))
+    assert out["nfl"]["status"] == "INTEGRITY_FAILED" and out["nfl"]["audit"] is None
+    assert sorted(p.name for p in d.iterdir()) == before          # nothing new exported
+
+
+@pytest.mark.parametrize("tamper", ["rehash_stake", "delete_middle", "reorder_start"])
+def test_persist_loader_refuses_on_its_own(tmp_path, tamper):
+    # the loader alone (no replay) refuses altered or gapped ledgers
+    from sportsbook_v4 import persist
+    _, d, _ = _incremental(tmp_path, [T0 + 9 * 3600, T0 + 30 * 3600, NOW])
+    files = sorted(d.glob("book_nfl_*"))
+    if tamper == "rehash_stake":
+        def f(x):
+            x["wagers"][0]["stake"] *= 10
+            x["rows_sha256"] = persist._body_hash(x)
+        _rewrite(files[1], f)
+    elif tamper == "delete_middle":
+        files[1].unlink()
+    else:
+        files[0].unlink()
+    with pytest.raises(persist.LedgerIntegrityError):
+        persist.load_dir(new_book(), str(d))
+
+
+def test_persist_loader_accepts_an_intact_ledger(tmp_path):
+    from sportsbook_v4 import persist
+    _, d, outs = _incremental(tmp_path, [T0 + 9 * 3600, T0 + 30 * 3600, NOW])
+    got = persist.load_dir(new_book(), str(d))
+    rid = outs[-1][0]["nfl"]["audit"]["run_id"]
+    assert got[rid]["files"] == 3 and got[rid]["wagers"] == outs[-1][0]["nfl"]["audit"]["wagers"]
+
+
+def test_book_advances_only_to_complete_data_not_build_time():
+    # last collection at NOW; build 3 h later: data is complete to build time - 15 min, never to build time
+    T = NOW + 3 * 3600
+    out = LB.build(new_book(), build_store(), T, [poll(T0 - 86400)], bettors=300, variants={})
+    a = out["nfl"]["audit"]
+    assert a["last_observation"] == iso(NOW)
+    assert a["data_complete_through"] == a["advanced_to"] == iso(T - LB.DATA_SAFETY_S)
+    assert LB.DATA_SAFETY_S >= 15 * 60

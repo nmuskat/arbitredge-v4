@@ -490,12 +490,17 @@ def test_state_save_signals_new_shard(tmp_path, with_shard):
 
 FAKE_GH_SITE = r"""#!/bin/bash
 case "$1" in
-  api) printf '%s\n' $FAKE_TAGS; exit 0 ;;
+  api)
+    case "$*" in
+      *releases/tags/v4-book*) [[ -n "${FAKE_BOOK:-}" ]] || exit 1; echo "${FAKE_BOOK%%:*}"; exit 0 ;;
+      *) printf '%s\n' $FAKE_TAGS; exit 0 ;;
+    esac ;;
   release)
     for a in "$@"; do last="$a"; done
     case "$*" in
       *v4-state*) [[ "${FAKE_NO_LEDGER:-0}" == 1 ]] && exit 1; mkdir -p "$last"; echo '{}' > "$last/ledger.jsonl" ;;
       *cfb-rankings*) [[ "${FAKE_RANKINGS:-0}" == 1 ]] || exit 1; mkdir -p "$last"; echo '{}' > "$last/rankings_x.json" ;;
+      *v4-book*) mkdir -p "$last"; for i in $(seq 1 "${FAKE_BOOK##*:}"); do echo x > "$last/book_nfl_x_$i.json.gz"; done ;;
       *) mkdir -p "$last"; echo x > "$last/quotes_1.jsonl.gz" ;;
     esac; exit 0 ;;
 esac
@@ -521,6 +526,7 @@ def test_site_inputs(tmp_path, tags, no_ledger, rankings, ok):
     assert (r.returncode == 0) == ok, r.stdout + r.stderr
     if ok:
         assert len(list((tmp_path / "shards").rglob("quotes_*.jsonl.gz"))) == len(tags.split())
+        assert list((tmp_path / "book").glob("*")) == []          # no v4-book release yet: starts empty
         assert (tmp_path / "state" / "ledger.jsonl").exists()
         assert len(list((tmp_path / "rankings").glob("rankings_*.json"))) == rankings
 
@@ -669,3 +675,32 @@ def test_pages_deploy_fails_loudly(tmp_path, kw):
     r, _, _ = _pages(tmp_path, "deploy", **kw)
     assert r.returncode != 0
     assert "tok_SECRET_123" not in r.stdout + r.stderr
+
+
+@pytest.mark.parametrize("book,ok,n", [("3:3", True, 3),      # release lists 3 ledger files, all 3 arrive
+                                       ("0:0", True, 0),      # release exists, no files yet
+                                       ("3:2", False, None)])  # a ledger file failed to arrive: refuse
+def test_site_inputs_synthetic_book_ledger(tmp_path, book, ok, n):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text(FAKE_GH_SITE)
+    (bin_dir / "gh").chmod(0o755)
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_TAGS="odds-data-2026-W44",
+               FAKE_BOOK=book, GITHUB_REPOSITORY="o/r")
+    r = subprocess.run(["bash", os.path.join(REPO, ".github", "scripts", "site_inputs.sh")], cwd=tmp_path, env=env,
+                       capture_output=True, text=True)
+    assert (r.returncode == 0) == ok, r.stdout + r.stderr
+    if ok:
+        assert len(list((tmp_path / "book").glob("book_*.json.gz"))) == n
+    else:
+        assert "ledger incomplete" in r.stderr
+
+
+def test_site_build_saves_ledger_before_publishing_and_never_overwrites():
+    steps = _yaml("site-build.yml")["jobs"]["build"]["steps"]
+    names = [st.get("name") for st in steps]
+    save = names.index("Save synthetic-book ledger (new files only, never overwritten)")
+    assert names.index("Build site") < save < names.index("Publish")
+    run = steps[save]["run"]
+    assert "gh release upload v4-book" in run and "--clobber" not in run
+    assert "--book-dir book --book-out book_new" in steps[names.index("Build site")]["run"]

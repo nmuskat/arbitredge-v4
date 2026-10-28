@@ -37,8 +37,9 @@ REC_BOOKS = {"draftkings", "fanduel", "betmgm", "williamhill_us", "caesars", "be
              "espnbet", "fanatics", "hardrockbet", "ballybet", "betparx", "unibet_us", "superbook", "wynnbet"}
 PROB_PER_POINT = 0.03
 LEAD_RESOLUTION_S = 3600
-SPORT_THRESHOLDS = {"americanfootball_nfl": {"min_move": 0.5},
-                    "americanfootball_ncaaf": {"min_move": 1.0}}
+# min_move: points (spreads/totals); h2h_min_move: percentage points of the home side's fair win probability
+SPORT_THRESHOLDS = {"americanfootball_nfl": {"min_move": 0.5, "h2h_min_move": 1.5},
+                    "americanfootball_ncaaf": {"min_move": 1.0, "h2h_min_move": 2.0}}
 KEY_NUMBERS = {"spreads": (3.0, 7.0, 10.0, 6.0, 14.0), "totals": (41.0, 44.0, 37.0, 47.0, 51.0)}
 REAL_SOURCES = ("odds_api", "v3_copy")
 
@@ -106,7 +107,8 @@ def analyse(conn, event_id, market, T, min_books=3, min_move=None, steam_window_
     min_move: None = the sport's threshold (SPORT_THRESHOLDS; NFL value for unknown sports)."""
     sport = _sport(conn, event_id)
     if min_move is None:
-        min_move = SPORT_THRESHOLDS.get(sport, SPORT_THRESHOLDS["americanfootball_nfl"])["min_move"]
+        th = SPORT_THRESHOLDS.get(sport, SPORT_THRESHOLDS["americanfootball_nfl"])
+        min_move = th["h2h_min_move"] if market == "h2h" else th["min_move"]
     s = _series(conn, event_id, market, T, allow_demo)
     side_pos, side_neg = ("home", "away") if market in ("spreads", "h2h") else ("over", "under")
     res = {"event_id": event_id, "market": market, "as_of": T, "status": "INSUFFICIENT EVIDENCE",

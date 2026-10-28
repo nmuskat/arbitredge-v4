@@ -176,3 +176,28 @@ def test_sport_specific_minimum_move(sport, expect_move):
     assert r["sport"] == sport and r["min_move"] == S.SPORT_THRESHOLDS[sport]["min_move"]
     assert any(e.startswith("consensus moved") for e in r["supporting"] + [r.get("reason", "")]) or not expect_move
     assert (r["status"] == "SIGNAL") == expect_move
+
+
+
+def _ml(timeline, sport="americanfootball_nfl"):
+    """timeline: {minute: {book: (home_ml, away_ml)}} as moneyline quotes."""
+    conn = store.connect()
+    for minute, books in sorted(timeline.items()):
+        t = T0 + 60 * minute
+        qs = []
+        for book, (hp, ap) in books.items():
+            qs.append(Quote(EID, sport, KICK, "H", "A", book, "h2h", "home", None, hp, iso(t), iso(t), "odds_api", "fp"))
+            qs.append(Quote(EID, sport, KICK, "H", "A", book, "h2h", "away", None, ap, iso(t), iso(t), "odds_api", "fp"))
+        store.ingest(conn, qs, [], iso(t), sport, "odds", f"fp{minute}")
+    return conn
+
+
+@pytest.mark.parametrize("sport,new_home,expect", [
+    ("americanfootball_nfl", (-170, 145), "home"),        # ~ +3 pp toward home: above the NFL 1.5 pp threshold
+    ("americanfootball_ncaaf", (-155, 132), None),        # ~ +1.5 pp: below the CFB 2.0 pp threshold
+])
+def test_moneyline_sharp_evidence_uses_sport_thresholds(sport, new_home, expect):
+    tl = {0: {b: (-150, 130) for b in ALL}, 600: {b: (-150, 130) for b in ALL}, 605: {b: new_home for b in ALL}}
+    r = S.analyse(_ml(tl, sport), EID, "h2h", T0 + 610 * 60)
+    assert r["min_move"] == S.SPORT_THRESHOLDS[sport]["h2h_min_move"]
+    assert r["suspected_side"] == expect

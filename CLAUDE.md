@@ -30,6 +30,8 @@ The owner (nmuskat) has no coding background. You do the engineering, testing an
 | Odds data | release assets `odds-data-YYYY-Www/quotes_*.jsonl.gz` (one per run, never modified) |
 | Credit ledger and state | release `v4-state`: `ledger.jsonl`, `collector_state.json` |
 | Daily analysis | `.github/workflows/odds-analyze.yml` → `analysis_v4/actions_analyze.py` → `v4-state/line_shop_latest.json` |
+| Dashboard | `.github/workflows/site-build.yml` (after each run that saved new odds) → release `v4-site` + owner-only Cloudflare Pages |
+| Synthetic-book ledger (MODELED) | release `v4-book`: `book_<sport>_<week>_<run>_<seq>.json.gz`, one immutable file per advance of a weekly run; never delete or overwrite (`sportsbook_v4/persist.py`) |
 
 ## Current priority: does line shopping produce positive EV on real odds?
 

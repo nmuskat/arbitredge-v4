@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from tests_v4.test_live_book import NFL, T0, build_store, new_book, payload, poll
+from tests_v4.test_live_book import NFL, NOW, T0, build_store, new_book, payload, poll
 from market_v4 import normalize, store
 from web_v4 import live_site as LS
 
@@ -15,8 +15,8 @@ from web_v4 import live_site as LS
 @pytest.fixture(scope="module")
 def snaps():
     live = build_store()
-    no_rank = LS.build_snapshot(live, [], [], T0, new_book(), bettors=1500)
-    ranked = LS.build_snapshot(live, [], [poll(T0 - 86400)], T0, new_book(), bettors=1500)
+    no_rank = LS.build_snapshot(live, [], [], NOW, new_book(), bettors=1500)
+    ranked = LS.build_snapshot(live, [], [poll(T0 - 86400)], NOW, new_book(), bettors=1500)
     return no_rank, ranked
 
 
@@ -31,8 +31,15 @@ def test_labels_and_defaults(snaps):
 
 def test_observed_time_is_last_collection_not_build_time(snaps):
     s, _ = snaps
-    assert s["sports"]["nfl"]["observed_at"] == LS._iso(T0)          # last fetch in the fixture is at T0
-    assert s["generated_at"] == LS._iso(T0)
+    assert s["sports"]["nfl"]["observed_at"] == LS._iso(NOW)         # last fetch in the fixture is at NOW
+    assert s["generated_at"] == LS._iso(NOW)
+
+
+def test_page_built_as_of_an_earlier_time_never_uses_later_odds():
+    live = build_store()
+    s = LS.build_snapshot(live, [], [], NOW - 7 * 3600, None)
+    obs = LS._epoch(s["sports"]["nfl"]["observed_at"])
+    assert obs <= NOW - 7 * 3600 and obs == NOW - 9 * 3600            # fixture collects every 3 h
 
 
 def test_cfb_without_rankings_is_unavailable_never_guessed(snaps):
@@ -141,7 +148,7 @@ def test_page_in_browser_freshness_downgrades_itself(tmp_path, snaps, hours_late
     s, _ = snaps
     (tmp_path / "index.html").write_text(LS.render_html(s))
     (tmp_path / "b.js").write_text(BROWSER_JS)
-    now_ms = int((T0 + hours_later * 3600) * 1000)
+    now_ms = int((NOW + hours_later * 3600) * 1000)
     r = subprocess.run(["node", str(tmp_path / "b.js"), str(tmp_path / "index.html"), str(now_ms)],
                        capture_output=True, text=True, timeout=120)
     out = json.loads(r.stdout)

@@ -97,3 +97,23 @@ The cheapest options, in order:
 - Production branch `main` (Direct Upload project). Deployment `4dcdff47-848a-4a20-904e-ef4514770b67`, status success.
 - From now on every `odds-collect` run that saves new odds, and every new AP poll, rebuilds and redeploys the page automatically.
 - Viewing the page after login can only be checked by the owner.
+
+## 2026-10-28: Pipeline audit; persistent synthetic-book ledger
+
+- **Staleness is normal cadence, not a failure.**
+  - Every scheduled `odds-collect` run succeeded; GitHub starts them 40–50 min after the cron time.
+  - Fetches with quotes on Oct 28: NFL 01:07 UTC; college 01:07 and 15:58 UTC.
+  - With the test budget, NFL is due again when the next kickoff is within 24 h, so the next NFL fetch is at the 00:17 UTC slot on Oct 29. The page correctly showed STALE.
+  - `site-build` ran after both fetch runs; runs that did not fetch skip it, by design.
+- **Found and fixed:**
+  - **Wagers were not persistent.** The synthetic book's run was keyed to "games still upcoming within 8 days", so a kickoff or a newly listed game would have re-drawn every wager.
+    - Now: one fixed run per sport per betting week (Tue 12:00 UTC to the next Tuesday); membership is fixed when the week opens.
+    - Each advance is saved as an immutable file in release `v4-book`.
+    - Each build reloads the files (hash- and gap-checked), re-simulates the week from scratch, and requires the identical wager set before exporting anything new.
+  - **The book advanced to build time.** It now advances to "data complete through" = max(last observation, build time − 15 min).
+  - **Odds newer than the build time.** A page built as of an earlier time could use them, and ages could show as negative. Fixed.
+  - **Moneyline sharp evidence** was not analysed. It now is, with sport thresholds of 1.5 / 2.0 probability points (unvalidated).
+- **Limitations, not changed (they need credits, so owner approval):**
+  - The NFL book trades only about 6 h after each ~24-hourly NFL fetch.
+  - No close-snapshot attempts for the Sun 11-08 14:30 UTC NFL game, or for several weekday-night non-Top-25 college games.
+- Tests: 358 passed, 21 skipped. Mutation checks: 9 of 9 new ledger protections caught.

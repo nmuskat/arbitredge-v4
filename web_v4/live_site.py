@@ -70,7 +70,8 @@ def _clean(o):
     return o
 
 
-def build_snapshot(conn, ledger_rows, snaps, now, book_conn=None, bettors=10_000, commit=None):
+def build_snapshot(conn, ledger_rows, snaps, now, book_conn=None, bettors=10_000, commit=None, book_in=None,
+                   book_out=None):
     """Everything the page shows, from the market store as of `now`."""
     out = {"schema": SCHEMA, "generated_at": _iso(now), "commit": commit, "freshness_policy": FRESH,
            "sports": {}, "collection": live.collection_health(conn, ledger_rows, now),
@@ -106,7 +107,7 @@ def build_snapshot(conn, ledger_rows, snaps, now, book_conn=None, bettors=10_000
                                                                  "free API key has not been added yet."})
         out["sports"][sport] = s
     if book_conn is not None:
-        bk = live_book.build(book_conn, conn, now, snaps, bettors=bettors)
+        bk = live_book.build(book_conn, conn, now, snaps, bettors=bettors, book_in=book_in, book_out=book_out)
         for sport in SPORTS:
             out["sports"][sport]["book"] = bk[sport]
     return _clean(out)
@@ -193,7 +194,7 @@ function el(tag,attrs,...kids){const e=document.createElement(tag);for(const[k,v
 const badge=(t,c)=>el("span",{class:"badge b-"+(c||t).replace(/\s/g,"")},t);
 const pct=x=>x==null?"–":(100*x).toFixed(1)+"%";const am=p=>p==null?"–":(p>0?"+"+p:String(p));
 const ln=x=>x==null?"":(x>0?"+"+x:String(x));
-function ageMin(iso){return iso?(Date.now()-Date.parse(iso))/60000:Infinity}
+function ageMin(iso){return iso?Math.max(0,(Date.now()-Date.parse(iso))/60000):Infinity}
 function freshness(iso){const a=ageMin(iso),p=D.freshness_policy;return a<=p.live_max_min?"LIVE":a<=p.delayed_max_min?"DELAYED":"STALE"}
 function fmtAge(m){if(!isFinite(m))return"never";if(m<90)return Math.round(m)+" min";if(m<48*60)return(m/60).toFixed(1)+" h";return(m/1440).toFixed(1)+" days"}
 function local(iso){if(!iso)return"–";const d=new Date(iso);return d.toLocaleString([], {weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}
@@ -238,8 +239,8 @@ R.overview=()=>{const s=S(),c=D.collection,gs=games(),bk=s.book||{};
  const scan=(s.scanner||[]).filter(r=>cfbGate(r.top25));
  return[freshBanner(),cfbBanner(),card(el("h2",{},"Overview: "+s.label),
   el("div",{class:"grid"},el("div",{class:"kpi"},el("b",{},gs.length),"upcoming games"),
-   el("div",{class:"kpi"},el("b",{},scan.length),"EV candidates (WATCH, paper)"),
-   el("div",{class:"kpi"},el("b",{},bk.audit?bk.audit.wagers:"–"),"modeled wagers"),
+   el("div",{class:"kpi"},el("b",{},scan.length),"EV candidates at last observation (WATCH, paper)"),
+   el("div",{class:"kpi"},el("b",{},bk.audit?bk.audit.wagers:"–"),"modeled wagers this week (ledger)"),
    el("div",{class:"kpi"},el("b",{},D.plays.length),"official plays")),
   el("p",{},badge("NO BET","NOBET")," "+D.plays_note)),
   card(el("h3",{},"What each label means"),el("p",{class:"small"},badge("OBSERVED")," real quotes V4 collected · ",badge("MODELED")," synthetic customers, not real bettors · ",
@@ -268,13 +269,16 @@ function splitBar(sd,b){const w=sd.ticket_pct,h=sd.handle_pct;return el("div",{}
  el("div",{class:"small"},"handle "+h+"%",b?el("span",{class:"mute"}," (range "+b.handle_pct[0]+"–"+b.handle_pct[1]+")"):null),
  el("div",{class:"bar"},el("i",{style:"width:"+h+"%"}),b?el("s",{style:"left:"+b.handle_pct[0]+"%;width:"+(b.handle_pct[1]-b.handle_pct[0])+"%"}):null))}
 function bookBlock(){const bk=S().book;if(!bk)return card(el("p",{class:"mute"},"Synthetic book not built."));
- if(bk.status==="UNAVAILABLE")return card(badge("UNAVAILABLE")," "+(bk.coverage.reason||""));
- if(bk.status==="NO_GAMES")return card(el("p",{class:"mute"},"No games in the current window."));return null}
+ if(bk.status==="INTEGRITY_FAILED"||bk.status==="FROZEN")return card(badge(bk.status,"UNAVAILABLE")," The stored synthetic-book ledger failed verification and is not shown: "+(bk.reason||""));
+ if(["UNAVAILABLE","WAITING_FOR_POLL","NO_DATA"].includes(bk.status))return card(badge(bk.status==="WAITING_FOR_POLL"?"WAITING FOR POLL":bk.status,"UNAVAILABLE")," "+((bk.coverage||{}).reason||""));
+ if(bk.status==="NO_GAMES")return card(el("p",{class:"mute"},"No games in this betting week."));return null}
+function ledgerLine(){const a=(S().book||{}).audit;if(!a)return null;
+ return el("p",{class:"small mute"},"Persistent ledger for the week "+local(a.window[0])+" to "+local(a.window[1])+": "+a.wagers.toLocaleString()+" wagers from "+a.bettors_with_wagers.toLocaleString()+" of "+a.bettors.toLocaleString()+" simulated bettors; "+a.wagers_loaded_from_ledger.toLocaleString()+" reloaded from earlier builds, "+a.new_wagers_this_build.toLocaleString()+" new. Replay-verified. Book advanced to "+local(a.advanced_to)+"; it trades only while a real price no older than 6 h exists (last odds observed "+local(a.last_observation)+").")}
 function bookGames(){const bk=S().book||{};return(bk.games||[]).filter(g=>upcoming(g)&&gameMatch(g))}
 R.splits=()=>{const f=st.f,bk=S().book||{};const head=[card(el("h2",{},"Betting splits"),
   el("p",{},badge("UNAVAILABLE")," Real splits: "+D.splits_real.reason),
   el("p",{class:"small"},badge("MODELED")," Below: the synthetic sportsbook's own customers ("+(bk.audit?bk.audit.bettors.toLocaleString():"10,000")+" persistent simulated bettors for this sport) betting into the real collected prices. Tickets come from wager counts and handle from stakes. Ranges show how far each split moves under alternative behaviour assumptions ("+((bk.sensitivity||{}).variants||[]).join(", ")+"). These are not DraftKings, FanDuel or market-wide splits."),
-  filters({market:1}))];
+  ledgerLine(),filters({market:1}))];
  const b=bookBlock();if(b)return[...head,b];const out=[];
  for(const g of bookGames()){const ms=f.market?[f.market]:["spreads","totals","h2h"];const rows=[];
   for(const[bm,row]of Object.entries(g.splits)){const m=BMK[bm];if(!ms.includes(m))continue;
@@ -284,7 +288,7 @@ R.splits=()=>{const f=st.f,bk=S().book||{};const head=[card(el("h2",{},"Betting 
   out.push(card(el("div",{class:"game",on:{click:()=>openGame(g.event_id)}},el("h3",{},badge("MODELED"),gameHead(g)),el("div",{class:"mute small"},local(g.kickoff))),...rows))}
  return[...head,...(out.length?out:[card(el("p",{class:"mute"},"No modeled wagers on upcoming games yet. The synthetic book only trades while real prices are being collected."))])]};
 R.need=()=>{const bk=S().book||{};const head=[card(el("h2",{},"ArbitrEdge Need"),el("p",{class:"small"},badge("MODELED"),
- " The outcome the synthetic book's own liability most needs, computed exactly from its accepted wagers (P&L over every final score). It is a liability fact about simulated customers, NOT a prediction, NOT fading the public, and NOT a betting recommendation."),filters({}))];
+ " The outcome the synthetic book's own liability most needs, computed exactly from its accepted wagers (P&L over every final score). It is a liability fact about simulated customers, NOT a prediction, NOT fading the public, and NOT a betting recommendation."),ledgerLine(),filters({}))];
  const b=bookBlock();if(b)return[...head,b];const out=[];
  for(const g of bookGames()){const n=g.need;if(!n){continue}const sp=n.spread||{},to=n.total||{},ml=n.moneyline||{};
   out.push(card(el("div",{class:"game",on:{click:()=>openGame(g.event_id)}},el("h3",{},gameHead(g))),
@@ -330,7 +334,7 @@ R.health=()=>{const c=D.collection;return[card(el("h2",{},"Collection health"),
  el("h3",{},"Fetches"),el("table",{},el("tbody",{},(c.fetches||[]).map(x=>el("tr",{},el("td",{},x.sport),el("td",{class:"num"},x.fetches+" fetches"),el("td",{class:"small"},"last "+local(x.last)+" ("+fmtAge(ageMin(x.last))+" ago)"))))),
  el("p",{class:"small mute"},"Page built "+local(D.generated_at)+(D.commit?" from commit "+D.commit:"")+". Freshness labels are recomputed in your browser every minute.")),
  ...Object.entries(D.sports).map(([k,s])=>s.book&&s.book.audit?card(el("h3",{},badge("MODELED"),"Synthetic book audit: "+s.label),
-  el("table",{class:"small"},el("tbody",{},...["population_id","population_hash","params_hash","engine_version","run_id","ledger_hash","wagers","arrivals","advanced_to","market_source"].map(f=>el("tr",{},el("td",{},f),el("td",{style:"word-break:break-all"},String(s.book.audit[f]))))))):null)]};
+  el("table",{class:"small"},el("tbody",{},...["slate_id","window","population_id","population_hash","params_hash","engine_version","run_id","bettors","bettors_with_wagers","wagers","wagers_loaded_from_ledger","new_wagers_this_build","ledger_intervals","ledger_files_loaded","replay_verified","ledger_hash","arrivals","advanced_to","data_complete_through","last_observation","market_source"].map(f=>el("tr",{},el("td",{},f),el("td",{style:"word-break:break-all"},String(s.book.audit[f]))))))):null)]};
 R.game=(id)=>{const g=gameById(id);if(!g)return[card(el("p",{},"Game not found (it may have kicked off)."),el("a",{href:"#odds"},"Back"))];
  const sp=Object.entries(D.sports).find(([k,s])=>(s.games||[]).includes(g));const s=sp[1];
  const bkg=((s.book||{}).games||[]).find(x=>x.event_id===id);
@@ -378,6 +382,8 @@ def main(argv=None):
     ap.add_argument("--out", default="site")
     ap.add_argument("--bettors", type=int, default=10_000)
     ap.add_argument("--now", default=None, help="ISO time to build as of (default: current time)")
+    ap.add_argument("--book-dir", default=None, help="persisted synthetic-book ledger files (release v4-book)")
+    ap.add_argument("--book-out", default=None, help="where to write ledger files created by this build")
     a = ap.parse_args(argv)
     now = _epoch(a.now) if a.now else time.time()
     if a.live_db:
@@ -391,7 +397,8 @@ def main(argv=None):
         os.remove(bpath)
     bconn = sqlite3.connect(bpath)
     ensure_schema(bconn)
-    snap = build_snapshot(conn, ledger_rows, load_rankings(a.rankings_dir), now, bconn, a.bettors,
+    snap = build_snapshot(conn, ledger_rows, load_rankings(a.rankings_dir), now, bconn, a.bettors, book_in=a.book_dir,
+                          book_out=a.book_out,
                           commit=(os.environ.get("GITHUB_SHA") or "")[:7] or None)
     snap["shards"] = n_shards
     bconn.close()

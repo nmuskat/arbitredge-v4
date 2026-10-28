@@ -23,8 +23,13 @@ def _iso(t):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
 
 
-def last_fetch(conn, sport):
-    r = conn.execute("SELECT MAX(fetched_at) FROM mkt_fetch WHERE sport=? AND n_quotes>0", (sport,)).fetchone()
+def last_fetch(conn, sport, now=None):
+    """Latest collection run with quotes, at or before `now` (a page built as of `now` never uses later data)."""
+    if now is None:
+        r = conn.execute("SELECT MAX(fetched_at) FROM mkt_fetch WHERE sport=? AND n_quotes>0", (sport,)).fetchone()
+    else:
+        r = conn.execute("SELECT MAX(fetched_at) FROM mkt_fetch WHERE sport=? AND n_quotes>0 AND fetched_at<=?",
+                         (sport, now)).fetchone()
     return r[0] if r else None
 
 
@@ -42,7 +47,7 @@ def _side_quote(st, side):
 def board(conn, sport, now):
     """One row per upcoming game: the sharp consensus and the best available price per side,
     as observed at the sport's last collection run."""
-    T = last_fetch(conn, sport)
+    T = last_fetch(conn, sport, now)
     if T is None:
         return {"sport": sport, "label": SPORT_LABEL[sport], "observed_at": None, "games": []}
     rows = []
@@ -67,7 +72,7 @@ def board(conn, sport, now):
 def scanner_rows(conn, sport, now, policy=ev.LIVE_POLICY):
     """EV scan of the LAST observed snapshot (prices still the latest seen), plus first-sighting
     history across every snapshot with closing EV where a close was observed."""
-    T = last_fetch(conn, sport)
+    T = last_fetch(conn, sport, now)
     if T is None:
         return [], None
     mk, ms, tk, ts, label = line_shop.models(sport)
@@ -84,12 +89,12 @@ def scanner_rows(conn, sport, now, policy=ev.LIVE_POLICY):
 
 
 def sharp_rows(conn, sport, now):
-    T = last_fetch(conn, sport)
+    T = last_fetch(conn, sport, now)
     out = []
     if T is None:
         return out
     for e in events(conn, sport, max(now, T)):
-        for m in ("spreads", "totals"):
+        for m in ("spreads", "totals", "h2h"):
             r = signals.analyse(conn, e["event_id"], m, T)
             r.update(home=e["home"], away=e["away"], kickoff=_iso(e["kickoff"]), sport=sport)
             out.append(r)

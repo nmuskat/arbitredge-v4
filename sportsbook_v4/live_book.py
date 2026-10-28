@@ -21,30 +21,42 @@ here is an observed betting split, and the output says so on every row.
   * Sensitivity bands: the same build under named parameter variants
     (common random numbers), so a split that swings across variants is
     flagged as assumption-driven.
+  * PERSISTENT LEDGER: one fixed run per sport per betting week (Tuesday
+    12:00 UTC to the next Tuesday). Its game list is fixed when the week's
+    book opens; games listed later are reported, not added. Every advance is
+    exported once as an immutable file (sportsbook_v4.persist, release
+    v4-book) and reloaded by later builds, so committed wagers are never
+    re-drawn. Each build re-simulates the week from scratch and requires the
+    identical wager set before anything new is exported (replay check).
+  * The book is advanced only to the sport's LAST COLLECTED OBSERVATION
+    (all market data up to then exists), never to the build time.
   * Auditable: per run the population hash, params hash, engine version,
-    run id and the ledger's wagers hash are reported.
+    run id, ledger file count and the ledger's wagers hash are reported.
 """
 
+import calendar
 import re
 import sqlite3
 import time
 
 from market_v4 import asof
-from sportsbook_v4 import ENGINE_VERSION, params as P
-from sportsbook_v4.engine import GameSpec, SlateSpec, advance, create_run
+from sportsbook_v4 import ENGINE_VERSION, params as P, persist
+from sportsbook_v4.engine import GameSpec, RunMismatch, SlateSpec, advance, create_run, load_run
 from sportsbook_v4.facts import NoFacts
 from sportsbook_v4.ledger_read import fetch_wagers
 from sportsbook_v4.market import MarketV4Source
 from sportsbook_v4.population import ensure_population
 from sportsbook_v4.schema import ensure_schema
 from sportsbook_v4.settlement import book_need_all
-from sportsbook_v4.util import json_hash
+from sportsbook_v4.util import from_epoch, json_hash, to_epoch
 
 LABEL = "MODELED"
 LIVE_MAX_AGE = 6 * 3600          # collection gaps far from kickoff are several hours (cron_plan)
 SPORT_KEYS = {"nfl": "americanfootball_nfl", "cfb": "americanfootball_ncaaf"}
 MAX_SCORE = {"nfl": 55, "cfb": 80}
-HORIZON_DAYS = 8
+DATA_SAFETY_S = 15 * 60         # collect jobs time out after 5 min, so any fetch older than this is uploaded
+WEEK_START_WDAY = 1             # Tuesday (time.gmtime: Monday = 0)
+WEEK_START_HOUR_UTC = 12        # after Monday Night Football has finished
 LOW_SAMPLE_TICKETS = 50          # fewer modeled tickets than this in a market: shown, flagged LOW sample
 WAGER_MARKET = {"spread": "spreads", "total": "totals", "moneyline": "h2h"}
 SPLIT_SIDES = {"spread": ("home", "away"), "total": ("over", "under"), "moneyline": ("home", "away")}
@@ -98,41 +110,77 @@ def _iso(t):
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
 
 
-def candidate_games(live_conn, sport, T, horizon_days=HORIZON_DAYS):
-    """Games with collected quotes kicking off after T and within the horizon."""
+def week_window(t):
+    """(start, end) epoch of the betting week containing t: Tuesday 12:00 UTC to the next Tuesday."""
+    g = time.gmtime(t)
+    day0 = calendar.timegm((g.tm_year, g.tm_mon, g.tm_mday, 0, 0, 0))
+    start = day0 - ((g.tm_wday - WEEK_START_WDAY) % 7) * 86400 + WEEK_START_HOUR_UTC * 3600
+    if start > t:
+        start -= 7 * 86400
+    return start, start + 7 * 86400
+
+
+def complete_through(L, T):
+    """Market data is complete up to here: every fetch made before T - DATA_SAFETY_S has been uploaded
+    (collection runs are serialised and time out after 5 minutes), and nothing is newer than L before
+    the next fetch. The book never advances past it."""
+    return max(L, T - DATA_SAFETY_S)
+
+
+def last_observation(live_conn, sport, T):
+    """Time of the sport's latest collection run with quotes, at or before T (None if never)."""
+    r = live_conn.execute("SELECT MAX(fetched_at) FROM mkt_fetch WHERE sport=? AND n_quotes>0 AND fetched_at<=?",
+                          (SPORT_KEYS[sport], T)).fetchone()
+    return None if not r or r[0] is None else r[0]
+
+
+def week_games(live_conn, sport, ws, we, L):
+    """Games kicking off inside the week whose first quote was collected by L."""
     rows = live_conn.execute(
-        "SELECT event_id, MIN(commence), home, away, MIN(fetched_at) FROM mkt_quote WHERE sport=? "
-        "GROUP BY event_id HAVING MIN(commence) > ? AND MIN(commence) <= ? ORDER BY MIN(commence), home",
-        (SPORT_KEYS[sport], T, T + horizon_days * 86400)).fetchall()
+        "SELECT event_id, MIN(commence), home, away, MIN(fetched_at) FROM mkt_quote WHERE sport=? AND fetched_at<=? "
+        "GROUP BY event_id HAVING MIN(commence) >= ? AND MIN(commence) < ? ORDER BY MIN(commence), home",
+        (SPORT_KEYS[sport], L, ws, we)).fetchall()
     return [{"event_id": e, "kickoff": int(k), "home": h, "away": a, "first_quote": int(fq)}
-            for e, k, h, a, fq in rows if fq <= T]
+            for e, k, h, a, fq in rows]
 
 
-def select_games(live_conn, sport, T, rankings_snapshots=None):
-    """(games, coverage). CFB keeps only Top-25 games under the poll applicable at kickoff."""
-    games = candidate_games(live_conn, sport, T)
+def select_week(live_conn, sport, ws, we, L, rankings_snapshots=None):
+    """(games, coverage) that open the week's book. CFB: AP Top-25 games under the poll applicable at
+    kickoff, using only polls fetched by L. If a poll that should already be out has not been fetched,
+    the book waits for it; games whose poll is not released yet are excluded and reported."""
+    games = week_games(live_conn, sport, ws, we, L)
     if sport == "nfl":
-        return games, {"status": "OK", "rule": "all NFL games with collected quotes", "candidates": len(games),
-                       "included": len(games)}
+        return games, {"status": "OK", "rule": "all NFL games of the week with collected quotes",
+                       "candidates": len(games), "included": len(games)}
     from data_v4 import rankings
-    if not rankings_snapshots:
+    snaps = [x for x in rankings_snapshots or [] if x["fetched_at"] <= L]
+    if not snaps:
         return [], {"status": "UNAVAILABLE", "rule": "AP Top-25 games only",
                     "reason": "no AP rankings snapshot available (CollegeFootballData key not connected)",
                     "candidates": len(games), "included": 0}
-    keep, excluded = [], {"unranked": 0, "rank_unavailable": 0, "rank_pending": 0}
+    keep, excluded, missed = [], {"unranked": 0, "rank_unavailable": 0, "rank_pending": 0}, 0
     for g in games:
-        st = rankings.top25_status(g["home"], g["away"], g["kickoff"], rankings_snapshots)
+        st = rankings.top25_status(g["home"], g["away"], g["kickoff"], snaps)
         g["rankings"] = st
         if st["status"] == "PENDING":
-            excluded["rank_pending"] += 1          # next week's poll not out yet: joins once it is
+            # poll released before L but not fetched yet -> wait; poll not released yet -> excluded
+            if g["kickoff"] < rankings.next_release(L):
+                missed += 1
+            excluded["rank_pending"] += 1
         elif st["status"] != "OK":
             excluded["rank_unavailable"] += 1
         elif st["top25"]:
             keep.append(g)
         else:
             excluded["unranked"] += 1
-    return keep, {"status": "OK" if keep or games else "NO_GAMES", "rule": "AP Top-25 games only",
-                  "candidates": len(games), "included": len(keep), "excluded": excluded}
+    cov = {"status": "OK" if games else "NO_GAMES", "rule": "AP Top-25 games only", "candidates": len(games),
+           "included": len(keep), "excluded": excluded}
+    if missed:
+        cov.update(status="WAITING_FOR_POLL", included=0,
+                   reason="this week's AP poll was released but has not been fetched yet; "
+                          "the week's book opens once it is")
+        return [], cov
+    return keep, cov
 
 
 def universe(sport, rankings_snapshots=None, games=()):
@@ -210,31 +258,86 @@ def _need_summary(need):
     return out
 
 
-def run_book(book_conn, live_conn, sport, T, games, team_universe, bettors=10_000, matcher=None,
-             slate_tag="live"):
-    """Advance one synthetic book to T on the real quotes; return the run's audit facts."""
-    if not games:
-        return None
+def _market(live_conn, sport):
+    return MarketV4Source(live_conn, max_age_seconds=LIVE_MAX_AGE,
+                          source_id=f"live_quotes:{sport}:max_age={LIVE_MAX_AGE}")
+
+
+def slate_id(sport, ws):
+    return f"week_{sport}_{time.strftime('%Y%m%d', time.gmtime(ws))}"
+
+
+def open_run(book_conn, live_conn, sport, ws, we, games, team_universe, bettors=10_000, matcher=None):
     pid = ensure_population(book_conn, sport, team_universe, bettor_count=bettors)
-    ws = min(g["first_quote"] for g in games) // 3600 * 3600
-    we = max(g["kickoff"] for g in games)
-    slate = SlateSpec(sport, f"{slate_tag}_{sport}_{_iso(ws)[:13]}", _iso(ws), _iso(we),
+    # times in the engine's canonical format: the run id is hashed from these strings and a replay
+    # rebuilds the slate from the stored run row, so both must be byte-identical
+    slate = SlateSpec(sport, slate_id(sport, ws), from_epoch(ws), from_epoch(we),
                       tuple(GameSpec(g["event_id"], _team_key(sport, g["home"], matcher),
-                                     _team_key(sport, g["away"], matcher), _iso(g["kickoff"])) for g in games))
-    market = MarketV4Source(live_conn, max_age_seconds=LIVE_MAX_AGE,
-                            source_id=f"live_quotes:{sport}:max_age={LIVE_MAX_AGE}")
-    run_id = create_run(book_conn, pid, slate, market)
-    until = min(T, we)
-    adv = advance(book_conn, run_id, _iso(until), market, NoFacts(), data_complete_through=_iso(T))
-    wagers = fetch_wagers(book_conn, run_id, market=None)
-    pop_hash = book_conn.execute("SELECT population_hash FROM v4_population WHERE population_id=?",
-                                 (pid,)).fetchone()[0]
-    return {"run_id": run_id, "population_id": pid, "population_hash": pop_hash, "params_hash": P.params_hash(),
-            "engine_version": ENGINE_VERSION, "window": [_iso(ws), _iso(we)], "advanced_to": _iso(until),
-            "bettors": bettors, "arrivals": adv.get("arrivals"), "wagers": len(wagers),
-            "ledger_hash": json_hash([[w["wager_id"], w["market"], w["side"], w["accepted_line"],
-                                       w["accepted_price"], w["stake"], w["accepted_at"]] for w in wagers]),
-            "market_source": market.source_id, "_wagers": wagers}
+                                     _team_key(sport, g["away"], matcher), from_epoch(g["kickoff"])) for g in games))
+    return create_run(book_conn, pid, slate, _market(live_conn, sport))
+
+
+def _population_universe(book_conn, run_id):
+    pid, uni, n = book_conn.execute(
+        "SELECT p.population_id, p.team_universe, p.bettor_count FROM v4_run r JOIN v4_population p "
+        "ON p.population_id = r.population_id WHERE r.run_id=?", (run_id,)).fetchone()
+    import json
+    return json.loads(uni), n
+
+
+def replay(book_conn, live_conn, run_id, until_iso, data_through_iso, variant=None):
+    """Re-simulate a run from scratch in memory to until_iso. Returns (mem_conn, mem_run_id)."""
+    run = load_run(book_conn, run_id)
+    uni, n = _population_universe(book_conn, run_id)
+    mem = sqlite3.connect(":memory:")
+    ensure_schema(mem)
+    ctx = P.variant(variant[0], **variant[1]()) if variant else None
+    if ctx:
+        ctx.__enter__()
+    try:
+        pid = ensure_population(mem, run["slate"].sport, uni, bettor_count=n)
+        rid = create_run(mem, pid, run["slate"], _market(live_conn, run["slate"].sport))
+        if to_epoch(until_iso) > to_epoch(run["slate"].window_start):
+            advance(mem, rid, until_iso, _market(live_conn, run["slate"].sport), NoFacts(),
+                    data_complete_through=data_through_iso)
+    finally:
+        if ctx:
+            ctx.__exit__(None, None, None)
+    return mem, rid
+
+
+def _watermark_iso(book_conn, run_id):
+    r = book_conn.execute("SELECT interval_end FROM v4_interval WHERE run_id=? ORDER BY seq DESC LIMIT 1",
+                          (run_id,)).fetchone()
+    return r[0] if r else load_run(book_conn, run_id)["slate"].window_start
+
+
+def advance_and_export(book_conn, live_conn, run_id, L, book_out):
+    """Advance a run to min(L, window end); verify against a from-scratch replay; export the new
+    interval. Returns (status, new_wagers)."""
+    run = load_run(book_conn, run_id)
+    sport = run["slate"].sport
+    until = _iso(min(L, to_epoch(run["slate"].window_end)))
+    try:
+        adv = advance(book_conn, run_id, until, _market(live_conn, sport), NoFacts(), data_complete_through=_iso(L))
+    except RunMismatch as e:
+        return f"FROZEN: {e}", 0
+    wm = _watermark_iso(book_conn, run_id)
+    mem, rid = replay(book_conn, live_conn, run_id, wm, _iso(L))
+    same = rid == run_id and persist.wager_set(mem, rid) == persist.wager_set(book_conn, run_id)
+    mem.close()
+    if not same:
+        return "INTEGRITY_FAILED: stored ledger differs from a from-scratch replay", 0
+    if adv.get("status") == "advanced":
+        if book_out:
+            persist.export_interval(book_conn, run_id, adv["seq"], book_out)
+        return "OK", adv["accepted"]
+    return "OK", 0
+
+
+def _names(live_conn, gid):
+    r = live_conn.execute("SELECT home, away FROM mkt_quote WHERE event_id=? LIMIT 1", (gid,)).fetchone()
+    return r if r else (None, None)
 
 
 def _by_game(wagers):
@@ -244,61 +347,117 @@ def _by_game(wagers):
     return out
 
 
-def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, variants=SENSITIVITY_VARIANTS):
-    """Both sports. Returns {sport: {status, coverage, audit, games:[...], sensitivity}}."""
+def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, variants=SENSITIVITY_VARIANTS,
+          book_in=None, book_out=None):
+    """Both sports. Loads the persisted ledger (book_in), advances each sport's weekly run to its last
+    observation, exports new intervals (book_out). Returns {sport: {status, coverage, audit, games, ...}}."""
     from data_v4 import rankings
+    note = ("Simulated customers with unvalidated behaviour assumptions betting into real collected prices. "
+            "Not observed betting splits.")
+    try:
+        loaded = persist.load_dir(book_conn, book_in)
+    except persist.LedgerIntegrityError as e:
+        return {sp: {"label": LABEL, "status": "INTEGRITY_FAILED", "reason": str(e), "coverage": {}, "games": [],
+                     "audit": None, "sensitivity": None, "note": note} for sp in SPORT_KEYS}
     out = {}
     for sport in ("nfl", "cfb"):
-        games, coverage = select_games(live_conn, sport, T, rankings_snapshots)
-        block = {"label": LABEL, "coverage": coverage, "games": [], "audit": None, "sensitivity": None,
-                 "note": "Simulated customers with unvalidated behaviour assumptions betting into real collected "
-                         "prices. Not observed betting splits."}
-        if coverage["status"] == "UNAVAILABLE":
-            block["status"] = "UNAVAILABLE"
-            out[sport] = block
+        block = {"label": LABEL, "coverage": {}, "games": [], "audit": None, "sensitivity": None, "note": note}
+        out[sport] = block
+        L = last_observation(live_conn, sport, T)
+        if L is None:
+            block.update(status="NO_DATA", coverage={"status": "NO_DATA", "reason": "no odds collected yet"})
             continue
-        if not games:
-            block["status"] = "NO_GAMES"
-            out[sport] = block
+        D = complete_through(L, T)
+        ws, we = week_window(D)
+        # finish earlier weeks that were still open at the previous build
+        for rid, in book_conn.execute("SELECT run_id FROM v4_run WHERE sport=? AND window_start<?",
+                                      (sport, from_epoch(ws))).fetchall():
+            st, _ = advance_and_export(book_conn, live_conn, rid, D, book_out)
+            if st != "OK":
+                block.update(status="INTEGRITY_FAILED" if st.startswith("INTEGRITY") else "FROZEN", reason=st)
+        if block.get("status"):
             continue
-        matcher = None
-        if sport == "cfb":
-            latest = max((s for s in rankings_snapshots if s.get("teams")), key=lambda s: s["fetched_at"], default=None)
-            matcher = rankings.TeamMatcher(latest["teams"]) if latest else None
-        uni = universe(sport, rankings_snapshots, games)
-        base = run_book(book_conn, live_conn, sport, T, games, uni, bettors, matcher)
-        per_game = _by_game(base.pop("_wagers"))
-        block["audit"] = base
-        block["status"] = "OK" if base["wagers"] else "NO_WAGERS"
+        row = book_conn.execute("SELECT run_id FROM v4_run WHERE sport=? AND slate_id=?",
+                                (sport, slate_id(sport, ws))).fetchone()
+        if row is None:
+            games, coverage = select_week(live_conn, sport, ws, we, L, rankings_snapshots)
+            block["coverage"] = coverage
+            if coverage["status"] != "OK" or not games:
+                block["status"] = coverage["status"] if coverage["status"] != "OK" else "NO_GAMES"
+                continue
+            matcher = None
+            if sport == "cfb":
+                snaps = [x for x in rankings_snapshots if x["fetched_at"] <= L and x.get("teams")]
+                latest = max(snaps, key=lambda x: x["fetched_at"], default=None)
+                matcher = rankings.TeamMatcher(latest["teams"]) if latest else None
+            run_id = open_run(book_conn, live_conn, sport, ws, we, games,
+                              universe(sport, rankings_snapshots, games), bettors, matcher)
+            ranks = {g["event_id"]: g.get("rankings") for g in games}
+        else:
+            run_id, ranks = row[0], {}
+            n = len(load_run(book_conn, run_id)["slate"].games)
+            block["coverage"] = {"status": "OK", "rule": ("all NFL games of the week with collected quotes"
+                                                          if sport == "nfl" else "AP Top-25 games only"),
+                                 "included": n, "fixed_at_open": True}
+        status, new = advance_and_export(book_conn, live_conn, run_id, D, book_out)
+        if status != "OK":
+            block.update(status="INTEGRITY_FAILED" if status.startswith("INTEGRITY") else "FROZEN", reason=status)
+            continue
+        run = load_run(book_conn, run_id)
+        in_run = {g.canonical_game_id for g in run["slate"].games}
+        eligible, _cov = select_week(live_conn, sport, ws, we, L, rankings_snapshots)
+        block["coverage"]["listed_after_open"] = len({g["event_id"] for g in eligible} - in_run)
+        wagers = fetch_wagers(book_conn, run_id, market=None)
+        per_game = _by_game(wagers)
+        wm = _watermark_iso(book_conn, run_id)
+        pop_id, pop_hash = book_conn.execute(
+            "SELECT p.population_id, p.population_hash FROM v4_run r JOIN v4_population p "
+            "ON p.population_id=r.population_id WHERE r.run_id=?", (run_id,)).fetchone()
+        info = loaded.get(run_id, {})
+        n_int = book_conn.execute("SELECT COUNT(*), COALESCE(SUM(arrivals),0) FROM v4_interval WHERE run_id=?",
+                                  (run_id,)).fetchone()
+        block["audit"] = {
+            "run_id": run_id, "slate_id": run["slate"].slate_id, "population_id": pop_id,
+            "population_hash": pop_hash, "params_hash": run["params_hash"], "engine_version": run["engine_version"],
+            "window": [_iso(to_epoch(run["slate"].window_start)), _iso(to_epoch(run["slate"].window_end))],
+            "advanced_to": _iso(to_epoch(wm)),
+            "data_complete_through": _iso(D), "last_observation": _iso(L), "bettors": bettors,
+            "bettors_with_wagers": len({w["bettor_index"] for w in wagers}), "arrivals": n_int[1],
+            "wagers": len(wagers), "ledger_intervals": n_int[0], "ledger_files_loaded": info.get("files", 0),
+            "wagers_loaded_from_ledger": info.get("wagers", 0), "new_wagers_this_build": new,
+            "replay_verified": True,
+            "ledger_hash": json_hash([[w["wager_id"], w["market"], w["side"], w["accepted_line"],
+                                       w["accepted_price"], w["stake"], w["accepted_at"]] for w in wagers]),
+            "market_source": run["market_source_id"]}
+        block["status"] = "OK" if wagers else "NO_WAGERS"
 
-        # sensitivity: identical arrivals (common random numbers), different behaviour assumptions
+        # sensitivity: the same week re-simulated under each variant (common random numbers)
         var_splits = {}
         for name, kw in (variants or {}).items():
-            vconn = sqlite3.connect(":memory:")       # a population is bound to its params hash
-            ensure_schema(vconn)
-            with P.variant(name, **kw()):
-                r = run_book(vconn, live_conn, sport, T, games, uni, bettors, matcher)
-            vconn.close()
-            for gid, ws in _by_game(r.pop("_wagers")).items():
-                var_splits.setdefault(gid, {})[name] = splits(ws)
+            mem, rid = replay(book_conn, live_conn, run_id, wm, _iso(D), variant=(name, kw))
+            for gid, ws_ in _by_game(fetch_wagers(mem, rid, market=None)).items():
+                var_splits.setdefault(gid, {})[name] = splits(ws_)
+            mem.close()
         block["sensitivity"] = {"variants": sorted(variants or {}),
                                 "method": "min/max of each split across the baseline and every variant"}
-
-        for g in games:
-            ws = per_game.get(g["event_id"], [])
-            ref_spread, ref_total, ref_at = _reference(live_conn, g["event_id"], T)
-            sp = splits(ws)
-            bands = _bands(sp, var_splits.get(g["event_id"], {}))
-            need = book_need_all(ws, ref_home_spread=ref_spread, ref_total=ref_total,
-                                 max_score=MAX_SCORE[sport]) if ws else None
+        for g in sorted(run["slate"].games, key=lambda x: (to_epoch(x.commence_time), x.canonical_game_id)):
+            gid = g.canonical_game_id
+            home, away = _names(live_conn, gid)
+            ws_ = per_game.get(gid, [])
+            ref_spread, ref_total, ref_at = _reference(live_conn, gid, L)
+            sp = splits(ws_)
+            need = book_need_all(ws_, ref_home_spread=ref_spread, ref_total=ref_total,
+                                 max_score=MAX_SCORE[sport]) if ws_ else None
+            rk = ranks.get(gid)
+            if rk is None and sport == "cfb" and rankings_snapshots:
+                rk = rankings.top25_status(home, away, to_epoch(g.commence_time),
+                                           [x for x in rankings_snapshots if x["fetched_at"] <= L])
             block["games"].append({
-                "event_id": g["event_id"], "home": g["home"], "away": g["away"], "kickoff": _iso(g["kickoff"]),
-                "rankings": g.get("rankings"), "reference": {"home_spread": ref_spread, "total": ref_total,
-                                                            "as_of": _iso(ref_at),
-                                                            "basis": "observed consensus at last collection"},
-                "splits": sp, "bands": bands, "need": _need_summary(need) if need else None,
-                "label": LABEL})
-        out[sport] = block
+                "event_id": gid, "home": home, "away": away, "kickoff": _iso(to_epoch(g.commence_time)), "rankings": rk,
+                "reference": {"home_spread": ref_spread, "total": ref_total, "as_of": _iso(ref_at),
+                              "basis": "observed consensus at last collection"},
+                "splits": sp, "bands": _bands(sp, var_splits.get(gid, {})),
+                "need": _need_summary(need) if need else None, "label": LABEL})
     return out
 
 
