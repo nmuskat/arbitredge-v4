@@ -10,27 +10,38 @@
 #                            pinned wrangler (deploy/cloudflare/package-lock.json), then confirms the
 #                            deployment succeeded.
 # The token is only ever passed in the environment; nothing here prints it.
+# Every check and the deployment result are appended to $DEPLOY_REPORT (JSON lines, no secrets),
+# which the workflow publishes to the private release v4-site for audit.
 set -euo pipefail
 PROJECT="${CF_PAGES_PROJECT:-}"
 [[ "$PROJECT" =~ ^[a-z0-9][a-z0-9-]{0,57}$ ]] || { echo "::error::repository variable CF_PAGES_PROJECT is missing or invalid"; exit 1; }
 HOST="${PROJECT}.pages.dev"
 CURL="${CURL:-curl}"
+REPORT="${DEPLOY_REPORT:-deploy_report.jsonl}"
 
-behind_access() {   # $1 = hostname; true only for a redirect to a *.cloudflareaccess.com login
+record() {   # record <json fields...> as one line, with a UTC timestamp
+  python3 -c 'import json, sys, time; d = dict(a.split("=", 1) for a in sys.argv[1:]); d["at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()); print(json.dumps(d))' "$@" >> "$REPORT"
+}
+
+behind_access() {   # $1 = hostname, $2 = label; true only for a redirect to a *.cloudflareaccess.com login
   local out code loc
   out=$("$CURL" -sS -o /dev/null --max-time 20 -w '%{http_code} %{redirect_url}' "https://$1/" 2>/dev/null) || out="000 "
   code=${out%% *}; loc=${out#* }
   if [[ "$code" =~ ^30[1237]$ && "$loc" =~ ^https://[a-z0-9-]+\.cloudflareaccess\.com/ ]]; then
-    echo "protected: $1 -> Cloudflare Access login"; return 0
+    echo "protected: $1 -> Cloudflare Access login"
+    record "check=${2:-}" "host=$1" "http=$code" "access_login=yes"
+    return 0
   fi
-  echo "::error::NOT protected: https://$1/ answered HTTP $code without an Access login"; return 1
+  echo "::error::NOT protected: https://$1/ answered HTTP $code without an Access login"
+  record "check=${2:-}" "host=$1" "http=$code" "access_login=NO"
+  return 1
 }
 
 check() {
   local ok=0 probe
   probe="$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n').${HOST}"     # any preview / per-deployment URL
-  behind_access "$HOST" || ok=1
-  behind_access "$probe" || ok=1
+  behind_access "$HOST" "before:production" || ok=1
+  behind_access "$probe" "before:wildcard-preview" || ok=1
   if (( ok )); then
     echo "::error::Refusing to deploy private data. Protect BOTH ${HOST} and *.${HOST} with Cloudflare Access (see docs_v4/CLOUDFLARE_PAGES.md)."
     exit 1
@@ -75,11 +86,22 @@ import json, sys
 d = json.load(sys.stdin)
 dep = (d.get("result") or [{}])[0] or {}
 st = dep.get("latest_stage") or {}
-print("%s %s %s" % (st.get("status"), st.get("name"), dep.get("id")))')
+print("%s %s %s %s" % (st.get("status"), st.get("name"), dep.get("id"), dep.get("url")))')
     echo "latest production deployment: $status"
     case "$status" in
-      success\ deploy*) return 0 ;;
-      failure*|canceled*) echo "::error::Cloudflare reports the deployment failed"; exit 1 ;;
+      success\ deploy*)
+        local dep_id dep_url dep_host
+        read -r _ _ dep_id dep_url <<< "$status"
+        record "deploy=production" "branch=$branch" "deployment_id=$dep_id" "url=$dep_url" "status=success"
+        dep_host="${dep_url#https://}"; dep_host="${dep_host%%/*}"
+        # after upload: the production address and this deployment's own URL still need a login
+        behind_access "$HOST" "after:production" || exit 1
+        if [[ "$dep_host" =~ ^[a-z0-9-]+\.${PROJECT}\.pages\.dev$ ]]; then
+          behind_access "$dep_host" "after:deployment-url" || exit 1
+        fi
+        return 0 ;;
+      failure*|canceled*) record "deploy=production" "branch=$branch" "status=failed"
+        echo "::error::Cloudflare reports the deployment failed"; exit 1 ;;
     esac
     sleep "${POLL_SECONDS:-5}"
   done

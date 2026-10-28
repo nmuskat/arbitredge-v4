@@ -56,3 +56,11 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: bash .github/scripts/pages_deploy.sh deploy
+      - name: Publish deploy report (no secrets)
+        if: always() && vars.CF_PAGES_DEPLOY == 'on'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ -s deploy_report.jsonl ]] || exit 0
+          cat deploy_report.jsonl
+          gh release upload v4-site deploy_report.jsonl --clobber

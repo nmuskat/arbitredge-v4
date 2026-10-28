@@ -536,7 +536,7 @@ def test_cloudflare_deploy_steps_are_gated_and_the_check_holds_no_secret():
     assert set(dep["env"]) == {"CF_PAGES_PROJECT", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}
     names = [st.get("name") for st in steps]
     assert names.index("Check owner-only protection (no secrets)") < names.index("Deploy to Cloudflare Pages")
-    assert names[-1] == "Deploy to Cloudflare Pages"            # nothing runs after the token step
+    assert names[-2:] == ["Deploy to Cloudflare Pages", "Publish deploy report (no secrets)"]
     assert not any("secrets." in json.dumps(st) for st in steps if st is not dep)
     secrets = _yaml("site-build.yml")[True]["workflow_call"]["secrets"]
     assert set(secrets) == {"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}
@@ -585,7 +585,8 @@ def _pages(tmp_path, mode, main=LOGIN, preview=LOGIN, project="arbitredge-v4-sta
     (d / "project.json").write_text(json.dumps(project_json or {"success": True, "result": {
         "name": project, "production_branch": "main", "source": None}}))
     (d / "deploys.json").write_text(json.dumps({"success": True, "result": [
-        {"id": "dep1", "latest_stage": {"name": "deploy", "status": deploy_status}}]}))
+        {"id": "dep1", "url": f"https://ab12cd34.{project}.pages.dev",
+         "latest_stage": {"name": "deploy", "status": deploy_status}}]}))
     work = tmp_path / "work"
     (work / "deploy" / "cloudflare").mkdir(parents=True, exist_ok=True)
     shutil.copy(os.path.join(REPO, "deploy", "cloudflare", "_headers"), work / "deploy" / "cloudflare" / "_headers")
@@ -637,6 +638,25 @@ def test_pages_deploy_uses_production_branch_and_uploads_only_the_page(tmp_path)
     assert (d / "dist_files").read_text().split() == ["_headers", "index.html", "robots.txt"]   # no snapshot JSON
     assert (d / "auth_header").read_text().strip() == "Authorization: Bearer tok_SECRET_123"
     assert "tok_SECRET_123" not in r.stdout + r.stderr
+    rep = [json.loads(x) for x in (work / "deploy_report.jsonl").read_text().splitlines()]
+    assert [x.get("check") or x.get("deploy") for x in rep] == ["production", "after:production",
+                                                                 "after:deployment-url"]
+    assert rep[0]["deployment_id"] == "dep1" and rep[0]["branch"] == "v4-dev"
+    assert rep[2]["host"] == "ab12cd34.arbitredge-v4-staging.pages.dev" and rep[2]["access_login"] == "yes"
+    assert "tok_SECRET_123" not in (work / "deploy_report.jsonl").read_text()
+
+
+def test_pages_check_report(tmp_path):
+    r, _, work = _pages(tmp_path, "check", preview="200 ")
+    rep = [json.loads(x) for x in (work / "deploy_report.jsonl").read_text().splitlines()]
+    assert [(x["check"], x["access_login"]) for x in rep] == [("before:production", "yes"),
+                                                              ("before:wildcard-preview", "NO")]
+
+
+def test_deploy_fails_if_deployment_url_is_public_after_upload(tmp_path):
+    # production address protected, but the new deployment's own URL answers 200: fail loudly
+    r, _, _ = _pages(tmp_path, "deploy", preview="200 ")
+    assert r.returncode != 0 and "NOT protected: https://ab12cd34" in r.stdout
 
 
 @pytest.mark.parametrize("kw", [
