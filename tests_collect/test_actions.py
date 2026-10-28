@@ -440,9 +440,10 @@ def _yaml(name):
     return yaml.safe_load(_wf(name))
 
 
-def test_site_build_workflow_has_no_secrets_and_is_pinned():
+def test_site_build_workflow_has_only_cloudflare_secrets_and_is_pinned():
     text = _wf("site-build.yml")
-    assert "secrets." not in text and "ODDS_API_KEY" not in text and "CFBD_API_KEY" not in text
+    assert set(re.findall(r"secrets\.(\w+)", text)) == {"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}
+    assert "ODDS_API_KEY" not in text and "CFBD_API_KEY" not in text
     assert "pull_request" not in text
     for ref in re.findall(r"uses: ([^\s]+)", text):
         assert re.fullmatch(r"actions/checkout@[0-9a-f]{40}", ref), ref
@@ -457,7 +458,9 @@ def test_site_job_runs_only_after_new_data_and_gets_no_secrets(wf, need, output)
     site = _yaml(wf)["jobs"]["site"]
     assert site["uses"] == "./.github/workflows/site-build.yml"
     assert site["needs"] == need and site["if"] == f"needs.{need}.outputs.{output} == 'true'"
-    assert "secrets" not in site                                     # no 'secrets: inherit', no key passed
+    assert site["secrets"] == {"CLOUDFLARE_API_TOKEN": "${{ secrets.CLOUDFLARE_API_TOKEN }}",
+                               "CLOUDFLARE_ACCOUNT_ID": "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"}   # never 'inherit'
+    assert not re.search(r"secrets:\s*inherit", _wf(wf))
     assert site["permissions"] == {"contents": "write"}
 
 
@@ -520,3 +523,129 @@ def test_site_inputs(tmp_path, tags, no_ledger, rankings, ok):
         assert len(list((tmp_path / "shards").rglob("quotes_*.jsonl.gz"))) == len(tags.split())
         assert (tmp_path / "state" / "ledger.jsonl").exists()
         assert len(list((tmp_path / "rankings").glob("rankings_*.json"))) == rankings
+
+
+# ---------------------------------------------------------------- Cloudflare Pages deploy
+
+def test_cloudflare_deploy_steps_are_gated_and_the_check_holds_no_secret():
+    steps = _yaml("site-build.yml")["jobs"]["build"]["steps"]
+    by = {st.get("name"): st for st in steps}
+    chk, dep = by["Check owner-only protection (no secrets)"], by["Deploy to Cloudflare Pages"]
+    assert chk["if"] == dep["if"] == "vars.CF_PAGES_DEPLOY == 'on'"
+    assert "secrets." not in json.dumps(chk)
+    assert set(dep["env"]) == {"CF_PAGES_PROJECT", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}
+    names = [st.get("name") for st in steps]
+    assert names.index("Check owner-only protection (no secrets)") < names.index("Deploy to Cloudflare Pages")
+    assert names[-1] == "Deploy to Cloudflare Pages"            # nothing runs after the token step
+    assert not any("secrets." in json.dumps(st) for st in steps if st is not dep)
+    secrets = _yaml("site-build.yml")[True]["workflow_call"]["secrets"]
+    assert set(secrets) == {"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}
+
+
+def test_wrangler_is_pinned_by_lockfile():
+    pkg = json.load(open(os.path.join(REPO, "deploy", "cloudflare", "package.json")))
+    assert re.fullmatch(r"\d+\.\d+\.\d+", pkg["dependencies"]["wrangler"])          # exact, no ranges
+    lock = json.load(open(os.path.join(REPO, "deploy", "cloudflare", "package-lock.json")))
+    pk = lock["packages"]
+    assert pk["node_modules/wrangler"]["version"] == pkg["dependencies"]["wrangler"]
+    assert all(v.get("integrity", "").startswith("sha512-") for k, v in pk.items() if k and not v.get("link"))
+    script = open(os.path.join(REPO, ".github", "scripts", "pages_deploy.sh")).read()
+    assert "npm ci --prefix deploy/cloudflare --ignore-scripts" in script and "npx" not in script
+
+
+def test_security_headers():
+    h = open(os.path.join(REPO, "deploy", "cloudflare", "_headers")).read()
+    for line in ("X-Robots-Tag: noindex", "Cache-Control: no-store", "X-Frame-Options: DENY",
+                 "default-src 'none'", "connect-src 'none'", "frame-ancestors 'none'"):
+        assert line in h
+
+
+FAKE_CURL = r"""#!/bin/bash
+url="${@: -1}"
+for a in "$@"; do [[ "$a" == Authorization:* ]] && echo "$a" > "$FAKE_DIR/auth_header"; done
+case "$url" in
+  https://api.cloudflare.com/*/deployments*) cat "$FAKE_DIR/deploys.json" ;;
+  https://api.cloudflare.com/*) cat "$FAKE_DIR/project.json" ;;
+  "https://$FAKE_PROJECT.pages.dev/") printf '%s' "$FAKE_MAIN" ;;
+  *) printf '%s' "$FAKE_PREVIEW" ;;
+esac
+"""
+FAKE_WRANGLER = "#!/bin/bash\necho \"$@\" > \"$FAKE_DIR/wrangler_args\"\nls dist > \"$FAKE_DIR/dist_files\"\necho deployed\n"
+LOGIN = "302 https://owner-team.cloudflareaccess.com/cdn-cgi/access/login/x"
+
+
+def _pages(tmp_path, mode, main=LOGIN, preview=LOGIN, project="arbitredge-v4-staging", token="tok_SECRET_123",
+           project_json=None, deploy_status="success", site=True):
+    d = tmp_path / "fake"
+    d.mkdir(exist_ok=True)
+    (d / "curl").write_text(FAKE_CURL)
+    (d / "wrangler").write_text(FAKE_WRANGLER)
+    for f in ("curl", "wrangler"):
+        (d / f).chmod(0o755)
+    (d / "project.json").write_text(json.dumps(project_json or {"success": True, "result": {
+        "name": project, "production_branch": "main", "source": None}}))
+    (d / "deploys.json").write_text(json.dumps({"success": True, "result": [
+        {"id": "dep1", "latest_stage": {"name": "deploy", "status": deploy_status}}]}))
+    work = tmp_path / "work"
+    (work / "deploy" / "cloudflare").mkdir(parents=True, exist_ok=True)
+    shutil.copy(os.path.join(REPO, "deploy", "cloudflare", "_headers"), work / "deploy" / "cloudflare" / "_headers")
+    if site:
+        (work / "site").mkdir(exist_ok=True)
+        (work / "site" / "index.html").write_text("<!doctype html>dash")
+        (work / "site" / "site_snapshot.json").write_text("{}")
+    env = dict(os.environ, CURL=str(d / "curl"), WRANGLER=str(d / "wrangler"), FAKE_DIR=str(d),
+               FAKE_PROJECT=project, FAKE_MAIN=main, FAKE_PREVIEW=preview, CF_PAGES_PROJECT=project,
+               POLL_SECONDS="0", GITHUB_SHA="abc1234")
+    if token:
+        env.update(CLOUDFLARE_API_TOKEN=token, CLOUDFLARE_ACCOUNT_ID="acct123")
+    r = subprocess.run(["bash", os.path.join(REPO, ".github", "scripts", "pages_deploy.sh"), mode], cwd=work,
+                       env=env, capture_output=True, text=True)
+    return r, d, work
+
+
+def test_pages_check_passes_only_when_everything_is_behind_access(tmp_path):
+    assert _pages(tmp_path, "check")[0].returncode == 0
+
+
+@pytest.mark.parametrize("main,preview", [
+    ("200 ", LOGIN),                                            # production address public
+    (LOGIN, "200 "),                                            # previews / per-deployment URLs public
+    (LOGIN, "404 "),                                            # preview hostnames not covered by Access
+    ("522 ", LOGIN),
+    ("302 https://evil.example.com/cloudflareaccess.com/", LOGIN),
+    ("302 https://x.cloudflareaccess.com.evil.io/", LOGIN),
+    ("000 ", LOGIN),                                            # unreachable: not proven protected
+])
+def test_pages_check_refuses_unprotected(tmp_path, main, preview):
+    r, _, _ = _pages(tmp_path, "check", main=main, preview=preview)
+    assert r.returncode != 0 and "Refusing to deploy" in r.stdout
+
+
+@pytest.mark.parametrize("project", ["", "Bad_Name", "x;rm -rf /", "a" * 70])
+def test_pages_rejects_bad_project_names(tmp_path, project):
+    assert _pages(tmp_path, "check", project=project)[0].returncode != 0
+
+
+def test_pages_deploy_uses_production_branch_and_uploads_only_the_page(tmp_path):
+    r, d, work = _pages(tmp_path, "deploy",
+                        project_json={"success": True, "result": {"name": "arbitredge-v4-staging",
+                                                                  "production_branch": "v4-dev", "source": None}})
+    assert r.returncode == 0, r.stdout + r.stderr
+    args = (d / "wrangler_args").read_text()
+    assert "pages deploy dist --project-name arbitredge-v4-staging --branch v4-dev" in args
+    assert "--commit-hash abc1234" in args
+    assert (d / "dist_files").read_text().split() == ["_headers", "index.html", "robots.txt"]   # no snapshot JSON
+    assert (d / "auth_header").read_text().strip() == "Authorization: Bearer tok_SECRET_123"
+    assert "tok_SECRET_123" not in r.stdout + r.stderr
+
+
+@pytest.mark.parametrize("kw", [
+    {"token": None},                                                              # secrets not set
+    {"site": False},                                                              # nothing built
+    {"project_json": {"success": False, "errors": [{"message": "Project not found"}]}},
+    {"deploy_status": "failure"},
+])
+def test_pages_deploy_fails_loudly(tmp_path, kw):
+    r, _, _ = _pages(tmp_path, "deploy", **kw)
+    assert r.returncode != 0
+    assert "tok_SECRET_123" not in r.stdout + r.stderr

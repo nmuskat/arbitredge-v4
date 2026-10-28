@@ -42,9 +42,12 @@ jobs:
           gh release upload cfb-rankings "${files[@]}"
           echo "saved=true" >> "$GITHUB_OUTPUT"
   site:
-    # New rankings change which CFB games are in scope: rebuild the site (no secrets passed).
+    # New rankings change which CFB games are in scope: rebuild the site (Cloudflare secrets only).
     needs: rankings
     if: needs.rankings.outputs.saved == 'true'
     permissions:
       contents: write
     uses: ./.github/workflows/site-build.yml
+    secrets:                    # only the Cloudflare deploy credentials; never inherit
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -12,3 +12,7 @@ __pycache__/
 # Mac runtime (never commit)
 .venv/
 .claude/settings.local.json
+
+# Cloudflare deploy tool (installed in CI from the lockfile)
+deploy/cloudflare/node_modules/
+dist/

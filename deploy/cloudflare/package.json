@@ -1,0 +1,8 @@
+{
+  "name": "arbitredge-v4-pages-deploy",
+  "private": true,
+  "description": "Pinned deploy tool for the private V4 dashboard (Cloudflare Pages Direct Upload). Installed in CI with npm ci from the lockfile.",
+  "dependencies": {
+    "wrangler": "4.151.0"
+  }
+}

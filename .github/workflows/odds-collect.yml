@@ -57,9 +57,12 @@ jobs:
         run: bash .github/scripts/state_save.sh
   site:
     # Rebuild the site only when this run saved new odds (a skipped job costs no minutes).
-    # No secrets are passed to it.
+    # Only the two Cloudflare deploy secrets are passed to it.
     needs: collect
     if: needs.collect.outputs.fetched == 'true'
     permissions:
       contents: write
     uses: ./.github/workflows/site-build.yml
+    secrets:                    # only the Cloudflare deploy credentials; never inherit
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
