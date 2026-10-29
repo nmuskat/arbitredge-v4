@@ -107,14 +107,18 @@ Measured job durations: collect 7–14 s; dashboard build 24–83 s before the s
 | site-build (dashboard + Cloudflare deploy) | 374–413 builds → **374–516 min** (1 min each; 1.25 if some bill 2) | 209 → 209–261 |
 | odds-analyze (daily) | 31 | 31 |
 | cfb-rankings (2 runs/week + its rebuild) | 18 | 18 |
-| v4-ci (~50 code pushes × 3 min) | 150 | 150 |
+| v4-ci (≤ 45 code pushes × 3–4 min; docs-only pushes skip it) | 135–180 | 135–180 |
 | odds-verify, manual rebuilds | 0 unless started by hand | 0 |
-| **Total/month** | **~1,610–1,750** | ~1,175–1,230 |
+| **Total/month** | **~1,590–1,780; central estimate ~1,650** | ~1,160–1,260 |
 
 **Caveats:**
 - These are estimates. The real figure is on GitHub's usage page.
 - GitHub often delays or drops scheduled runs: on Oct 27, about half the 15-minute runs never started. That lowers actual minutes, and the next run absorbs a missed close window.
-- CI depends on how many code changes are pushed. A heavy development month adds 3 minutes per push.
+- CI depends on how many code changes are pushed: 3–4 minutes each (the Oct 29 run took 3 min 32 s, billed as 4). Code changes are batched to stay at or under ~45 pushes a month.
+- **Hard ceilings:**
+  - collection can't exceed its 238 scheduled runs a week (~1,035 minutes);
+  - collector dashboard builds stop at 440 a month.
+  - The upper end of the range, 1,780, assumes no quiet backoff, a quarter of builds billing 2 minutes and a heavy CI month. If the first week's real usage trends above 1,750, the soft dashboard limit (380 builds) will be lowered, and that change reported.
 - **The 2,000 included minutes are shared by every private repository on the account.** I can only see this repository.
 
 ### 3.3 Cloudflare Pages deployments (Free plan)
