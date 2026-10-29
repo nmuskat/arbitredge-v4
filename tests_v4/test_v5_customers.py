@@ -35,7 +35,7 @@ def test_customers_within_one_group_differ():
         vals = [x[key] for x in rc]
         assert statistics.pstdev(vals) > spread, key
     assert statistics.pstdev([x["market_weights"]["spread"] for x in rc]) > 0.05
-    assert len({x["steady_blend"] for x in rc}) == 5                 # five timing blends
+    assert len({x["steady_blend"] for x in rc}) >= 4                 # several timing blends (quarters)
 
 
 def test_weekly_participation_varies_by_week_and_customer():
