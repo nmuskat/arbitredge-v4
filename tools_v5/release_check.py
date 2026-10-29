@@ -113,6 +113,57 @@ def main(argv=None):
                                         "reconciliation": st.get("reconciliation")}
         bound = all(persist.snapshot_rows(after, rid) for rid in v5_runs)
         res["v5_snapshot_bound"] = {"ok": bound and bool(v5_runs), "v5_runs": len(v5_runs)}
+
+        # 7 information available at placement: every quote a V5 wager used was fetched at or before its offer time,
+        #   which is at or before the simulated placement time (no later odds, no closing prices, no scores)
+        from sportsbook_v4.util import to_epoch
+        late, checked = 0, 0
+        for rid in v5_runs:
+            for qj, offer_t, acc in after.execute("SELECT quote_refs_json, offer_as_of, accepted_at FROM v4_wager WHERE run_id=?", (rid,)):
+                checked += 1
+                ot, at = to_epoch(offer_t), to_epoch(acc)
+                times = [int(ref.rsplit(":", 1)[1]) for r in json.loads(qj)["refs"] for ref in r.split("|") if ref.startswith("mkt:")]
+                late += (ot > at) or any(t > ot for t in times) or not times
+        res["information_at_placement"] = {"ok": late == 0 and checked > 0, "wagers_checked": checked, "violations": late,
+                                           "also": "engine runs with NoFacts (no scores); week-open bankrolls use only "
+                                                   "settlements of earlier weeks (tested)"}
+
+        # 8 Sunday slate (and every game): wagers timestamped before kickoff, Need computed for each game with wagers
+        bad_t, games_ok, sunday = 0, 0, 0
+        for rid in v5_runs:
+            from sportsbook_v4.engine import load_run
+            for g in load_run(after, rid)["slate"].games:
+                k = to_epoch(g.commence_time)
+                rows = after.execute("SELECT accepted_at FROM v4_wager WHERE run_id=? AND canonical_game_id=?", (rid, g.canonical_game_id)).fetchall()
+                bad_t += sum(1 for (a_,) in rows if to_epoch(a_) >= k)
+                games_ok += bool(rows)
+                sunday += __import__("time").gmtime(k - 5 * 3600).tm_wday == 6
+        need_ok = all(g.get("need") is not None for sp in ("nfl", "cfb") for g in s1["sports"][sp]["book"].get("games", [])
+                      if any(r.get("status") == "OK" for r in g["splits"].values()))
+        res["slate_complete_and_timestamped"] = {"ok": bad_t == 0 and need_ok, "games_with_wagers": games_ok,
+                                                 "sunday_games": sunday, "wagers_at_or_after_kickoff": bad_t,
+                                                 "need_computed_for_every_game_with_wagers": need_ok}
+
+        # 9 rollback: an m4 build on the V5 ledger keeps every V5 record and resumes m4
+        rb = os.path.join(work, "rollback")
+        shutil.copytree(b1, rb)
+        v5_before = {rid: persist.wager_set(after, rid) for rid in v5_runs}
+        code = ("import sportsbook_v4; sportsbook_v4.ENGINE_VERSION='sportsbook_v4.m4'; "
+                "from web_v4 import live_site; import sys; live_site.main(sys.argv[1:])")
+        r = subprocess.run([sys.executable, "-c", code, "--shards", a.shards, "--rankings-dir", a.rankings_dir,
+                            "--out", os.path.join(work, "rb_out"), "--book-dir", rb, "--book-out", rb, "--now", a.now],
+                           capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        ok = r.returncode == 0
+        if ok:
+            rbc = _load(rb)
+            kept5 = all(persist.wager_set(rbc, rid) == ws for rid, ws in v5_before.items())
+            snap = json.load(open(os.path.join(work, "rb_out", "site_snapshot.json")))
+            m4_active = all(snap["sports"][sp]["book"].get("audit", {}).get("engine_version") == "sportsbook_v4.m4" for sp in ("nfl", "cfb"))
+            sup5 = all(any(x["engine_version"] == ENGINE_VERSION for x in snap["sports"][sp]["book"].get("superseded_runs", []))
+                       for sp in ("nfl", "cfb"))
+            ok = kept5 and m4_active and sup5
+        res["rollback_to_m4"] = {"ok": ok, "detail": "m4 active again, V5 runs kept unchanged and shown as superseded"
+                                 if ok else (r.stderr[-800:] or "check failed")}
     finally:
         shutil.rmtree(work, ignore_errors=True)
     res["all_pass"] = all(v["ok"] for v in res.values() if isinstance(v, dict))

@@ -34,5 +34,22 @@
   "ok": true,
   "v5_runs": 2
  },
+ "information_at_placement": {
+  "ok": true,
+  "wagers_checked": 1053,
+  "violations": 0,
+  "also": "engine runs with NoFacts (no scores); week-open bankrolls use only settlements of earlier weeks (tested)"
+ },
+ "slate_complete_and_timestamped": {
+  "ok": true,
+  "games_with_wagers": 32,
+  "sunday_games": 12,
+  "wagers_at_or_after_kickoff": 0,
+  "need_computed_for_every_game_with_wagers": true
+ },
+ "rollback_to_m4": {
+  "ok": true,
+  "detail": "m4 active again, V5 runs kept unchanged and shown as superseded"
+ },
  "all_pass": true
 }
