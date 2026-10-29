@@ -79,6 +79,17 @@ def resolve_tier(value):
     return name, "V4_TIER"
 
 
+# GitHub starts scheduled runs 5-50 min late, by a different amount each time, so two runs one hour apart in
+# the schedule can start 58 min apart. A gap counts as met within this tolerance (20% of the gap, at most
+# 15 min); otherwise an hourly rule silently becomes every two hours (seen 2026-10-29 05:25Z).
+GAP_TOLERANCE = 0.2
+GAP_TOLERANCE_MAX_H = 0.25
+
+
+def _gap_met(since_h, gap_h):
+    return since_h >= gap_h - min(gap_h * GAP_TOLERANCE, GAP_TOLERANCE_MAX_H)
+
+
 def due(now, kickoffs, last_fetch, tier="test", sport=None, change_rate=None):
     """Returns (is_due, reason). kickoffs: epoch seconds (any order); last_fetch: epoch or None.
 
@@ -105,13 +116,13 @@ def due(now, kickoffs, last_fetch, tier="test", sport=None, change_rate=None):
              and to_next_h > 24)
     mult = t.get("quiet_backoff", 1.0) if quiet else 1.0
     for horizon_h, gap_h in t["rules"]:
-        if to_next_h <= horizon_h and since_h >= gap_h * mult:
+        if to_next_h <= horizon_h and _gap_met(since_h, gap_h * mult):
             return True, f"cadence: next kickoff in {to_next_h:.1f} h, last fetch {since_h:.1f} h ago " \
                          f"(rule {horizon_h} h / {gap_h} h{' x%g quiet' % mult if quiet else ''})"
     g = time.gmtime(now)
     for w_sport, days, h0, h1, gap_h, need_h in t.get("windows", ()):
         if (w_sport in (None, sport) and g.tm_wday in days and h0 <= g.tm_hour < h1 and to_next_h <= need_h
-                and since_h >= gap_h * mult):
+                and _gap_met(since_h, gap_h * mult)):
             return True, f"window: {WEEKDAY[g.tm_wday]} {h0:02d}-{h1:02d} UTC every {gap_h} h"
     return False, "not due"
 

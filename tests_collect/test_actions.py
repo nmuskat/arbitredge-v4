@@ -1125,3 +1125,16 @@ def test_credit_gate_refuses_paid_request_when_balance_unknown(tmp_path):
     with pytest.raises(og.credits.CreditRefused, match="balance unknown"):
         gate.authorize("odds", {"p": 1}, 3, require_remaining=True)
     gate.authorize("odds", {"p": 1}, 3)                     # legacy callers (no preflight) unchanged
+
+
+@pytest.mark.parametrize("since_min,want", [(58, True), (48, True), (47, False)])
+def test_hourly_rule_tolerates_github_start_jitter(since_min, want):
+    # 2026-10-29: runs scheduled an hour apart started 58 min apart; the hourly rule must still fetch
+    kick = NOW + 14 * 3600                                   # final 24 h: expanded rule is 1 h
+    ok, why = SP.due(NOW, [kick], NOW - since_min * 60, "expanded", sport="americanfootball_nfl")
+    assert ok == want, why
+
+
+def test_gap_tolerance_is_bounded():
+    assert SP._gap_met(0.25 - 0.05, 0.25) and not SP._gap_met(0.25 - 0.051, 0.25)   # 15-min gap: 3 min
+    assert SP._gap_met(4 - 0.25, 4) and not SP._gap_met(4 - 0.26, 4)               # long gaps: at most 15 min

@@ -202,3 +202,21 @@ An intermediate version of the population cache ignored the sensitivity variants
 **Cloudflare documentation:** the 500 builds/month limit is described for Git builds; whether direct uploads count isn't stated, so the design assumes they do.
 
 **Tests:** see the commit. Activation remains the owner's decision (`docs_v4/EXPANDED_TIER_PLAN.md` §5).
+
+## 2026-10-29: Expanded tier activated by the owner; post-activation check
+
+**Activation.** The owner set `V4_TIER=expanded`, `V4_MONTHLY_CAP=5000` and `V4_DAILY_CAP=250`. The first executed run in the Expanded schedule was the 03:52 slot (started 04:26:56Z).
+
+**04:26Z to 12:22Z:**
+- Runs: 5 collect runs succeeded; 1 standard-only slot skipped by design (06:17); no failures; no dropped slots.
+- **Credits:**
+  - 8 paid fetches, 24 credits;
+  - each preceded by a free `/v4/sports` balance check (cost 0);
+  - provider balance 19,940 → 19,916, exactly 3 per fetch;
+  - no refusals.
+- **Dashboard:** 3 builds (04:27, 07:44, 10:00), 2 h apart as designed for quiet periods. Each Cloudflare deploy succeeded, with Access confirmed on the main address and the previews, before and after upload.
+- **Ledger:** all earlier wagers still present, unchanged. m4 NFL 183 → 530, CFB 897 → 1,005; replay verified.
+
+**Bug fixed: GitHub start jitter halved the hourly cadence.** The 04:52 slot started 58 min after the previous fetch, so the 1-hour rule skipped it. Gaps now count as met within 20% (at most 15 min).
+- Simulated with random 5–50 min delays: 2,590–3,075 credits a month, against 2,450–2,880 before the fix.
+- Worst 24 h ≤ 177; all closes observed.
