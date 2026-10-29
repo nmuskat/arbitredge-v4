@@ -100,6 +100,55 @@ Measured this week (V5, real odds, data through Oct 29 10:00 UTC). These are out
 | Top 10% of customers' share of handle | 83–85% | very concentrated; unverified |
 | Arrivals passing on price | 0.5% NFL, 2.6% CFB | price sensitivity is a cap, not a curve; deferred |
 
+## 3d. Investigation: tonight's sharp share (1.7%) vs the m4 NFL-wide 19%
+
+**Data:** the live m4 NFL run through Oct 29 23:33 UTC (7:33 pm ET), read-only.
+
+| Game (ET kickoff) | Spread tickets | Spread handle | Sharp ticket % | Sharp handle % | Unique sharps | Avg sharp wager |
+|---|---|---|---|---|---|---|
+| Panthers @ Packers (Thu 8:15 pm) | 577 | $66,465 | 0.2% | 1.5% | 1 | $975 |
+| Vikings @ Lions (Sun 1 pm) | 47 | $2,256 | 0.0% | 0.0% | 0 | – |
+| Colts @ Jaguars | 58 | $6,888 | 0.0% | 0.0% | 0 | – |
+| Falcons @ Buccaneers | 43 | $6,018 | 4.7% | 29.7% | 2 | $895 |
+| Ravens @ Bills | 53 | $24,871 | 0.0% | 0.0% | 0 | – |
+| Cardinals @ Cowboys | 48 | $2,312 | 0.0% | 0.0% | 0 | – |
+| Raiders @ Jets | 56 | $5,606 | 1.8% | 3.7% | 1 | $206 |
+| Browns @ Steelers | 57 | $9,717 | 1.8% | 14.9% | 1 | $1,450 |
+| Titans @ Bengals | 51 | $13,477 | 5.9% | 44.1% | 3 | $1,981 |
+| Chargers @ Rams (4:05 pm) | 50 | $7,677 | 2.0% | 23.2% | 1 | $1,783 |
+| Chiefs @ Broncos (4:25 pm) | 43 | $5,852 | 4.7% | 53.4% | 2 | $1,564 |
+| Patriots @ Dolphins (4:25 pm) | 50 | $3,519 | 0.0% | 0.0% | 0 | – |
+| Eagles @ Commanders (Sun 8:20 pm) | 68 | $7,463 | 2.9% | 47.5% | 2 | $1,772 |
+| Bears @ Seahawks (Mon 8:20 pm) | 37 | $10,459 | 0.0% | 0.0% | 0 | – |
+| **All spread** | 1,238 | $172,580 | 1.1% | **10.9%** | 13 tickets | |
+
+**Other markets:** sharp share of totals handle 42.4% (27 tickets); moneyline 0%. Sharp wagers by day: Tue 9, Wed 6, Thu 25. Arrivals that found no edge: 301.
+
+**Finding: normal game-level variation plus timing. Not a classification, participation or accounting error.**
+1. **Simulated sharps bet only when the book's number trails the market makers'** (the re-quote lag), and the book then copies the makers on that market. So sharp action is rare and lumpy: 13 spread tickets all week. One $1,000–2,000 ticket decides a game's sharp share, hence the range from 0% to 53%.
+2. **Tonight's game drew by far the most recreational money** (577 tickets, $66k: a standalone primetime game in its final hours). Its single $975 sharp ticket is therefore 1.5%.
+3. **The 19% figure was NFL-wide at Thursday 6 am ET.** Recreational money keeps arriving through the week while sharps act early, so the NFL-wide spread share has since fallen to 10.9% and will keep falling until Sunday.
+4. **Classification is consistent:** "sharp" = the SHARP archetype in the ledger, the Need Tracker and the audits alike; ticket and handle totals reconcile with the ledger.
+
+**V5 participation vs m4** (same games, same odds, data through Thu 10:35 UTC):
+
+| | m4 | V5 |
+|---|---|---|
+| Sharp spread tickets / unique sharps | 7 / 7 | 9 / 9 |
+| Average sharp wager | $1,304 | $1,989 |
+| Recreational spread handle | $39,414 | $22,955 |
+| **Sharp share of spread handle** | **18.8%** | **43.8%** |
+| Active this week (V5): sharps / high-stakes rec / casual | (everyone, every week) | 79% / 57% / 44% |
+
+**Finding:** V5 does inflate sharp influence, mainly through **participation**:
+- Sharps are assumed to show up most weeks (engagement mean about 0.8) while casual customers show up 44% of the time.
+- Each active customer keeps m4's per-week arrival rate, so recreational volume falls by about 40% while sharp volume barely changes.
+- The larger average sharp wager comes from about 9 tickets, which is within small-sample noise.
+
+This is a consequence of an **unsupported assumption**: m4's arrival rates were never defined as active-week rates. It is not a target, and nothing has been changed.
+
+**Option for the owner (not applied):** define the weekly arrival rate as each customer's long-run average, so an active week's rate = rate ÷ the customer's own P(active). Total volume per customer then matches m4 and only *when* customers bet changes. This would not force any sharp percentage; the share would remain an output.
+
 ## 4. Rollback to the last known-good V4
 
 1. Set `ENGINE_VERSION` back to `"sportsbook_v4.m4"` (one line), or revert `v4-dev` to the pre-V5 commit `31c2ef3`. Push normally; no force-push.
