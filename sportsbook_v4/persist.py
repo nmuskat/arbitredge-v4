@@ -43,7 +43,14 @@ def _engine_wagers_hash(wagers):
 
 
 def _body_hash(d):
-    return json_hash({k: d[k] for k in ("format", "population", "run", "interval", "wagers")})
+    keys = ("format", "population", "run", "interval", "wagers") + tuple(
+        k for k in ("bankroll_snapshot", "v5_params_hash") if k in d)
+    return json_hash({k: d[k] for k in keys})
+
+
+def snapshot_rows(conn, run_id):
+    return [[i, b] for i, b in conn.execute(
+        "SELECT bettor_index, bankroll FROM v5_bankroll_snapshot WHERE run_id=? ORDER BY bettor_index", (run_id,))]
 
 
 def file_name(run, seq):
@@ -59,6 +66,10 @@ def export_interval(conn, run_id, seq, out_dir):
     pop = _rows(conn, "SELECT population_id, sport, params_version, params_hash, bettor_count, team_universe, "
                       "population_hash FROM v4_population WHERE population_id=?", (run["population_id"],))[0]
     d = {"format": FORMAT, "population": pop, "run": run, "interval": interval, "wagers": wagers}
+    if run["engine_version"].startswith("sportsbook_v5") and seq == 0:
+        d["bankroll_snapshot"] = snapshot_rows(conn, run_id)      # frozen week-open bankrolls (V5)
+        from sportsbook_v4.customers_v5 import V5_PARAMS_HASH
+        d["v5_params_hash"] = V5_PARAMS_HASH
     d["rows_sha256"] = _body_hash(d)
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, file_name(run, seq))
@@ -104,6 +115,22 @@ def load_dir(conn, book_dir):
             if pid != run["population_id"] or got[0] != pop["population_hash"]:
                 raise LedgerIntegrityError(f"run {rid[:12]}: bettor population does not regenerate identically")
             _insert(conn, "v4_run", run)
+            if run["engine_version"].startswith("sportsbook_v5"):
+                snap = d.get("bankroll_snapshot")
+                if not snap:
+                    raise LedgerIntegrityError(f"run {rid[:12]}: V5 run without its bankroll snapshot")
+                from sportsbook_v4.engine import compute_run_id
+                from sportsbook_v4.engine import load_run as _lr
+                conn.executemany("INSERT INTO v5_bankroll_snapshot (run_id, bettor_index, bankroll) VALUES (?,?,?)",
+                                 [(rid, i, b) for i, b in snap])
+                lr = _lr(conn, rid)
+                ids = {compute_run_id(run["population_id"], lr["slate"], run["market_source_id"],
+                                      engine_version=run["engine_version"], snapshot_hash=json_hash(snap),
+                                      params=run["params_hash"], v5_params=vp) for vp in (None, d.get("v5_params_hash"))}
+                if rid not in ids:
+                    raise LedgerIntegrityError(f"run {rid[:12]}: bankroll snapshot does not match the run identity")
+            elif "bankroll_snapshot" in d:
+                raise LedgerIntegrityError(f"run {rid[:12]}: unexpected bankroll snapshot on a non-V5 run")
             s = out[rid] = {"run": run, "files": 0, "wagers": 0, "last_seq": -1, "watermark": run["window_start"]}
         else:
             keep = {k: v for k, v in run.items() if k != "created_at"}

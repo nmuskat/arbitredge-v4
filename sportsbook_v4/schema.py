@@ -127,10 +127,18 @@ CREATE TABLE IF NOT EXISTS v4_prospective_decision (
     UNIQUE (canonical_game_id, policy_version, decision_point),
     CHECK (decided_at < kickoff)
 );
+
+CREATE TABLE IF NOT EXISTS v5_bankroll_snapshot (
+    run_id        TEXT NOT NULL,
+    bettor_index  INTEGER NOT NULL,
+    bankroll      REAL NOT NULL CHECK (bankroll >= 0),
+    PRIMARY KEY (run_id, bettor_index)
+);
 """
 
 _APPEND_ONLY_TABLES = (
     "v4_population", "v4_bettor", "v4_run", "v4_interval", "v4_wager", "v4_prospective_decision",
+    "v5_bankroll_snapshot",
 )
 
 

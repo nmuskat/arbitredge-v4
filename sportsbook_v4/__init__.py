@@ -19,4 +19,8 @@ ISOLATION (milestone 1)
   operations (enforced by tests_v4/test_isolation.py).
 """
 
-ENGINE_VERSION = "sportsbook_v4.m4"   # m4: coherent side-neutral offer; book moves on respected action
+# The ACTIVE engine. Runs created under any other engine version are kept, immutable, and reported as
+# superseded; only runs of the active engine are advanced. Rollback to m4 = set this back to
+# "sportsbook_v4.m4" (m4 runs then resume, catching up deterministically).
+ENGINE_VERSION = "sportsbook_v5.r1"   # V5 r1: individual customers, weekly participation, bankroll-driven stakes
+M4_ENGINE_VERSION = "sportsbook_v4.m4"   # m4: coherent side-neutral offer; book moves on respected action

@@ -71,7 +71,7 @@ def _clean(o):
 
 
 def build_snapshot(conn, ledger_rows, snaps, now, book_conn=None, bettors=10_000, commit=None, book_in=None,
-                   book_out=None, sensitivity_cache=None):
+                   book_out=None, sensitivity_cache=None, settlements=None):
     """Everything the page shows, from the market store as of `now`."""
     out = {"schema": SCHEMA, "generated_at": _iso(now), "commit": commit, "freshness_policy": FRESH,
            "sports": {}, "collection": live.collection_health(conn, ledger_rows, now),
@@ -108,7 +108,7 @@ def build_snapshot(conn, ledger_rows, snaps, now, book_conn=None, bettors=10_000
         out["sports"][sport] = s
     if book_conn is not None:
         bk = live_book.build(book_conn, conn, now, snaps, bettors=bettors, book_in=book_in, book_out=book_out,
-                             sensitivity_cache=sensitivity_cache)
+                             sensitivity_cache=sensitivity_cache, settlements=settlements)
         out["_sensitivity_cache"] = {sp: bk[sp].pop("sensitivity_cache", None) for sp in SPORTS}
         for sport in SPORTS:
             out["sports"][sport]["book"] = bk[sport]
@@ -568,8 +568,13 @@ def main(argv=None):
             cache = json.load(open(a.sensitivity_cache))
         except ValueError:
             cache = None           # unreadable cache: simply recompute
+    from sportsbook_v4 import need_tracker as _NT
+    try:      # settled results of earlier weeks set V5 week-open bankrolls (verified again by settlement_step)
+        prior_settlements = _NT.load(a.settle_dir, "settle_*.json.gz") if a.settle_dir else []
+    except _NT.TrackerIntegrityError:
+        prior_settlements = []
     snap = build_snapshot(conn, ledger_rows, load_rankings(a.rankings_dir), now, bconn, a.bettors, book_in=a.book_dir,
-                          book_out=a.book_out, sensitivity_cache=cache,
+                          book_out=a.book_out, sensitivity_cache=cache, settlements=prior_settlements,
                           commit=(os.environ.get("GITHUB_SHA") or "")[:7] or None)
     snap["shards"] = n_shards
     tracker_step(snap, load_rankings(a.rankings_dir), now, a.need_dir, a.results_dir, a.need_out, conn)

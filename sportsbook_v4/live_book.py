@@ -317,8 +317,27 @@ def classify(sport, kickoff, standalone, ws):
     return standalone or et_hour >= 19, False
 
 
+def week_open_bankrolls(book_conn, pid, sport, ws, settlements):
+    """V5: every customer's bankroll at the week's open = opening bankroll + settled P&L of their wagers in
+    this engine release's EARLIER weeks (runs whose window ended by ws), from the authoritative settlement
+    rows. No settled history -> the opening bankroll. Never below zero. Frozen into the new run."""
+    from sportsbook_v4 import bettor_settlement as BS
+    from sportsbook_v4.population import load_population
+    prior = {r[0] for r in book_conn.execute(
+        "SELECT run_id FROM v4_run WHERE sport=? AND engine_version=? AND population_id=? AND window_end<=?",
+        (sport, ENGINE_VERSION, pid, from_epoch(ws)))}
+    pnl = {}
+    for s_ in BS.latest(settlements or []).values():
+        if s_["run_id"] in prior:
+            pnl[s_["bettor_index"]] = pnl.get(s_["bettor_index"], 0) + s_["pnl_cents"]
+    out = []
+    for b in load_population(book_conn, pid)["bettors"]:
+        out.append([b["bettor_index"], max(0.0, round(b["bankroll"] + pnl.get(b["bettor_index"], 0) / 100.0, 2))])
+    return out
+
+
 def open_run(book_conn, live_conn, sport, ws, we, games, team_universe, bettors=10_000, matcher=None,
-             standalone=frozenset()):
+             standalone=frozenset(), settlements=None):
     pid = ensure_population(book_conn, sport, team_universe, bettor_count=bettors)
     # times in the engine's canonical format: the run id is hashed from these strings and a replay
     # rebuilds the slate from the stored run row, so both must be byte-identical
@@ -327,7 +346,8 @@ def open_run(book_conn, live_conn, sport, ws, we, games, team_universe, bettors=
                                      _team_key(sport, g["away"], matcher), from_epoch(g["kickoff"]),
                                      *classify(sport, g["kickoff"], g["event_id"] in standalone, ws))
                             for g in games))
-    return create_run(book_conn, pid, slate, _market(live_conn, sport))
+    snap = week_open_bankrolls(book_conn, pid, sport, ws, settlements) if ENGINE_VERSION.startswith("sportsbook_v5") else None
+    return create_run(book_conn, pid, slate, _market(live_conn, sport), bankroll_snapshot=snap)
 
 
 def _population_universe(book_conn, run_id):
@@ -349,7 +369,8 @@ def replay(book_conn, live_conn, run_id, until_iso, data_through_iso, variant=No
         ctx.__enter__()
     try:
         pid = ensure_population(mem, run["slate"].sport, uni, bettor_count=n)
-        rid = create_run(mem, pid, run["slate"], _market(live_conn, run["slate"].sport))
+        rid = create_run(mem, pid, run["slate"], _market(live_conn, run["slate"].sport),
+                         bankroll_snapshot=persist.snapshot_rows(book_conn, run_id) or None)
         if to_epoch(until_iso) > to_epoch(run["slate"].window_start):
             advance(mem, rid, until_iso, _market(live_conn, run["slate"].sport), NoFacts(),
                     data_complete_through=data_through_iso)
@@ -416,7 +437,7 @@ SENSITIVITY_REFRESH_S = 3 * 3600   # variant replays (most of a build's time) at
 
 
 def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, variants=SENSITIVITY_VARIANTS,
-          book_in=None, book_out=None, sensitivity_cache=None):
+          book_in=None, book_out=None, sensitivity_cache=None, settlements=None):
     """Both sports. Loads the persisted ledger (book_in), advances each sport's weekly run to its last
     observation, exports new intervals (book_out). Returns {sport: {status, coverage, audit, games, ...}}."""
     from data_v4 import rankings
@@ -468,7 +489,8 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                 matcher = rankings.TeamMatcher(latest["teams"]) if latest else None
             run_id = open_run(book_conn, live_conn, sport, ws, we, games,
                               universe(sport, rankings_snapshots, games), bettors, matcher,
-                              standalone=standalone_ids(week_games(live_conn, sport, ws, we, L)))
+                              standalone=standalone_ids(week_games(live_conn, sport, ws, we, L)),
+                              settlements=settlements)
             ranks = {g["event_id"]: g.get("rankings") for g in games}
         else:
             run_id, ranks = row[0], {}

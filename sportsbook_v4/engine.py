@@ -84,11 +84,15 @@ def _games_payload(slate):
     return [asdict(g) for g in sorted(slate.games, key=lambda g: g.canonical_game_id)]
 
 
-def compute_run_id(population_id, slate, market_source_id):
-    return sha256_hex(
-        "v4_run", ENGINE_VERSION, population_id, params_hash(), slate.sport, slate.slate_id,
-        slate.window_start, slate.window_end, canonical_json(_games_payload(slate)), market_source_id,
-    )
+def compute_run_id(population_id, slate, market_source_id, engine_version=None, snapshot_hash=None, params=None,
+                   v5_params=None):
+    ev = engine_version or ENGINE_VERSION
+    parts = ["v4_run", ev, population_id, params or params_hash(), slate.sport, slate.slate_id,
+             slate.window_start, slate.window_end, canonical_json(_games_payload(slate)), market_source_id]
+    if ev.startswith("sportsbook_v5"):      # V5: the engine release's parameters and the frozen bankrolls
+        from sportsbook_v4.customers_v5 import V5_PARAMS_HASH
+        parts += [v5_params or V5_PARAMS_HASH, snapshot_hash or ""]
+    return sha256_hex(*parts)
 
 
 def compute_rng_key(population_id, slate):
@@ -106,7 +110,8 @@ def compute_rng_key(population_id, slate):
                       canonical_json(_games_payload(slate)))
 
 
-def create_run(conn, population_id, slate, market):
+def create_run(conn, population_id, slate, market, bankroll_snapshot=None):
+    """bankroll_snapshot (V5 only, required): [[bettor_index, bankroll], ...] frozen at the week's open."""
     pop = conn.execute("SELECT sport FROM v4_population WHERE population_id=?", (population_id,)).fetchone()
     if pop is None:
         raise KeyError(population_id)
@@ -118,8 +123,15 @@ def create_run(conn, population_id, slate, market):
     for g in slate.games:
         if to_epoch(g.commence_time) > we:
             raise ValueError(f"{g.canonical_game_id} kicks off after window_end")
-    run_id = compute_run_id(population_id, slate, market.source_id)
+    v5 = ENGINE_VERSION.startswith("sportsbook_v5")
+    if v5 and not bankroll_snapshot:      # no settled history: every customer starts at the opening bankroll
+        bankroll_snapshot = [[b["bettor_index"], b["bankroll"]] for b in load_population(conn, population_id)["bettors"]]
+    snap_hash = json_hash([[int(i), float(b)] for i, b in bankroll_snapshot]) if v5 else None
+    run_id = compute_run_id(population_id, slate, market.source_id, snapshot_hash=snap_hash)
     if conn.execute("SELECT 1 FROM v4_run WHERE run_id=?", (run_id,)).fetchone() is None:
+        if v5:
+            conn.executemany("INSERT INTO v5_bankroll_snapshot (run_id, bettor_index, bankroll) VALUES (?,?,?)",
+                             [(run_id, int(i), float(b)) for i, b in bankroll_snapshot])
         conn.execute(
             "INSERT INTO v4_run (run_id, population_id, sport, slate_id, window_start, window_end, games_json, "
             "engine_version, params_hash, market_source_id, rng_key, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -166,18 +178,24 @@ def _density(profile, epoch):
 
 
 def _profile_stats(profile_name, ws, we):
-    profile = TIMING_PROFILES[profile_name]
+    if isinstance(profile_name, tuple):          # V5: (group profile, share blended from 'steady')
+        from sportsbook_v4.customers_v5 import blended_profile
+        profile = blended_profile(*profile_name)
+    else:
+        profile = TIMING_PROFILES[profile_name]
     samples = [_density(profile, t) for t in range(ws, we, 3600)] or [_density(profile, ws)]
     dmax = max(profile["weekday"]) * max(w for _, _, w in profile["hours"])
     return profile, sum(samples) / len(samples), dmax
 
 
-def bettor_arrivals(rng_key, bettor, ws, we, stats_cache):
-    """Deterministic arrival epochs for one bettor over the whole window."""
-    arch = ARCHETYPES[bettor["archetype"]]
-    if arch["timing"] not in stats_cache:
-        stats_cache[arch["timing"]] = _profile_stats(arch["timing"], ws, we)
-    profile, mean_d, dmax = stats_cache[arch["timing"]]
+def bettor_arrivals(rng_key, bettor, ws, we, stats_cache, arch=None):
+    """Deterministic arrival epochs for one bettor over the whole window. `arch`: the customer's own
+    behaviour parameters (V5); None = the group's (m4)."""
+    arch = arch or ARCHETYPES[bettor["archetype"]]
+    key = arch.get("timing_key", arch["timing"])
+    if key not in stats_cache:
+        stats_cache[key] = _profile_stats(key, ws, we)
+    profile, mean_d, dmax = stats_cache[key]
     window = we - ws
     expected = bettor["traits"]["arrivals_per_week"] * window / (7 * 86400)
     if expected <= 0 or mean_d <= 0:
@@ -442,8 +460,8 @@ def book_state_from_wagers(rows):
     return state
 
 
-def _decide(rng_key, bettor, seq, t, games, view, facts_source, staked, book_state=None):
-    arch = ARCHETYPES[bettor["archetype"]]
+def _decide(rng_key, bettor, seq, t, games, view, facts_source, staked, book_state=None, arch=None):
+    arch = arch or ARCHETYPES[bettor["archetype"]]
     tr = bettor["traits"]
     gran = BOOK["decision_time_granularity_seconds"]
     ref_t = _floor(t, gran)
@@ -546,9 +564,22 @@ def advance(conn, run_id, until, market, facts, data_complete_through, _fail_aft
         staked = dict(conn.execute(
             "SELECT bettor_index, SUM(stake) FROM v4_wager WHERE run_id=? GROUP BY bettor_index", (run_id,),
         ).fetchall())
-        stats_cache, events = {}, []
+        stats_cache, events, own = {}, [], {}
+        v5 = ENGINE_VERSION.startswith("sportsbook_v5")
+        if v5:      # V5: individual customers, weekly participation, stakes from the week-open bankroll
+            from sportsbook_v4 import customers_v5
+            snap = dict(conn.execute("SELECT bettor_index, bankroll FROM v5_bankroll_snapshot WHERE run_id=?",
+                                     (run_id,)).fetchall())
+            if len(snap) != len(pop["bettors"]):
+                raise RunMismatch("V5 run has no complete bankroll snapshot")
         for b in pop["bettors"]:
-            for seq, t in enumerate(bettor_arrivals(run["rng_key"], b, ws, we, stats_cache)):
+            arch = None
+            if v5:
+                b, arch, active, _ind = customers_v5.effective(b, snap[b["bettor_index"]], ws)
+                if not active:
+                    continue
+                own[b["bettor_index"]] = arch
+            for seq, t in enumerate(bettor_arrivals(run["rng_key"], b, ws, we, stats_cache, arch)):
                 if wm < t <= until_e:
                     events.append((t, b["bettor_index"], seq, b))
         events.sort(key=lambda e: (e[0], e[1], e[2]))
@@ -561,7 +592,8 @@ def advance(conn, run_id, until, market, facts, data_complete_through, _fail_aft
         new_seq = last_seq + 1
         passes, wagers = {}, []
         for t, _, seq, b in events:
-            accepted, reason = _decide(run["rng_key"], b, seq, t, games, view, facts, staked, book_state)
+            accepted, reason = _decide(run["rng_key"], b, seq, t, games, view, facts, staked, book_state,
+                                       arch=own.get(b["bettor_index"]))
             if accepted is None:
                 passes[reason] = passes.get(reason, 0) + 1
                 continue
