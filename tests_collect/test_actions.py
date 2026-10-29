@@ -704,3 +704,124 @@ def test_site_build_saves_ledger_before_publishing_and_never_overwrites():
     run = steps[save]["run"]
     assert "gh release upload v4-book" in run and "--clobber" not in run
     assert "--book-dir book --book-out book_new" in steps[names.index("Build site")]["run"]
+
+
+# ---------------------------------------------------------------- owner-approved 2026-10-29: balanced tier, Top-25 CFB closes
+
+LONDON = _ts(2026, 11, 8, 14, 30)                       # Sunday international NFL kickoff (9:30 ET)
+
+
+def test_sunday_morning_window_gives_international_games_close_attempts():
+    slots = [t for t in cron_plan.run_times(WEEK) if LONDON - 90 * 60 <= t <= LONDON - 5 * 60]
+    assert len(slots) >= 4
+    n, closed, total = simulate(NFL + [LONDON], "balanced", delay_max_min=50)
+    assert closed == total                                # every NFL kickoff incl. the London game
+
+
+def _daily(kicks, tier, seed=3):
+    rng = random.Random(seed)
+    allk = [k + w * 7 * 86400 for w in range(3) for k in kicks]
+    last, per_day = None, {}
+    for t in [t for w in range(3) for t in cron_plan.run_times(WEEK + w * 7 * 86400)]:
+        t2 = t + rng.randint(25 * 60, 50 * 60)
+        if SP.due(t2, allk, last, tier)[0]:
+            last = t2
+            if WEEK + 7 * 86400 <= t2 < WEEK + 14 * 86400:
+                per_day[t2 // 86400] = per_day.get(t2 // 86400, 0) + 3
+    return per_day
+
+
+TOP25 = [_ts(2026, 11, 14, 17, 0)] * 3 + [_ts(2026, 11, 14, 20, 30)] * 2 + [_ts(2026, 11, 15, 0, 30)] * 2 + \
+        [_ts(2026, 11, 15, 1, 0)]
+
+
+def test_balanced_tier_fits_approved_budget_and_daily_limit():
+    n_nfl, c_nfl, k_nfl = simulate(NFL + [LONDON], "balanced", delay_max_min=50)
+    n_cfb, c_cfb, k_cfb = simulate(TOP25, "balanced", delay_max_min=50)
+    monthly = 3 * (n_nfl + n_cfb) * 4.35
+    assert 500 < monthly <= 900, monthly                   # ~757 planned; recommended monthly cap 1,000
+    assert c_nfl == k_nfl and c_cfb == k_cfb               # every NFL and Top-25 close observed
+    a, b = _daily(NFL + [LONDON], "balanced"), _daily(TOP25, "balanced")
+    peak = max(a.get(d, 0) + b.get(d, 0) for d in set(a) | set(b))
+    assert peak <= 60, peak                                # inside the existing 60 credits/day limit
+
+
+def test_tier_rules_are_ordered_and_closes_always_on():
+    for name, t in SP.TIERS.items():
+        assert all(h > 0 and g > 0 for h, g in t["rules"]), name
+    # a close is due for every tier regardless of cadence rules
+    k = NOW + 30 * 60
+    for name in SP.TIERS:
+        assert SP.due(NOW, [k], NOW - 3600, name)[0], name
+
+
+def test_test_tier_rules_unchanged_by_the_rewrite():
+    assert SP.TIERS["test"]["rules"] == [(24, 12), (72, 24)]
+    assert SP.DEFAULT_TIER == "test"                       # unset V4_TIER never means more spend
+
+
+def _poll(fetched_at):
+    return {"source": "CollegeFootballData API", "fetched_at": fetched_at,
+            "polls": [{"season": 2026, "season_type": "regular", "week": 10,
+                       "ranks": [{"rank": 1, "school": "Ohio State"}, {"rank": 7, "school": "Texas"}]}],
+            "teams": [{"school": s, "mascot": m, "alternate_names": []} for s, m in
+                      (("Ohio State", "Buckeyes"), ("Texas", "Longhorns"), ("Purdue", "Boilermakers"),
+                       ("Iowa", "Hawkeyes"), ("Rice", "Owls"), ("Tulane", "Green Wave"))]}
+
+
+def test_cfb_priority_kickoffs_are_top25_plus_unknown_never_unranked():
+    sat = _ts(2026, 11, 14, 17, 0)
+    events = [["e1", sat, "Ohio State Buckeyes", "Purdue Boilermakers"],     # #1 vs unranked -> priority
+              ["e2", sat + 3600, "Iowa Hawkeyes", "Purdue Boilermakers"],    # unranked vs unranked -> not
+              ["e3", sat + 7200, "Rice Owls", "Texas Longhorns"],            # unranked vs #7 -> priority
+              ["e4", sat + 9000, "Nowhere Tech Owls", "Tulane Green Wave"]]  # unmatched name -> unknown -> priority
+    ks, mix = SP.priority_kickoffs("americanfootball_ncaaf", events, [_poll(sat - 4 * 86400)], sat - 86400)
+    assert ks == [sat, sat + 7200, sat + 9000] and mix == {"top25": 2, "unknown": 1, "unranked": 1}
+    # no poll at all: nothing is dropped (all count as unknown)
+    ks, mix = SP.priority_kickoffs("americanfootball_ncaaf", events, [], sat - 86400)
+    assert len(ks) == 4 and mix["unknown"] == 4
+    # NFL: every game
+    ks, _ = SP.priority_kickoffs("americanfootball_nfl", events, [], sat - 86400)
+    assert len(ks) == 4
+
+
+def test_unranked_cfb_close_is_skipped_but_top25_close_is_taken():
+    sat = _ts(2026, 11, 14, 17, 0)
+    events = [["e2", sat, "Iowa Hawkeyes", "Purdue Boilermakers"], ["e1", sat + 7200, "Ohio State Buckeyes", "Purdue Boilermakers"]]
+    ks, _ = SP.priority_kickoffs("americanfootball_ncaaf", events, [_poll(sat - 4 * 86400)], sat - 3600)
+    last = sat - 3600                       # recent fetch: no cadence rule is due, only a close could be
+    assert not SP.due(sat - 30 * 60, ks, last, "balanced")[0]          # unranked game 30 min out: no fetch
+    assert SP.due(sat + 7200 - 30 * 60, ks, sat + 3600, "balanced")[0]  # Top-25 game 30 min out: close fetch
+    assert SP.due(sat + 7200 - 30 * 60, ks, sat + 3600, "balanced")[1].startswith("close")
+
+
+@pytest.mark.parametrize("home,fetches", [("Iowa Hawkeyes", 0), ("Ohio State Buckeyes", 1)])
+def test_collector_end_to_end_uses_top25_priority(tmp_path, monkeypatch, home, fetches):
+    """Through the collector's run() as the workflow uses it: a CFB close 33 min out is fetched only for a
+    game involving a Top-25 team (rankings read from state/rankings)."""
+    state = tmp_path / "state"
+    (state / "rankings").mkdir(parents=True)
+    json.dump(_poll(NOW - 4 * 86400), open(state / "rankings" / "rankings_x.json", "w"))
+    kick = NOW + 33 * 60
+    json.dump({"americanfootball_ncaaf": {"odds_at": NOW - 3600, "kickoffs": [kick],
+                                          "events": [["c1", kick, home, "Purdue Boilermakers"]]},
+               "americanfootball_nfl": {"odds_at": NOW - 3600, "kickoffs": [], "events": []}},
+              open(state / "collector_state.json", "w"))
+    e = env(V4_TIER="balanced")
+    for k, v in e.items():
+        monkeypatch.setenv(k, v)                       # the key is read from the process environment
+    s = AR.run(str(state), str(tmp_path / "out"), env=e, clock=lambda: NOW, opener=Upstream(lambda: NOW))
+    assert s["status"] == "ok" and s["tier"] == "balanced" and s["rankings_snapshots"] == 1
+    assert len(s["fetches"]) == fetches
+    assert s["priority"]["americanfootball_ncaaf"] == ({"top25": 0, "unknown": 0, "unranked": 1} if fetches == 0
+                                                       else {"top25": 1, "unknown": 0, "unranked": 0})
+    assert s["caps"]["v4_monthly_cap"] == 500        # choosing a tier never raises the cap by itself
+    if fetches:
+        st = json.load(open(tmp_path / "out" / "collector_state.json"))
+        assert all(len(e) == 4 for e in st["americanfootball_ncaaf"]["events"])   # games stored for next time
+
+
+def test_balanced_tier_still_fails_closed_at_the_cap(run_chain, monkeypatch):
+    go, up, tmp = run_chain
+    s, _ = go(env(V4_TIER="balanced", V4_MONTHLY_CAP="3"))       # room for one 3-credit fetch only
+    assert len(s["fetches"]) == 1 and len(s["refused"]) == 1 and s["usage"]["v4"] == 3

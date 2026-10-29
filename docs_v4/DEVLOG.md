@@ -138,3 +138,16 @@ See `docs_v4/SPORTSBOOK_AUDIT.md`.
   - Top-25-targeted CFB closes give about 340;
   - balanced about 757, aggressive about 979.
   - Awaiting owner decision.
+
+## 2026-10-29: Balanced tier, Top-25 CFB closes, Sunday-morning window (owner-approved)
+
+- **Schedule changes:**
+  - **Rule-based tiers:** `test` is unchanged; `balanced` is (6 h / 2 h, 24 h / 4 h, 72 h / 8 h, 168 h / 24 h); `aggressive` is planning only. Closes are always on.
+  - **CFB priority kickoffs:** games with an AP Top-25 team under the applicable poll. Games whose ranking is unknown also count, so a missing poll never silently drops a Top-25 close. The collector stores each sport's games, and the collect job reads the AP snapshots.
+  - **Sunday window:** cron now runs 12:00–23:45 UTC on Sundays (international NFL kickoffs).
+- **Real-schedule projection** (`tools_v4/consumption_check.py`, from Oct 29 00:45 UTC):
+  - balanced: 177 credits in 7 days (59 fetches); peak day 51 (under the 60/day limit); about 770 a month;
+  - test, for comparison: 81 credits.
+- **Budget:** the gateway caps, the per-request limit and the V3 floor are unchanged and fail closed (tested again under balanced with a 3-credit cap).
+- **Activation:** the owner sets `V4_TIER=balanced` and `V4_MONTHLY_CAP=1000`. Variables cannot be changed from this environment, and the rules reserve them for the owner.
+- **Settlement and bankroll plan:** `docs_v4/SETTLEMENT_BANKROLL_PLAN.md`.

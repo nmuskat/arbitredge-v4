@@ -6,22 +6,30 @@ can be delayed or dropped, so the policy is "opportunistic": every run asks
 "is a fetch due now?" and several runs get a chance at each important
 moment (multiple attempts inside each window absorb delays and drops).
 
-Per sport, a fetch is due when (TEST tier values):
-  close   a kickoff is <= 45 min away and not already covered by the last fetch
+Per sport, a fetch is due when:
+  close   a PRIORITY kickoff is <= 45 min away and not already covered by the last fetch
           (gives an OBSERVED closing line for that kickoff);
-  near    the next kickoff is within 24 h and the last fetch is >= 12 h old;
-  daily   the next kickoff is within 3 days and the last fetch is >= 24 h old;
-  bootstrap   no fetch yet.
-Credit and minute costs are simulated in tests_collect (a full NFL + CFB week,
-with dropped and delayed runs) so the budget is checked before anything runs.
+  cadence for some rule (horizon_h, min_gap_h) of the tier: the next priority kickoff is within
+          horizon_h and the last fetch is at least min_gap_h old;
+  bootstrap   no fetch yet;  discovery   no known priority kickoff and the last fetch >= 24 h old.
+PRIORITY kickoffs: every NFL game; for CFB, games involving an AP Top-25 team under the poll that
+applies at kickoff (games whose ranking cannot be determined also count, so a missing poll never
+silently drops a Top-25 close -- the credit gate still bounds spend). One fetch still returns every
+game of the sport; only WHEN to fetch is targeted.
+Credit and minute costs are simulated in tests_collect and tools_v4/collection_plan.py (real cron
+grid, delayed and dropped runs) before anything runs.
 """
 
 CLOSE_WINDOW_MIN = 45        # = the freshness rule: a quote <= 45 min before kickoff is an OBSERVED close
 TIERS = {
     # initial 500 credits/month: closes + one daily snapshot within 3 days + one same-day snapshot
-    "test": {"near_h": 24, "near_gap_h": 12, "daily_days": 3, "daily_gap_h": 24},
-    # up to the approved 6,000/month: more intraday snapshots for line-shopping detection
-    "standard": {"near_h": 48, "near_gap_h": 3, "daily_days": 7, "daily_gap_h": 12},
+    "test": {"rules": [(24, 12), (72, 24)]},
+    # owner-approved 2026-10-29 (~757 credits/month with Top-25 CFB closes; ~15 snapshots in the final 72 h)
+    "balanced": {"rules": [(6, 2), (24, 4), (72, 8), (168, 24)]},
+    # planning only (~979/month)
+    "aggressive": {"rules": [(3, 0.75), (12, 1.5), (24, 3), (72, 6), (168, 12)]},
+    # legacy upper bound kept for the budget tests
+    "standard": {"rules": [(48, 3), (168, 12)]},
 }
 
 
@@ -66,9 +74,30 @@ def due(now, kickoffs, last_fetch, tier="test"):
     pending = [k for k in future if k - now <= w and last_fetch < k - w]
     if pending:
         return True, f"close snapshot ({(pending[0] - now) / 60:.0f} min to kickoff)"
-    to_next = (future[0] - now) / 60.0
-    if to_next <= t["near_h"] * 60 and since_min >= t["near_gap_h"] * 60:
-        return True, "pre-game snapshot"
-    if to_next <= t["daily_days"] * 1440 and since_min >= t["daily_gap_h"] * 60:
-        return True, "daily snapshot"
+    to_next_h = (future[0] - now) / 3600.0
+    since_h = since_min / 60.0
+    for horizon_h, gap_h in t["rules"]:
+        if to_next_h <= horizon_h and since_h >= gap_h:
+            return True, f"cadence: next kickoff in {to_next_h:.1f} h, last fetch {since_h:.1f} h ago " \
+                         f"(rule {horizon_h} h / {gap_h} h)"
     return False, "not due"
+
+
+def priority_kickoffs(sport, events, rankings_snapshots, now):
+    """Kickoffs that drive collection timing. events: [[event_id, kickoff, home, away], ...].
+    NFL: all. CFB: AP Top-25 games under the poll applicable at kickoff, plus games whose status
+    cannot be determined (never silently dropped). Returns (kickoffs, {"top25": n, "unknown": n, "unranked": n})."""
+    future = [e for e in events if e[1] > now]
+    if sport != "americanfootball_ncaaf":
+        return sorted(e[1] for e in future), {"all": len(future)}
+    from data_v4 import rankings
+    snaps = [s for s in rankings_snapshots or [] if s["fetched_at"] <= now]
+    keep, n = [], {"top25": 0, "unknown": 0, "unranked": 0}
+    for _eid, k, home, away in future:
+        st = rankings.top25_status(home, away, k, snaps) if snaps else {"status": "UNAVAILABLE"}
+        if st["status"] == "OK" and not st["top25"]:
+            n["unranked"] += 1
+            continue
+        n["top25" if st["status"] == "OK" else "unknown"] += 1
+        keep.append(k)
+    return sorted(keep), n

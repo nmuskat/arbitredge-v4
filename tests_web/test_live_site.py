@@ -161,3 +161,10 @@ def test_page_in_browser_freshness_downgrades_itself(tmp_path, snaps, hours_late
     assert "Back" in out["detail"] and "pinnacle" in out["detail"]
     assert "UNAVAILABLE" in out["cfb"] and "nothing is guessed" in out["cfb"]
     assert out["cfbRows"] == 0                                   # no rankings: no CFB game shown as Top-25
+
+
+def test_need_is_never_presented_as_betting_value(snaps):
+    html = LS.render_html(snaps[0])
+    assert "Need is not betting value" in html and "NOT a betting recommendation" in html
+    assert "Estimated value, separate from the simulated sportsbook's Need" in html
+    assert "PLAY" not in html.replace("PLAYS", "").replace("plays", "")    # no official-play wording anywhere

@@ -12,7 +12,7 @@ CRONS = [
     ((2, 17, 32, 47), (0, 1), (5,)),
     ((2, 17, 32, 47), tuple(range(15, 24)), (6,)),              # Saturday CFB (and December NFL Saturdays)
     ((2, 17, 32, 47), (0, 1, 2, 3), (0,)),                      # late Saturday CFB = early Sunday UTC
-    ((2, 17, 32, 47), tuple(range(16, 24)), (0,)),              # Sunday NFL
+    ((2, 17, 32, 47), tuple(range(12, 24)), (0,)),              # Sunday NFL incl. international/early kickoffs
     ((2, 17, 32, 47), (0, 1), (1,)),                            # Sunday night NFL
     ((2, 17, 32, 47), (23,), (1,)),                             # Monday night NFL
     ((2, 17, 32, 47), (0, 1), (2,)),

@@ -26,3 +26,10 @@ for f in ledger.jsonl collector_state.json; do
     gh release download v4-state -p "$f" -D state --clobber      # any download failure fails the job
   fi
 done
+# AP-poll snapshots decide which CFB kickoffs get closing-line fetches. Optional: without them every
+# CFB kickoff counts (never fewer closes, only more spend, still inside the credit caps).
+mkdir -p state/rankings
+if gh release view cfb-rankings >/dev/null 2>&1; then
+  gh release download cfb-rankings -p 'rankings_*.json' -D state/rankings --clobber \
+    || echo "::warning::AP-poll snapshots could not be downloaded; every CFB kickoff counts this run"
+fi

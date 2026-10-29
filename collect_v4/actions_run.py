@@ -63,6 +63,18 @@ class InProcessClient:
         return self.gw.status()
 
 
+def load_rankings(rankings_dir):
+    """AP-poll snapshots downloaded by state_load.sh (release cfb-rankings); [] when none."""
+    import glob
+    out = []
+    for p in sorted(glob.glob(os.path.join(rankings_dir, "rankings_*.json"))):
+        try:
+            out.append(json.load(open(p)))
+        except (OSError, ValueError):
+            continue                       # an unreadable snapshot only means "ranking unknown"
+    return out
+
+
 def caps_from_env(env):
     def num(name, default):
         try:
@@ -145,9 +157,16 @@ def run(state_in, out, env=os.environ, clock=time.time, opener=None, tier=None, 
     else:
         client = InProcessClient(gw)
         col = Collector(client, os.path.join(work, "data"), clock=clock, sports=sports, books=BOOKS, markets=MARKETS)
+        snaps = load_rankings(os.path.join(state_in, "rankings"))
+        summary["rankings_snapshots"] = len(snaps)
         for sport in sports:
             st = state.setdefault(sport, {})
-            is_due, why = schedule_policy.due(clock(), st.get("kickoffs", []), st.get("odds_at"), tier)
+            if "events" in st:
+                kicks, mix = schedule_policy.priority_kickoffs(sport, st["events"], snaps, clock())
+            else:                       # state from before 2026-10-29: every known kickoff until the next fetch
+                kicks, mix = st.get("kickoffs", []), {"legacy_all_kickoffs": len(st.get("kickoffs", []))}
+            is_due, why = schedule_policy.due(clock(), kicks, st.get("odds_at"), tier)
+            summary.setdefault("priority", {})[sport] = mix
             if not is_due:
                 summary["skipped"].append({"sport": sport, "reason": why})
                 continue
@@ -156,9 +175,11 @@ def run(state_in, out, env=os.environ, clock=time.time, opener=None, tier=None, 
             except GatewayRefused as e:
                 summary["refused"].append({"sport": sport, "status": e.status, "detail": str(e)})
                 continue
-            kicks = sorted({k for (k,) in col.conn.execute(
-                "SELECT DISTINCT commence FROM mkt_quote WHERE sport=?", (sport,))})
-            st.update(odds_at=clock(), kickoffs=[k for k in kicks if k > clock()][:400], last_reason=why)
+            evs = sorted({(e, k, h, a) for e, k, h, a in col.conn.execute(
+                "SELECT event_id, MIN(commence), home, away FROM mkt_quote WHERE sport=? GROUP BY event_id",
+                (sport,)) if k > clock()}, key=lambda x: (x[1], x[0]))[:400]
+            st.update(odds_at=clock(), kickoffs=[k for _, k, _, _ in evs], events=[list(x) for x in evs],
+                      last_reason=why)
             summary["fetches"].append({**r, "reason": why})
             # persist the spend IMMEDIATELY: if anything later in this run fails, the
             # workflow's always-run save step still uploads a ledger containing this request

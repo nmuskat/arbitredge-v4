@@ -36,6 +36,9 @@ The owner (nmuskat) has no coding background. You do the engineering, testing an
 ## Current priority: does line shopping produce positive EV on real odds?
 
 1. Collect NFL and CFB odds: 10 books × spreads/totals/moneyline, 3 credits per fetch. The cadence speeds up near kickoff so every game's close is observed (`collect_v4/collector.py`).
+   - Owner-approved 2026-10-29: **balanced** tier (about 757 credits/month); CFB closes target AP Top-25 kickoffs only; Sunday-morning window for international NFL games.
+   - The tier and caps are the owner's repository variables `V4_TIER`, `V4_MONTHLY_CAP` and `V4_DAILY_CAP`. Never change them yourself.
+   - Expected versus actual spend: `tools_v4/consumption_check.py`.
 2. The daily `odds-analyze` workflow runs the line-shopping report:
    - opportunities are counted once, at first sighting;
    - the main test is **closing EV** (the price taken, evaluated at the observed closing consensus), with game-clustered confidence intervals;
