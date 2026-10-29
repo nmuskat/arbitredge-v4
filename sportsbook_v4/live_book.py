@@ -386,9 +386,13 @@ def _watermark_iso(book_conn, run_id):
     return r[0] if r else load_run(book_conn, run_id)["slate"].window_start
 
 
-def advance_and_export(book_conn, live_conn, run_id, L, book_out):
-    """Advance a run to min(L, window end); verify against a from-scratch replay; export the new
-    interval. Returns (status, new_wagers)."""
+REPLAY_VERIFY_EVERY_S = 12 * 3600   # full from-scratch verification at most this often per run (every build
+                                     # still hash-verifies every ledger file, its sequence and its wagers)
+
+
+def advance_and_export(book_conn, live_conn, run_id, L, book_out, verify=True):
+    """Advance a run to min(L, window end); verify against a from-scratch replay (when `verify`); export the
+    new interval. Returns (status, new_wagers)."""
     run = load_run(book_conn, run_id)
     sport = run["slate"].sport
     until = _iso(min(L, to_epoch(run["slate"].window_end)))
@@ -397,11 +401,12 @@ def advance_and_export(book_conn, live_conn, run_id, L, book_out):
     except RunMismatch as e:
         return f"FROZEN: {e}", 0
     wm = _watermark_iso(book_conn, run_id)
-    mem, rid = replay(book_conn, live_conn, run_id, wm, _iso(L))
-    same = rid == run_id and persist.wager_set(mem, rid) == persist.wager_set(book_conn, run_id)
-    mem.close()
-    if not same:
-        return "INTEGRITY_FAILED: stored ledger differs from a from-scratch replay", 0
+    if verify:
+        mem, rid = replay(book_conn, live_conn, run_id, wm, _iso(L))
+        same = rid == run_id and persist.wager_set(mem, rid) == persist.wager_set(book_conn, run_id)
+        mem.close()
+        if not same:
+            return "INTEGRITY_FAILED: stored ledger differs from a from-scratch replay", 0
     if adv.get("status") == "advanced":
         if book_out:
             persist.export_interval(book_conn, run_id, adv["seq"], book_out)
@@ -498,7 +503,11 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
             block["coverage"] = {"status": "OK", "rule": ("all NFL games of the week with collected quotes"
                                                           if sport == "nfl" else "AP Top-25 games only"),
                                  "included": n, "fixed_at_open": True}
-        status, new = advance_and_export(book_conn, live_conn, run_id, D, book_out)
+        cached = (sensitivity_cache or {}).get(sport) or {}
+        last_verified = cached.get("replay_verified_at", 0) if cached.get("run_id") == run_id else 0
+        verify = T - last_verified >= REPLAY_VERIFY_EVERY_S
+        status, new = advance_and_export(book_conn, live_conn, run_id, D, book_out, verify=verify)
+        verified_at = T if verify else last_verified
         if status != "OK":
             block.update(status="INTEGRITY_FAILED" if status.startswith("INTEGRITY") else "FROZEN", reason=status)
             continue
@@ -524,7 +533,9 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
             "bettors_with_wagers": len({w["bettor_index"] for w in wagers}), "arrivals": n_int[1],
             "wagers": len(wagers), "ledger_intervals": n_int[0], "ledger_files_loaded": info.get("files", 0),
             "wagers_loaded_from_ledger": info.get("wagers", 0), "new_wagers_this_build": new,
-            "replay_verified": True,
+            # full from-scratch replay: this build, or the last one (every REPLAY_VERIFY_EVERY_S)
+            "replay_verified": "this build" if verify else "last at " + _iso(verified_at),
+            "replay_verified_at": _iso(verified_at),
             "ledger_hash": json_hash([[w["wager_id"], w["market"], w["side"], w["accepted_line"],
                                        w["accepted_price"], w["stake"], w["accepted_at"]] for w in wagers]),
             "market_source": run["market_source_id"]}
@@ -546,7 +557,7 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                     var_splits.setdefault(gid, {})[name] = splits(ws_)
                 mem.close()
         block["sensitivity_cache"] = {"run_id": run_id, "variants": sorted(variants or {}), "computed_at": bands_at,
-                                      "variant_splits": var_splits}
+                                      "variant_splits": var_splits, "replay_verified_at": verified_at}
         block["sensitivity"] = {"variants": sorted(variants or {}), "variants_as_of": _iso(bands_at), "reused": reused,
                                 "method": "min/max of each split across the baseline and every variant"}
         # Need tracker: immutable pre-kickoff snapshots of every game in its final SNAPSHOT_HORIZON_S

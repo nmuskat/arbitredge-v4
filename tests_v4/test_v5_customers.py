@@ -129,3 +129,29 @@ def test_week_open_bankrolls_carry_forward_settled_results_of_earlier_weeks_only
         assert b == max(0.0, round(opening[i] + pnl.get(i, 0) / 100.0, 2))
     assert dict(same) == opening                                        # this week's own results don't count
     assert any(dict(nxt)[i] != opening[i] for i in pnl)
+
+
+def test_full_replay_check_runs_at_most_every_12h_and_skipped_builds_still_match(tmp_path, monkeypatch):
+    from sportsbook_v4 import live_book as LB
+    from tests_v4.test_live_book import NOW, T0, build_store, new_book, poll
+    live, d = build_store(), tmp_path / "ledger"
+    calls = []
+    real = LB.replay
+
+    def counting(*a, **k):
+        calls.append(1)
+        return real(*a, **k)
+    monkeypatch.setattr(LB, "replay", counting)
+    t1 = T0 + 9 * 3600
+    first = LB.build(new_book(), live, t1, [poll(T0 - 86400)], bettors=500, variants={}, book_in=str(d), book_out=str(d))
+    cache = {sp: first[sp].pop("sensitivity_cache") for sp in ("nfl", "cfb")}
+    assert first["nfl"]["audit"]["replay_verified"] == "this build" and len(calls) == 2
+    calls.clear()
+    second = LB.build(new_book(), live, t1 + 3600, [poll(T0 - 86400)], bettors=500, variants={}, book_in=str(d),
+                      book_out=str(d), sensitivity_cache=cache)
+    assert calls == [] and second["nfl"]["audit"]["replay_verified"].startswith("last at")
+    # what the skipped builds wrote is exactly what a from-scratch replay produces
+    cache2 = {sp: dict(second[sp].pop("sensitivity_cache"), replay_verified_at=0) for sp in ("nfl", "cfb")}
+    third = LB.build(new_book(), live, t1 + 2 * 3600, [poll(T0 - 86400)], bettors=500, variants={},
+                     book_in=str(d), book_out=str(d), sensitivity_cache=cache2)
+    assert third["nfl"]["status"] == "OK" and third["nfl"]["audit"]["replay_verified"] == "this build"
