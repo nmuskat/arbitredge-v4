@@ -45,6 +45,8 @@ class Upstream:
 
     def __call__(self, path, q):
         self.calls.append(path)
+        if path == "/v4/sports":            # balance preflight: free, like the real provider
+            return 200, {"x-requests-last": "0", "x-requests-remaining": "15000", "x-requests-used": "5000"}, b"[]"
         if path.endswith("/events"):
             body = [{"id": g, "commence_time": iso(k)} for g, k in self.games]
             return 200, {"x-requests-last": "0", "x-requests-remaining": "15000", "x-requests-used": "5000"}, json.dumps(body).encode()

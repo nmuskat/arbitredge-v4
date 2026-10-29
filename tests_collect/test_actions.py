@@ -178,7 +178,20 @@ def _wf(name):
 
 def test_collect_workflow_crons_match_simulated_plan():
     crons = re.findall(r'- cron: "([^"]+)"', _wf("odds-collect.yml"))
-    assert crons == cron_plan.cron_strings()
+    assert crons == cron_plan.cron_strings() + cron_plan.expanded_cron_strings()
+
+
+def test_expanded_only_runs_are_skipped_unless_the_owner_chose_expanded():
+    job_if = _yaml("odds-collect.yml")["jobs"]["collect"]["if"]
+    assert job_if.startswith("vars.V4_LIVE == 'on' && (vars.V4_TIER == 'expanded' || !contains(fromJSON('")
+    listed = json.loads(re.search(r"fromJSON\('(\[.*?\])'\)", job_if).group(1))
+    assert listed == cron_plan.expanded_cron_strings()
+    assert not set(listed) & set(cron_plan.cron_strings())          # base runs are never gated by tier
+    # no expanded run duplicates a base run minute
+    import calendar
+    wk = calendar.timegm((2026, 11, 1, 0, 0, 0))
+    base, exp = set(cron_plan.run_times(wk)), set(cron_plan.run_times(wk, "expanded"))
+    assert base < exp and len(exp) - len(base) == sum(len(h) for _, h, _ in cron_plan.EXPANDED_CRONS)
 
 
 @pytest.mark.parametrize("wf", ["odds-collect.yml", "odds-analyze.yml"])
@@ -825,3 +838,192 @@ def test_balanced_tier_still_fails_closed_at_the_cap(run_chain, monkeypatch):
     go, up, tmp = run_chain
     s, _ = go(env(V4_TIER="balanced", V4_MONTHLY_CAP="3"))       # room for one 3-credit fetch only
     assert len(s["fetches"]) == 1 and len(s["refused"]) == 1 and s["usage"]["v4"] == 3
+
+
+# ---------------------------------------------------------------- fail-closed provider balance preflight
+
+class _Prov:
+    """Provider fake: /v4/sports is the free balance check; odds cost 3."""
+    def __init__(self, remaining=15000, sports_mode="ok"):
+        self.remaining, self.mode, self.calls = remaining, sports_mode, []
+
+    def __call__(self, path, q):
+        self.calls.append(path)
+        if path == "/v4/sports":
+            if self.mode == "raise":
+                raise OSError("network down")
+            if self.mode == "500":
+                return 500, {}, b"{}"
+            if self.mode == "no_header":
+                return 200, {"x-requests-last": "0"}, b"[]"
+            return 200, {"x-requests-last": "0", "x-requests-remaining": str(self.remaining),
+                         "x-requests-used": str(20000 - self.remaining)}, b"[]"
+        self.remaining -= 3
+        return 200, {"x-requests-last": "3", "x-requests-remaining": str(self.remaining),
+                     "x-requests-used": str(20000 - self.remaining)}, json.dumps(payload(path.split("/")[3], NOW)).encode()
+
+
+def _gw(tmp_path, prov):
+    cfg = dict(og.DEFAULT_CONFIG, state_dir=str(tmp_path / "gw"), live_enabled=True, socket_group=None,
+               v4_monthly_cap=6000, v4_daily_cap=400, max_single_request=30)
+    return og.Gateway(cfg, KEY, clock=lambda: NOW, opener=prov)
+
+
+def _odds(gw):
+    return gw.handle({"endpoint": "odds", "sport": "americanfootball_nfl",
+                      "params": {"regions": "us", "markets": "h2h,spreads,totals", "oddsFormat": "american"}})
+
+
+@pytest.mark.parametrize("mode", ["raise", "500", "no_header"])
+def test_unconfirmed_balance_refuses_the_paid_request(tmp_path, mode):
+    prov = _Prov(sports_mode=mode)
+    gw = _gw(tmp_path, prov)
+    with pytest.raises(og.Refused) as e:
+        _odds(gw)
+    assert e.value.status == 503 and "failing closed" in str(e.value)
+    assert not any(p.endswith("/odds") for p in prov.calls)           # nothing paid was requested
+
+
+def test_fresh_balance_checked_before_every_paid_request(tmp_path):
+    prov = _Prov(remaining=2005)                  # first fetch leaves 2002; a second (-3) would breach 2000
+    gw = _gw(tmp_path, prov)
+    assert _odds(gw)[0] == 200
+    with pytest.raises(og.Refused) as e:
+        _odds(gw)
+    assert e.value.status == 402 and "V3 floor" in str(e.value)
+    assert prov.calls == ["/v4/sports", "/v4/sports/americanfootball_nfl/odds", "/v4/sports"]
+
+
+def test_first_request_of_the_month_cannot_skip_the_floor(tmp_path):
+    # no ledger row this month (the old code then skipped the V3 check); the preflight shows 2,001 left
+    prov = _Prov(remaining=2001)
+    gw = _gw(tmp_path, prov)
+    with pytest.raises(og.Refused) as e:
+        _odds(gw)
+    assert "V3 floor" in str(e.value) and prov.calls == ["/v4/sports"]
+
+
+def test_preflight_is_recorded_as_free_and_v3_drop_between_runs_is_seen(tmp_path):
+    prov = _Prov(remaining=5000)
+    gw = _gw(tmp_path, prov)
+    assert _odds(gw)[0] == 200
+    prov.remaining = 2002                         # V3 spent ~3,000 credits since our last fetch
+    with pytest.raises(og.Refused):
+        _odds(gw)
+    rows = gw.gate.conn.execute("SELECT endpoint, est_cost, actual_cost FROM credit_ledger ORDER BY rowid").fetchall()
+    assert [r for r in rows if r[0] == "sports"] == [("sports", 0, 0), ("sports", 0, 0)]
+
+
+# ---------------------------------------------------------------- EXPANDED tier (built 2026-10-29; not active)
+
+def test_expanded_closes_are_never_delayed_by_quiet_backoff():
+    k = NOW + 30 * 60
+    assert SP.due(NOW, [k], NOW - 3600, "expanded", change_rate=0.0)[1].startswith("close")
+
+
+def test_expanded_quiet_backoff_only_far_from_kickoff():
+    far, near = NOW + 50 * 3600, NOW + 20 * 3600
+    # 2.5 h since last fetch, next kickoff 50 h away: rule (72 h / 2 h) due when active, not when quiet (x2 -> 4 h)
+    assert SP.due(NOW, [far], NOW - 2.5 * 3600, "expanded", change_rate=0.10)[0]
+    assert not SP.due(NOW, [far], NOW - 2.5 * 3600, "expanded", change_rate=0.01)[0]
+    # within 24 h of kickoff the backoff never applies
+    assert SP.due(NOW, [near], NOW - 1.1 * 3600, "expanded", change_rate=0.0)[0]
+
+
+def test_expanded_calendar_windows():
+    sun_night = _ts(2026, 11, 8, 23, 30)            # Sunday 23:30 UTC: NFL openers window
+    nxt = sun_night + 4 * 86400                     # next game Thursday, 96 h away (no kickoff rule <= 72 h)
+    ok, why = SP.due(sun_night, [nxt], sun_night - 1.2 * 3600, "expanded", sport="americanfootball_nfl")
+    assert ok and why.startswith("window")
+    # CFB has its own Sunday-evening openers window (17-24 UTC)
+    assert SP.due(sun_night, [nxt], sun_night - 1.2 * 3600, "expanded", sport="americanfootball_ncaaf")[1].startswith("window")
+    sun_noon = _ts(2026, 11, 8, 12, 30)             # Sunday 12:30 UTC: neither sport's openers window yet
+    assert not SP.due(sun_noon, [sun_noon + 100 * 3600], sun_noon - 1.2 * 3600, "expanded",
+                      sport="americanfootball_ncaaf")[0]
+    wed_noon = _ts(2026, 11, 11, 12, 30)            # Wednesday 12:30 UTC: no window for NFL
+    assert not SP.due(wed_noon, [wed_noon + 100 * 3600], wed_noon - 1.2 * 3600, "expanded",
+                      sport="americanfootball_nfl")[0]
+    wed_eve = _ts(2026, 11, 11, 20, 30)             # Wednesday 20:30 UTC: NFL injury-report window
+    assert SP.due(wed_eve, [wed_eve + 100 * 3600], wed_eve - 1.2 * 3600, "expanded",
+                  sport="americanfootball_nfl")[1].startswith("window")
+
+
+def test_piggyback_rides_only_with_another_fetch_and_only_in_expanded():
+    k = NOW + 100 * 3600
+    assert SP.piggyback(NOW, [k], NOW - 1.5 * 3600, "expanded")[0]
+    assert not SP.piggyback(NOW, [k], NOW - 0.5 * 3600, "expanded")[0]        # fetched < 1 h ago
+    assert not SP.piggyback(NOW, [NOW + 200 * 3600], NOW - 5 * 3600, "expanded")[0]   # nothing within 7 days
+    for tier in ("test", "balanced"):
+        assert not SP.piggyback(NOW, [k], NOW - 5 * 3600, tier)[0]
+
+
+def _expanded_week(change_rate=None):
+    """NFL (incl. London) + Top-25 CFB over the expanded grid with piggyback, 3 weeks, middle scored."""
+    rng = random.Random(5)
+    sports = {"nfl": [k + w * 7 * 86400 for w in range(3) for k in NFL + [LONDON]],
+              "cfb": [k + w * 7 * 86400 for w in range(3) for k in TOP25]}
+    last = {s: None for s in sports}
+    fetches = {s: [] for s in sports}
+    for t in [t for w in range(3) for t in cron_plan.run_times(WEEK + w * 7 * 86400, "expanded")]:
+        t2 = t + rng.randint(5 * 60, 45 * 60)
+        dec = {s: SP.due(t2, ks, last[s], "expanded", sport="americanfootball_nfl" if s == "nfl" else
+                         "americanfootball_ncaaf", change_rate=change_rate)[0] for s, ks in sports.items()}
+        if any(dec.values()):
+            for s in sports:
+                dec[s] = dec[s] or SP.piggyback(t2, sports[s], last[s], "expanded")[0]
+        for s, ok in dec.items():
+            if ok:
+                fetches[s].append(t2)
+                last[s] = t2
+    lo, hi = WEEK + 7 * 86400, WEEK + 14 * 86400
+    return sports, fetches, lo, hi
+
+
+@pytest.mark.parametrize("change_rate", [None, 0.02])
+def test_expanded_budget_closes_and_snapshots(change_rate):
+    sports, fetches, lo, hi = _expanded_week(change_rate)
+    all_f = sorted(f for s in fetches for f in fetches[s])
+    monthly = 3 * sum(1 for f in all_f if lo <= f < hi) * 4.35
+    assert 2500 <= monthly <= 5000, monthly                    # target 3,000-5,000; proposed cap 5,000
+    peak24 = max(3 * sum(1 for u in all_f if t - 86400 < u <= t) for t in all_f if lo <= t < hi)
+    assert peak24 <= 250, peak24                               # proposed V4_DAILY_CAP 250 (rolling 24 h)
+    for s, ks in sports.items():
+        mid = sorted({k for k in ks if lo <= k < hi})
+        closed = sum(1 for k in mid if any(0 < k - f <= 45 * 60 for f in fetches[s]))
+        assert closed == len(mid), (s, closed, len(mid))       # every NFL and Top-25 close
+        f72 = sorted(sum(1 for f in fetches[s] if 0 < k - f <= 72 * 3600) for k in mid)
+        assert f72[len(f72) // 2] >= 40, (s, f72)              # dense final-72 h history per game
+
+
+def test_other_tiers_never_run_expanded_only_cron_entries():
+    import calendar
+    wk = calendar.timegm((2026, 11, 1, 0, 0, 0))
+    for tier in ("test", "balanced", None):
+        assert cron_plan.run_times(wk, tier) == cron_plan.run_times(wk)
+
+
+
+@pytest.mark.parametrize("mins_to_kick,skipped", [(180, True), (30, False)])
+def test_expanded_dashboard_rebuild_throttle_but_always_after_a_close(tmp_path, monkeypatch, mins_to_kick, skipped):
+    state = tmp_path / "state"
+    state.mkdir()
+    kick = NOW + mins_to_kick * 60
+    json.dump({"_site_at": NOW - 10 * 60,
+               "americanfootball_nfl": {"odds_at": NOW - 3600, "kickoffs": [kick], "events": [["n1", kick, "H", "A"]]},
+               "americanfootball_ncaaf": {"odds_at": NOW - 600, "kickoffs": [], "events": []}},
+              open(state / "collector_state.json", "w"))
+    e = env(V4_TIER="expanded")
+    for k, v in e.items():
+        monkeypatch.setenv(k, v)
+    s = AR.run(str(state), str(tmp_path / "out"), env=e, clock=lambda: NOW, opener=Upstream(lambda: NOW))
+    assert len(s["fetches"]) >= 1
+    assert (tmp_path / "out" / "site_skip").exists() == skipped
+
+
+def test_credit_gate_refuses_paid_request_when_balance_unknown(tmp_path):
+    import sqlite3
+    gate = og.credits.CreditGate(sqlite3.connect(":memory:"), og.credits.Budget(
+        v4_monthly_cap=6000, v4_daily_cap=400, v3_floor_remaining=2000, max_single_request=30), clock=lambda: NOW)
+    with pytest.raises(og.credits.CreditRefused, match="balance unknown"):
+        gate.authorize("odds", {"p": 1}, 3, require_remaining=True)
+    gate.authorize("odds", {"p": 1}, 3)                     # legacy callers (no preflight) unchanged

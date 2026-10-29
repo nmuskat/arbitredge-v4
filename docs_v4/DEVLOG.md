@@ -151,3 +151,20 @@ See `docs_v4/SPORTSBOOK_AUDIT.md`.
 - **Budget:** the gateway caps, the per-request limit and the V3 floor are unchanged and fail closed (tested again under balanced with a 3-credit cap).
 - **Activation:** the owner sets `V4_TIER=balanced` and `V4_MONTHLY_CAP=1000`. Variables cannot be changed from this environment, and the rules reserve them for the owner.
 - **Settlement and bankroll plan:** `docs_v4/SETTLEMENT_BANKROLL_PLAN.md`.
+
+## 2026-10-29: Expanded tier built (not active); fail-closed balance preflight
+
+- **Expanded tier** (details in `docs_v4/EXPANDED_TIER_PLAN.md`):
+  - kickoff-relative cadence: 90 min / 15 min, 6 h / 30 min, 24 h / 1 h, 72 h / 2 h, 7 days / 4 h;
+  - opener, early-week and injury-report calendar windows;
+  - quiet-market backoff, never applied to closes;
+  - piggyback fetches;
+  - an hourly cron layer that the workflow skips unless `V4_TIER=expanded`;
+  - an hourly dashboard-rebuild throttle (always rebuilt after a close).
+- **Projection on the real upcoming schedule:** about 3,340–3,730 credits/month; peak day 186; worst rolling 24 h 198. NFL about 70 / 34 / 18 / 6 snapshots per game in the final 72 h / 24 h / 6 h / 90 min. All closes observed.
+- **Actions minutes** are about 2,000–2,070/month: at or over GitHub Free's 2,000. Options are A/B/C in the plan.
+- **Safety, live now for every tier:**
+  - a free `/v4/sports` balance check before each paid request, failing closed;
+  - fixed: the V3 floor was skipped when no balance had been recorded yet this month (fail-open);
+  - fixed: on equal timestamps, the "last balance" lookup could pick the older row.
+- **Proposed when activating:** `V4_MONTHLY_CAP` 5000 and `V4_DAILY_CAP` 250. Owner decision.

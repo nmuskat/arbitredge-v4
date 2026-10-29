@@ -49,6 +49,9 @@ DEFAULT_CONFIG = {
     "max_cache_ttl_s": 86400,
     "rate_limit_cooldown_s": 60,
     "upstream_timeout_s": 20,
+    # Before every PAID request read the provider's live balance with GET /v4/sports (documented cost 0;
+    # V4's own ledger shows x-requests-last 0). If it cannot be confirmed, the request is refused.
+    "preflight_remaining": True,
 }
 
 PATHS = {
@@ -234,8 +237,11 @@ class Gateway:
                 raise Refused(503, f"circuit breaker tripped: {b['reason']} (owner reset required)")
             if b["cooldown_until"] > self.clock():
                 raise Refused(429, "provider rate-limit cooldown in effect")
+            if est > 0 and self.cfg.get("preflight_remaining", True):
+                self._preflight()
             try:
-                self.gate.authorize(ep, fp_params, est)
+                self.gate.authorize(ep, fp_params, est, require_remaining=est > 0 and
+                                    self.cfg.get("preflight_remaining", True))
             except credits.CreditRefused as e:
                 raise Refused(402, f"credit gate: {e}")
             try:
@@ -261,6 +267,21 @@ class Gateway:
                                 "provider_message": self.scrub(body.get("message") if isinstance(body, dict) else text[:300])}
             usage = {k: headers.get(k) for k in ("x-requests-used", "x-requests-remaining", "x-requests-last")}
             return 200, {"source": "upstream", "est_cost": est, "usage": usage, "cost_note": note, "data": body}
+
+    def _preflight(self):
+        """Fresh provider balance before a paid request; fail closed if it cannot be confirmed."""
+        path = PATHS["sports"]
+        try:
+            status, headers, _raw = self.opener(path, {"apiKey": self.key})
+        except Exception as e:
+            raise Refused(503, "cannot confirm provider balance (preflight failed: "
+                          + self.scrub(type(e).__name__) + "); failing closed")
+        headers = {k.lower(): v for k, v in (headers or {}).items()}
+        self.gate.record("sports", {"path": path, "purpose": "preflight"}, 0, status, headers)
+        if status in (401, 403):
+            self._trip(f"HTTP {status} on balance preflight")
+        if status != 200 or headers.get("x-requests-remaining") in (None, ""):
+            raise Refused(503, f"cannot confirm provider balance (preflight HTTP {status}); failing closed")
 
     def probe(self):
         """Owner-run key check: one /v4/sports call (documented cost 0). Bypasses

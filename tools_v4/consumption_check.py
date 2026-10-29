@@ -42,23 +42,75 @@ def events_from_shards(shards_dir):
     return out
 
 
-def expected(state, snaps, tier, start, days, delay_s, known_events=None):
+def expected(state, snaps, tier, start, days, delay_s, known_events=None, change_rate=None):
+    """change_rate: assumed share of quotes changing per fetch (None = unknown: no quiet backoff)."""
     sunday = calendar.timegm(time.gmtime(start)[:3] + (0, 0, 0)) - ((time.gmtime(start).tm_wday + 1) % 7) * 86400
-    runs = sorted(t + delay_s for w in range(days // 7 + 2) for t in cron_plan.run_times(sunday + w * 7 * 86400)
+    runs = sorted(t + delay_s for w in range(days // 7 + 2) for t in cron_plan.run_times(sunday + w * 7 * 86400, tier)
                   if start <= t + delay_s < start + days * 86400)
     out = []
-    for sport, st in state.items():
-        events, last = st.get("events"), st.get("odds_at")
-        for t in runs:
-            ks = (SP.priority_kickoffs(sport, events, snaps, t)[0] if events is not None
-                  else [k for k in st.get("kickoffs", []) if k > t])
-            ok, why = SP.due(t, ks, last, tier)
+    sports = {sp: {"events": st.get("events"), "last": st.get("odds_at"), "kick": st.get("kickoffs", [])}
+              for sp, st in state.items() if isinstance(st, dict)}       # skips bookkeeping such as _site_at
+    for t in runs:
+        dec = {}
+        for sport, v in sports.items():
+            ks = (SP.priority_kickoffs(sport, v["events"], snaps, t)[0] if v["events"] is not None
+                  else [k for k in v["kick"] if k > t])
+            dec[sport] = (ks, *SP.due(t, ks, v["last"], tier, sport=sport, change_rate=change_rate))
+        if any(d[1] for d in dec.values()):
+            for sport, (ks, ok, why) in list(dec.items()):
+                if not ok:
+                    ride, r = SP.piggyback(t, ks, sports[sport]["last"], tier)
+                    if ride:
+                        dec[sport] = (ks, True, r)
+        for sport, (_ks, ok, why) in dec.items():
             if ok:
                 out.append({"sport": sport, "at": _iso(t), "reason": why, "credits": CREDITS})
-                last = t
-                if events is None and known_events and sport in known_events:
-                    events = known_events[sport]        # the fetch stores the games (new state format)
+                v = sports[sport]
+                v["last"] = t
+                if v["events"] is None and known_events and sport in known_events:
+                    v["events"] = known_events[sport]        # the fetch stores the games (new state format)
     return sorted(out, key=lambda r: r["at"])
+
+
+def snapshots_per_game(exp, state, snaps, known_events, start, days):
+    """For every priority game kicking off inside the projection: fetches of its sport in the final
+    72 h / 24 h / 6 h / 90 min, and whether its close (a fetch <= 45 min before) is observed."""
+    out = {}
+    for sport, st in state.items():
+        if not isinstance(st, dict):
+            continue
+        events = st.get("events") or (known_events or {}).get(sport) or []
+        ks = SP.priority_kickoffs(sport, events, snaps, start)[0]
+        fts = [calendar.timegm(time.strptime(f["at"], "%Y-%m-%dT%H:%M:%SZ")) for f in exp if f["sport"] == sport]
+        rows = []
+        for k in sorted(set(ks)):
+            if not (start + 72 * 3600 <= k < start + days * 86400):    # full 72 h visible inside the projection
+                continue
+            rows.append({w: sum(1 for f in fts if 0 < k - f <= w * 3600) for w in (72, 24, 6, 1.5)}
+                        | {"close": any(0 < k - f <= SP.CLOSE_WINDOW_MIN * 60 for f in fts)})
+        if rows:
+            out[sport] = {"kickoff_times": len(rows), "closes_observed": sum(r["close"] for r in rows),
+                          **{f"median_final_{w}h": sorted(r[w] for r in rows)[len(rows) // 2] for w in (72, 24, 6, 1.5)},
+                          **{f"min_final_{w}h": min(r[w] for r in rows) for w in (72, 24, 6, 1.5)}}
+    return out
+
+
+def actions_minutes(tier, exp, start, days):
+    """Billed GitHub Actions minutes per month (each job rounds up to 1 minute)."""
+    wk = calendar.timegm(time.gmtime(start)[:3] + (0, 0, 0))
+    runs_week = len(cron_plan.run_times(wk, tier))
+    fetch_runs = sorted({f["at"] for f in exp})
+    builds, last = 0, None
+    for at in fetch_runs:
+        t = calendar.timegm(time.strptime(at, "%Y-%m-%dT%H:%M:%SZ"))
+        closes = any(f["at"] == at and f["reason"].startswith("close") for f in exp)
+        if tier != "expanded" or closes or last is None or t - last >= 60 * 60:
+            builds, last = builds + 1, t
+    scale = 4.35 / (days / 7)
+    m = {"collect": round(runs_week * 4.35), "site_builds": round(builds * scale),
+         "analysis_rankings": 31 + 9, "ci_estimate": 300}
+    m["total"] = sum(m.values())
+    return m
 
 
 def actual(ledger_path, since):
@@ -79,15 +131,21 @@ def main(argv=None):
     ap.add_argument("--delay-min", type=int, default=40)
     ap.add_argument("--actual-since", default=None, help="ISO time to count actual ledger spend from")
     ap.add_argument("--shards", default=None, help="collected shards: games the next fetch will store")
+    ap.add_argument("--change-rate", type=float, default=None,
+                    help="assumed share of quotes changing per fetch (enables the expanded quiet backoff)")
     a = ap.parse_args(argv)
     start = calendar.timegm(time.strptime(a.start, "%Y-%m-%dT%H:%M:%SZ")) if a.start else time.time()
     state = json.load(open(os.path.join(a.state, "collector_state.json")))
     snaps = load_rankings(a.rankings_dir) if a.rankings_dir else []
     exp = expected(state, snaps, a.tier, start, a.days, a.delay_min * 60,
-                   events_from_shards(a.shards) if a.shards else None)
+                   events_from_shards(a.shards) if a.shards else None, a.change_rate)
+    known = events_from_shards(a.shards) if a.shards else None
     per_day = collections.Counter(r["at"][:10] for r in exp)
     report = {"tier": a.tier, "from": _iso(start), "days": a.days,
               "expected_credits": CREDITS * len(exp), "expected_per_day": {d: CREDITS * n for d, n in sorted(per_day.items())},
+              "expected_per_month": round(CREDITS * len(exp) * 30.4 / a.days),
+              "snapshots_per_game": snapshots_per_game(exp, state, snaps, known, start, a.days),
+              "actions_minutes_per_month": actions_minutes(a.tier, exp, start, a.days),
               "expected_fetches": exp}
     if a.actual_since:
         report["actual_since"] = a.actual_since

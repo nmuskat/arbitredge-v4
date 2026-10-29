@@ -63,6 +63,20 @@ class InProcessClient:
         return self.gw.status()
 
 
+SITE_MIN_GAP_S = 60 * 60
+
+
+def quote_fingerprints(conn, sport):
+    """{short key: short value} for every quote of the sport in this fetch (change detection only)."""
+    import hashlib
+    out = {}
+    for e, b, m, sd, price, point in conn.execute(
+            "SELECT event_id, book, market, side, price, point FROM mkt_quote WHERE sport=?", (sport,)):
+        k = hashlib.sha1(f"{e}|{b}|{m}|{sd}".encode()).hexdigest()[:10]
+        out[k] = hashlib.sha1(f"{price}|{point}".encode()).hexdigest()[:6]
+    return out
+
+
 def load_rankings(rankings_dir):
     """AP-poll snapshots downloaded by state_load.sh (release cfb-rankings); [] when none."""
     import glob
@@ -159,14 +173,25 @@ def run(state_in, out, env=os.environ, clock=time.time, opener=None, tier=None, 
         col = Collector(client, os.path.join(work, "data"), clock=clock, sports=sports, books=BOOKS, markets=MARKETS)
         snaps = load_rankings(os.path.join(state_in, "rankings"))
         summary["rankings_snapshots"] = len(snaps)
+        decisions = {}
         for sport in sports:
             st = state.setdefault(sport, {})
             if "events" in st:
                 kicks, mix = schedule_policy.priority_kickoffs(sport, st["events"], snaps, clock())
             else:                       # state from before 2026-10-29: every known kickoff until the next fetch
                 kicks, mix = st.get("kickoffs", []), {"legacy_all_kickoffs": len(st.get("kickoffs", []))}
-            is_due, why = schedule_policy.due(clock(), kicks, st.get("odds_at"), tier)
+            decisions[sport] = (kicks, *schedule_policy.due(clock(), kicks, st.get("odds_at"), tier, sport=sport,
+                                                            change_rate=st.get("change_rate")))
             summary.setdefault("priority", {})[sport] = mix
+        if any(d[1] for d in decisions.values()):
+            for sport, (kicks, is_due, why) in list(decisions.items()):
+                if not is_due:
+                    ride, r = schedule_policy.piggyback(clock(), kicks, state[sport].get("odds_at"), tier)
+                    if ride:
+                        decisions[sport] = (kicks, True, r)
+        for sport in sports:
+            st = state[sport]
+            _kicks, is_due, why = decisions[sport]
             if not is_due:
                 summary["skipped"].append({"sport": sport, "reason": why})
                 continue
@@ -178,12 +203,22 @@ def run(state_in, out, env=os.environ, clock=time.time, opener=None, tier=None, 
             evs = sorted({(e, k, h, a) for e, k, h, a in col.conn.execute(
                 "SELECT event_id, MIN(commence), home, away FROM mkt_quote WHERE sport=? GROUP BY event_id",
                 (sport,)) if k > clock()}, key=lambda x: (x[1], x[0]))[:400]
+            fps = quote_fingerprints(col.conn, sport)
             st.update(odds_at=clock(), kickoffs=[k for _, k, _, _ in evs], events=[list(x) for x in evs],
-                      last_reason=why)
+                      last_reason=why, change_rate=schedule_policy.change_rate(st.get("quote_fp"), fps),
+                      quote_fp=fps)
             summary["fetches"].append({**r, "reason": why})
             # persist the spend IMMEDIATELY: if anything later in this run fails, the
             # workflow's always-run save step still uploads a ledger containing this request
             _persist(gw, state, out)
+        if summary["fetches"] and tier == "expanded":
+            # Actions minutes: rebuild the dashboard at most every SITE_MIN_GAP_S, but always after a close
+            closes = any(f["reason"].startswith("close") for f in summary["fetches"])
+            if closes or clock() - state.get("_site_at", 0) >= SITE_MIN_GAP_S:
+                state["_site_at"] = clock()
+            else:
+                open(os.path.join(out, "site_skip"), "w").write("dashboard rebuilt less than 60 min ago\n")
+                summary["site"] = "skipped (throttled)"
         if summary["fetches"]:
             shard = os.path.join(out, f"quotes_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(clock()))}.jsonl.gz")
             summary["shard"] = os.path.basename(shard)

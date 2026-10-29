@@ -121,7 +121,7 @@ class CreditGate:
 
     def last_provider_remaining(self):
         row = self.conn.execute(
-            "SELECT hdr_remaining, ts FROM credit_ledger WHERE hdr_remaining IS NOT NULL ORDER BY ts DESC LIMIT 1"
+            "SELECT hdr_remaining, ts FROM credit_ledger WHERE hdr_remaining IS NOT NULL ORDER BY ts DESC, rowid DESC LIMIT 1"
         ).fetchone()
         if not row or row[1] < month_start(self.clock()):
             return None
@@ -134,7 +134,7 @@ class CreditGate:
             return json.loads(row[1])
         return None
 
-    def authorize(self, endpoint, params, est_cost, owner_approved_large=False):
+    def authorize(self, endpoint, params, est_cost, owner_approved_large=False, require_remaining=False):
         now, b = self.clock(), self.budget
         if est_cost > b.max_single_request and not owner_approved_large:
             raise CreditRefused(f"single request est {est_cost} > {b.max_single_request}: owner approval required")
@@ -145,6 +145,8 @@ class CreditGate:
         if day + est_cost > b.v4_daily_cap:
             raise CreditRefused(f"V4 24h cap: {day}+{est_cost} > {b.v4_daily_cap}")
         remaining = self.last_provider_remaining()
+        if remaining is None and require_remaining:
+            raise CreditRefused("provider balance unknown: cannot verify the V3 floor (failing closed)")
         if remaining is not None and remaining - est_cost < b.v3_floor_remaining:
             raise CreditRefused(f"provider remaining {remaining} - {est_cost} would breach V3 floor {b.v3_floor_remaining}")
         return fingerprint(endpoint, params)
@@ -177,7 +179,8 @@ class CreditGate:
         since = month_start(self.clock())
         v4 = self._spent_since(since)
         row = self.conn.execute(
-            "SELECT hdr_used FROM credit_ledger WHERE hdr_used IS NOT NULL AND ts>=? ORDER BY ts DESC LIMIT 1", (since,)
+            "SELECT hdr_used FROM credit_ledger WHERE hdr_used IS NOT NULL AND ts>=? ORDER BY ts DESC, rowid DESC LIMIT 1",
+            (since,)
         ).fetchone()
         provider_used = row[0] if row else None
         return {"v4": v4, "provider_used": provider_used,

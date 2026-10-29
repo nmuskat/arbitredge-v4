@@ -39,6 +39,8 @@ The owner (nmuskat) has no coding background. You do the engineering, testing an
    - Owner-approved 2026-10-29: **balanced** tier (about 757 credits/month); CFB closes target AP Top-25 kickoffs only; Sunday-morning window for international NFL games.
    - The tier and caps are the owner's repository variables `V4_TIER`, `V4_MONTHLY_CAP` and `V4_DAILY_CAP`. Never change them yourself.
    - Expected versus actual spend: `tools_v4/consumption_check.py`.
+   - An **expanded** tier (about 3,300–3,700 credits/month) is built and tested but NOT approved. Never activate it; see `docs_v4/EXPANDED_TIER_PLAN.md`. GitHub Actions minutes, not credits, are its binding constraint.
+   - Every paid request is preceded by a free `/v4/sports` balance check and fails closed. Never remove it.
 2. The daily `odds-analyze` workflow runs the line-shopping report:
    - opportunities are counted once, at first sighting;
    - the main test is **closing EV** (the price taken, evaluated at the observed closing consensus), with game-clustered confidence intervals;

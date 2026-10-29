@@ -20,6 +20,8 @@ Credit and minute costs are simulated in tests_collect and tools_v4/collection_p
 grid, delayed and dropped runs) before anything runs.
 """
 
+import time
+
 CLOSE_WINDOW_MIN = 45        # = the freshness rule: a quote <= 45 min before kickoff is an OBSERVED close
 TIERS = {
     # initial 500 credits/month: closes + one daily snapshot within 3 days + one same-day snapshot
@@ -30,6 +32,28 @@ TIERS = {
     "aggressive": {"rules": [(3, 0.75), (12, 1.5), (24, 3), (72, 6), (168, 12)]},
     # legacy upper bound kept for the budget tests
     "standard": {"rules": [(48, 3), (168, 12)]},
+    # EXPANDED (built 2026-10-29, NOT active until the owner approves; ~3,000-5,000 credits/month).
+    # Kickoff-relative cadence plus calendar windows; cadence rules (never closes) back off x2 when the
+    # sport's market barely moved since the last fetch and no priority kickoff is within 24 h.
+    "expanded": {
+        "rules": [(1.5, 0.25), (6, 0.5), (24, 1), (72, 2), (168, 4)],
+        # (sport or None for both, UTC weekdays Mon=0, start_hour, end_hour, min_gap_h, needs kickoff within h)
+        "windows": [
+            ("americanfootball_nfl", (6,), 22, 24, 1, 216),        # NFL openers: Sunday night...
+            ("americanfootball_nfl", (0,), 0, 8, 1, 216),          # ...into Monday morning (UTC)
+            ("americanfootball_nfl", (0, 1), 12, 24, 2, 216),      # early-week moves Mon-Tue
+            ("americanfootball_nfl", (2, 3, 4), 18, 24, 1, 120),   # injury-report windows Wed-Fri
+            ("americanfootball_ncaaf", (6,), 17, 24, 1, 216),      # CFB openers Sunday afternoon/evening
+            ("americanfootball_ncaaf", (0,), 0, 6, 1, 216),
+            ("americanfootball_ncaaf", (0, 1), 12, 24, 2, 216),    # early-week moves Mon-Tue
+        ],
+        "quiet_change_rate": 0.03,
+        "quiet_backoff": 2.0,
+        # a run that is fetching one sport also fetches the other if its last fetch is >= 1 h old and it
+        # has a priority kickoff within 7 days: more observations per GitHub Actions minute (the scarce
+        # resource; credits are not)
+        "piggyback": {"min_gap_h": 1.0, "within_h": 168},
+    },
 }
 
 
@@ -55,12 +79,13 @@ def resolve_tier(value):
     return name, "V4_TIER"
 
 
-def due(now, kickoffs, last_fetch, tier="test"):
+def due(now, kickoffs, last_fetch, tier="test", sport=None, change_rate=None):
     """Returns (is_due, reason). kickoffs: epoch seconds (any order); last_fetch: epoch or None.
 
     close: some kickoff k is <= CLOSE_WINDOW_MIN away and the last fetch was taken before
     k - CLOSE_WINDOW_MIN (so it does not already count as k's observed close). One fetch
-    covers every kickoff in the next 45 minutes."""
+    covers every kickoff in the next 45 minutes. Closes are never delayed by any backoff.
+    change_rate: share of the sport's quotes that changed at the last fetch (None = unknown)."""
     if tier not in TIERS:
         raise InvalidTier(f"unknown tier {tier!r}")
     t = TIERS[tier]
@@ -76,11 +101,43 @@ def due(now, kickoffs, last_fetch, tier="test"):
         return True, f"close snapshot ({(pending[0] - now) / 60:.0f} min to kickoff)"
     to_next_h = (future[0] - now) / 3600.0
     since_h = since_min / 60.0
+    quiet = (change_rate is not None and "quiet_change_rate" in t and change_rate < t["quiet_change_rate"]
+             and to_next_h > 24)
+    mult = t.get("quiet_backoff", 1.0) if quiet else 1.0
     for horizon_h, gap_h in t["rules"]:
-        if to_next_h <= horizon_h and since_h >= gap_h:
+        if to_next_h <= horizon_h and since_h >= gap_h * mult:
             return True, f"cadence: next kickoff in {to_next_h:.1f} h, last fetch {since_h:.1f} h ago " \
-                         f"(rule {horizon_h} h / {gap_h} h)"
+                         f"(rule {horizon_h} h / {gap_h} h{' x%g quiet' % mult if quiet else ''})"
+    g = time.gmtime(now)
+    for w_sport, days, h0, h1, gap_h, need_h in t.get("windows", ()):
+        if (w_sport in (None, sport) and g.tm_wday in days and h0 <= g.tm_hour < h1 and to_next_h <= need_h
+                and since_h >= gap_h * mult):
+            return True, f"window: {WEEKDAY[g.tm_wday]} {h0:02d}-{h1:02d} UTC every {gap_h} h"
     return False, "not due"
+
+
+WEEKDAY = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def piggyback(now, kickoffs, last_fetch, tier):
+    """(True, reason) when another sport is being fetched in this run and this sport qualifies to ride
+    along (tier setting 'piggyback'). Never used for tiers without it."""
+    pb = TIERS.get(tier, {}).get("piggyback")
+    if not pb or last_fetch is None:
+        return False, "no piggyback"
+    future = [k for k in kickoffs if k > now]
+    if not future or min(future) - now > pb["within_h"] * 3600 or now - last_fetch < pb["min_gap_h"] * 3600:
+        return False, "no piggyback"
+    return True, f"piggyback: another sport is being fetched; last fetch {(now - last_fetch) / 3600:.1f} h ago"
+
+
+def change_rate(prev, cur):
+    """Share of quote keys whose (price, point) changed between two fetches' fingerprints.
+    prev/cur: {key: fingerprint}. New and vanished keys count as changes. None if no previous."""
+    if not prev:
+        return None
+    keys = set(prev) | set(cur)
+    return sum(1 for k in keys if prev.get(k) != cur.get(k)) / len(keys) if keys else 0.0
 
 
 def priority_kickoffs(sport, events, rankings_snapshots, now):
