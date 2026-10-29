@@ -540,6 +540,13 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                                        w["accepted_price"], w["stake"], w["accepted_at"]] for w in wagers]),
             "market_source": run["market_source_id"]}
         block["status"] = "OK" if wagers else "NO_WAGERS"
+        # wagers simulated for moments BEFORE the run was opened were reconstructed after the fact from the odds
+        # observed at those moments (the engine only ever sees data timestamped at or before each wager)
+        opened = book_conn.execute("SELECT created_at FROM v4_run WHERE run_id=?", (run_id,)).fetchone()[0]
+        opened_t = to_epoch(opened)
+        recon = sum(1 for w in wagers if to_epoch(w["accepted_at"]) < opened_t)
+        block["audit"].update(opened_at=_iso(opened_t), reconstructed_wagers=recon,
+                              prospective_wagers=len(wagers) - recon)
         from sportsbook_v4 import behaviour_metrics
         block["behaviour"] = behaviour_metrics.run_metrics(book_conn, run_id, wagers)
 
@@ -590,13 +597,20 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                     offer=representative_offer(mkt.latest_quotes(gid, wm_t)),
                     reference={"home_spread": ref_spread, "as_of": _iso(ref_at),
                                "basis": "observed consensus at last collection"},
-                    taken_at=wm_t, built_at=T))
+                    taken_at=wm_t, built_at=T,
+                    extra={"need_stability": _need_stability(ws_, var_splits.get(gid, {})),
+                           "ledger_basis": {"engine_version": run["engine_version"], "run_opened_at": _iso(opened_t),
+                                            "reconstructed_spread_wagers": sum(
+                                                1 for w in ws_ if w["market"] == "spread" and to_epoch(w["accepted_at"]) < opened_t),
+                                            "prospective_spread_wagers": sum(
+                                                1 for w in ws_ if w["market"] == "spread" and to_epoch(w["accepted_at"]) >= opened_t)}}))
             block["games"].append({
                 "event_id": gid, "home": home, "away": away, "kickoff": _iso(to_epoch(g.commence_time)), "rankings": rk,
                 "reference": {"home_spread": ref_spread, "total": ref_total, "as_of": _iso(ref_at),
                               "basis": "observed consensus at last collection"},
                 "splits": sp, "bands": _bands(sp, var_splits.get(gid, {})),
                 "need_stability": _need_stability(ws_, var_splits.get(gid, {})),
+                "reconstructed_wagers": sum(1 for w in ws_ if to_epoch(w["accepted_at"]) < opened_t),
                 "need": _need_summary(need) if need else None, "label": LABEL})
     return out
 
@@ -604,11 +618,13 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
 def _need_stability(wagers, variants):
     """How often the spread Need side under each alternative customer assumption matches the baseline."""
     base = need_tracker.need_of([w for w in wagers if w["market"] == "spread"])["side"] if wagers else None
-    sides = [v.get("_need") for v in variants.values()]
-    if base is None or not sides:
+    sides = {k: v.get("_need") for k, v in sorted(variants.items())}
+    if base is None or not sides or any(x is None and "_need" not in variants[k] for k, x in sides.items()):
         return {"baseline": base, "variants": len(sides), "agree": None}
-    return {"baseline": base, "variants": len(sides), "agree": sum(x == base for x in sides),
-            "share": round(sum(x == base for x in sides) / len(sides), 2)}
+    agree = sum(x == base for x in sides.values())
+    return {"baseline": base, "variants": len(sides), "agree": agree, "share": round(agree / len(sides), 2),
+            "flips_under": [k for k, x in sides.items() if x != base],
+            "label": "STABLE" if agree == len(sides) else "FRAGILE"}
 
 
 def _bands(base, variants):

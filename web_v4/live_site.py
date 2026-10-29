@@ -148,7 +148,11 @@ def tracker_step(snap, snaps, now, need_dir=None, results_dir=None, need_out=Non
         st, _why = asof.observed_close(conn, d["event_id"], "spreads")
         if st:
             closes[(d["sport"], d["event_id"])] = {"line": st["line"], "fair": st["fair"]}
-    rep = NT.report(all_dec, res, closes)
+    # one record per sportsbook engine: V4 (m4) and V5 decisions are graded and summarised separately, never combined
+    by_engine = {}
+    for d in all_dec:
+        by_engine.setdefault((d.get("snapshot") or {}).get("engine_version") or "no pre-kickoff snapshot", []).append(d)
+    reports = {ev: NT.report(ds, res, closes) for ev, ds in sorted(by_engine.items())}
     watch = {}
     for r in fresh:      # latest snapshot per upcoming game (this build)
         watch[(r["sport"], r["event_id"])] = r
@@ -158,7 +162,7 @@ def tracker_step(snap, snaps, now, need_dir=None, results_dir=None, need_out=Non
         "decisions_total": len(all_dec), "results_files": len(docs),
         "results_matched": len(res), "corrections": sum(1 for v in res.values() if v["corrected"]),
         "upcoming": sorted(watch.values(), key=lambda r: (r["kickoff"], r["sport"])),
-        "report": rep}
+        "reports_by_engine": reports, "active_engine": live_book.ENGINE_VERSION}
 
 
 def settlement_step(snap, bconn, conn, snaps, now, results_dir=None, settle_dir=None, settle_out=None):
@@ -265,7 +269,7 @@ vertical-align:top}th{font-size:12px;color:var(--mute);font-weight:600}
 .odds thead{display:none}.odds tr{display:grid;grid-template-columns:repeat(3,1fr);gap:4px 8px;padding:8px 0;border-bottom:1px solid var(--line)}
 .odds td{border:0;padding:2px 0}.odds td:first-child{grid-column:1/-1;font-weight:600}.ml{display:block}}
 </style></head><body>
-<header><div class="top"><span class="brand">ArbitrEdge V4</span>
+<header><div class="top"><span class="brand" id="brand">ArbitrEdge</span>
 <span class="seg" id="sport"><button data-s="nfl">NFL</button><button data-s="cfb">CFB Top-25</button></span>
 <span id="fresh" class="small"></span></div>
 <nav id="nav"></nav></header>
@@ -274,6 +278,8 @@ vertical-align:top}th{font-size:12px;color:var(--mute);font-weight:600}
 <script>
 "use strict";
 const D=JSON.parse(document.getElementById("data").textContent);
+{const ev=((((D.sports||{}).nfl||{}).book||{}).audit||{}).engine_version||"";
+ document.getElementById("brand").textContent="ArbitrEdge "+(ev.startsWith("sportsbook_v5")?"V5":"V4")}
 const SECTIONS=[["overview","Overview"],["odds","Odds Board"],["splits","Betting Splits"],["need","ArbitrEdge Need"],
 ["tracker","Need Tracker"],["sharp","Sharp Money"],["ev","EV Scanner"],["sims","SIMS"],["performance","Performance"],["health","Health"]];
 const MK={spreads:"Spread",totals:"Total",h2h:"Moneyline"};const BMK={spread:"spreads",total:"totals",moneyline:"h2h"};
@@ -365,7 +371,7 @@ function bookBlock(){const bk=S().book;if(!bk)return card(el("p",{class:"mute"},
  if(["UNAVAILABLE","WAITING_FOR_POLL","NO_DATA"].includes(bk.status))return card(badge(bk.status==="WAITING_FOR_POLL"?"WAITING FOR POLL":bk.status,"UNAVAILABLE")," "+((bk.coverage||{}).reason||""));
  if(bk.status==="NO_GAMES")return card(el("p",{class:"mute"},"No games in this betting week."));return null}
 function ledgerLine(){const a=(S().book||{}).audit;if(!a)return null;
- return el("p",{class:"small mute"},"Persistent ledger for the week "+local(a.window[0])+" to "+local(a.window[1])+": "+a.wagers.toLocaleString()+" wagers from "+a.bettors_with_wagers.toLocaleString()+" of "+a.bettors.toLocaleString()+" simulated bettors; "+a.wagers_loaded_from_ledger.toLocaleString()+" reloaded from earlier builds, "+a.new_wagers_this_build.toLocaleString()+" new. Full replay check: "+a.replay_verified+". Book advanced to "+local(a.advanced_to)+"; it trades only while a real price no older than 6 h exists (last odds observed "+local(a.last_observation)+").")}
+ return el("p",{class:"small mute"},"Persistent ledger for the week "+local(a.window[0])+" to "+local(a.window[1])+": "+a.wagers.toLocaleString()+" wagers from "+a.bettors_with_wagers.toLocaleString()+" of "+a.bettors.toLocaleString()+" simulated bettors; "+a.wagers_loaded_from_ledger.toLocaleString()+" reloaded from earlier builds, "+(a.reconstructed_wagers?a.reconstructed_wagers.toLocaleString()+" RECONSTRUCTED from historical observed odds when the run opened ("+local(a.opened_at)+"), not accepted live; ":"")+a.new_wagers_this_build.toLocaleString()+" new. Full replay check: "+a.replay_verified+". Book advanced to "+local(a.advanced_to)+"; it trades only while a real price no older than 6 h exists (last odds observed "+local(a.last_observation)+").")}
 function bookGames(){const bk=S().book||{};return(bk.games||[]).filter(g=>upcoming(g)&&gameMatch(g))}
 R.splits=()=>{const f=st.f,bk=S().book||{};const head=[card(el("h2",{},"Betting splits"),
   el("p",{},badge("UNAVAILABLE")," Real splits: "+D.splits_real.reason),
@@ -384,6 +390,8 @@ R.need=()=>{const bk=S().book||{};const head=[card(el("h2",{},"ArbitrEdge Need")
  const b=bookBlock();if(b)return[...head,b];const out=[];
  for(const g of bookGames()){const n=g.need;if(!n){continue}const sp=n.spread||{},to=n.total||{},ml=n.moneyline||{};
   out.push(card(el("div",{class:"game",on:{click:()=>openGame(g.event_id)}},el("h3",{},gameHead(g))),
+   stability(g.need_stability,sd=>sd==="home"?g.home:g.away),
+   g.reconstructed_wagers?el("div",{class:"small mute"},g.reconstructed_wagers+" of this game's wagers were reconstructed from historical observed odds when the week's run opened"):null,
    el("table",{},el("tbody",{},
     sp.status?el("tr",{},el("td",{},"Spread"),el("td",{},sp.financial_need_side?el("b",{},sp.financial_need_side+" covers"):"balanced"),el("td",{class:"num"},"swing $"+Math.round(sp.pnl_swing||0).toLocaleString())):null,
     to.status?el("tr",{},el("td",{},"Total"),el("td",{},to.financial_need_side?el("b",{},to.financial_need_side):"balanced"),el("td",{class:"num"},to.handle!=null?"handle $"+Math.round(to.handle).toLocaleString():"")):null,
@@ -393,6 +401,11 @@ R.need=()=>{const bk=S().book||{};const head=[card(el("h2",{},"ArbitrEdge Need")
 const money=x=>x==null?"–":(x<0?"−$":"$")+Math.abs(Math.round(x)).toLocaleString();
 const CHECK={weekly_handle_top_25pct:"top 25% weekly handle",min_100_spread_wagers:"≥100 spread wagers",no_bettor_over_25pct:"no bettor >25% of handle",
  rec_handle_70pct_one_side:"≥70% rec handle one side",rec_ticket_majority_same_side:"rec ticket majority same side"};
+const VAR_NAMES={fav_pref_half:"weaker favourite preference",["fav_pref_x1.5"]:"stronger favourite preference",sharp_share_6pct:"twice as many sharps",timing_all_steady:"everyone bets evenly through the week"};
+function stability(ns,nm){if(!ns||ns.agree==null)return el("span",{class:"small mute"},"Need stability: not computed yet");
+ const side=nm?nm(ns.baseline):ns.baseline;
+ if(ns.label==="STABLE")return el("div",{class:"small"},badge("STABLE NEED","INFO")," the book needs "+side+" under all "+ns.variants+" alternative customer assumptions");
+ return el("div",{class:"small"},badge("FRAGILE NEED","LOW")," the book needs "+side+" in the baseline, but the side changes under "+ns.flips_under.map(k=>VAR_NAMES[k]||k).join(", ")+" ("+ns.agree+" of "+ns.variants+" agree)")}
 function sumLine(x){if(!x||!x.games)return el("p",{class:"mute"},"No games yet.");const r=x.roi;
  return el("div",{},el("div",{class:"grid"},el("div",{class:"kpi"},el("b",{},x.record),"W-L-P ATS ("+x.graded+" graded)"),
   el("div",{class:"kpi"},el("b",{},x.win_pct_ex_push==null?"–":pct(x.win_pct_ex_push)),"win % ex-push"+(x.win_pct_95ci?" (95% CI "+pct(x.win_pct_95ci[0])+"–"+pct(x.win_pct_95ci[1])+")":"")),
@@ -423,29 +436,34 @@ R.tracker=()=>{const T=D.need_tracker;const head=card(el("h2",{},badge("MODELED"
   return el("div",{class:"game",style:"padding:8px 0;border-bottom:1px solid var(--line)",on:{click:()=>openGame(r.event_id)}},
    el("div",{},el("b",{},r.away+" @ "+r.home)," ",r.alignment==="ALIGNED"?badge("ALIGNED","INFO"):r.alignment==="DISAGREE"?badge("DISAGREE","LOW"):badge(r.alignment,"INFO")," ",q.qualified?badge("QUALIFIED","WATCH"):null),
    el("div",{class:"mute small"},local(r.kickoff)+" · snapshot "+local(r.taken_at)),
+   r.need_stability?stability(r.need_stability,nm):null,
+   r.ledger_basis&&r.ledger_basis.reconstructed_spread_wagers?el("div",{class:"small mute"},r.ledger_basis.reconstructed_spread_wagers+" of "+(r.ledger_basis.reconstructed_spread_wagers+r.ledger_basis.prospective_spread_wagers)+" spread wagers reconstructed from historical observed odds (run opened "+local(r.ledger_basis.run_opened_at)+")"):null,
    el("div",{class:"small"},"Book needs: ",n.side?el("b",{},nm(n.side)+" "+ln(pk.line)+" "+am(pk.price)):"balanced",pk.price_book?" ("+pk.price_book+")":""," · liability "+money(n.liability)+" · swing "+money(n.swing)),
    el("div",{class:"small"},"Recreational pressure: "+(pub?nm(pub)+" "+pct(p.sides[pub].rec_handle_share)+" of rec handle, "+pct(p.sides[pub].rec_ticket_share)+" of rec tickets":"–")+" · sharp "+pct(p.sharp_handle_share)+" of handle"),
    el("div",{class:"small mute"},"Spread handle "+money(p.handle)+" (rank "+r.week_handle_rank+" of "+r.week_games+" this week) · "+p.wagers+" wagers from "+p.bettors+" bettors · largest bettor "+pct(p.largest_bettor_share)),
    q.qualified?(r.research_pick?el("div",{class:"small"},el("b",{},"Research pick (paper): "+nm(r.research_pick))):el("div",{class:"small"},"Qualified, but the book's Need is on the public side: flagged, no pick")):
     el("div",{class:"small mute"},"Not qualified: "+fails.join(", ")),
    r.cohorts?el("div",{class:"small"},"Cohorts: "+(Object.entries(r.cohorts.evaluation).filter(([k,v])=>v.eligible).map(([k,v])=>k.split("_")[0]+" "+nm(v.pick_side)).join(" · ")||"none")):el("div",{class:"small mute"},"Snapshot predates cohort registration"))});
- const rep=T.report||{};const dis=rep.qualified_disagreements||{};
- const graded=(rep.rows||[]).filter(x=>x.sport===st.sport).slice(-40).reverse();
+ const engines=Object.entries(T.reports_by_engine||{}).sort(([a],[b])=>(b===T.active_engine)-(a===T.active_engine));
+ const section=([ev,rep])=>{const dis=rep.qualified_disagreements||{};
+  const graded=(rep.rows||[]).filter(x=>x.sport===st.sport).slice(-40).reverse();
+  return[card(el("h2",{},"Record: engine "+ev+(ev===T.active_engine?" (active)":" (separate record)")),
+    el("p",{class:"small mute"},"Each sportsbook engine has its own record. Results are never combined across engines.")),
+   cohortCard(rep.cohorts),
+   card(el("h3",{},"All Need sides"),sumLine(rep.all_need)),
+   card(el("h3",{},"Research subset: qualified and aligned"),sumLine(rep.research_subset)),
+   card(el("h3",{},"Qualified but the Need disagrees with fading the public"),el("p",{class:"small"},dis.games+" game(s). "+(dis.note||"")),sumLine(dis.need_side)),
+   card(brkTable(rep.by_largest_bettor_share,"All Need sides by largest-bettor share"),brkTable(rep.by_week_handle_percentile,"By weekly handle percentile"),brkTable(rep.by_sport,"By sport")),
+   card(el("h3",{},"Sealed decisions ("+(st.sport==="nfl"?"NFL":"CFB")+")"),
+    graded.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Need pick"),el("th",{},"Status"),el("th",{},"Result"))),
+     el("tbody",{},graded.map(x=>el("tr",{},el("td",{},x.away+" @ "+x.home,el("div",{class:"mute small"},local(x.kickoff))),
+      el("td",{class:"small"},x.need_side?((x.need_side==="home"?x.home:x.away)+" "+ln(x.line)+" "+am(x.price)):"–",el("div",{class:"mute"},(x.qualified?"qualified · ":"")+(x.alignment||""))),
+      el("td",{class:"small"},x.status,x.decision_status!=="OK"?el("div",{class:"mute"},x.decision_status):null),
+      el("td",{class:"small"},x.status==="GRADED"?(x.away_score+"–"+x.home_score+" (away–home): "+x.ats+(x.units!=null?", "+(x.units>=0?"+":"")+x.units.toFixed(2)+"u":"")):"–")))))):el("p",{class:"mute"},"No sealed decisions yet."))]};
  return[head,card(el("h3",{},"Upcoming (final 24 h): latest pre-kickoff snapshot"),
-   el("p",{class:"small mute"},"Snapshots are saved immutably before kickoff; after kickoff the last one is sealed as the game's decision. "+T.snapshots_this_build+" snapshot(s) this build, "+T.decisions_total+" decisions sealed so far."),
+   el("p",{class:"small mute"},"Snapshots are saved immutably before kickoff; after kickoff the last one is sealed as the game's decision. "+T.snapshots_this_build+" snapshot(s) this build, "+T.decisions_total+" decisions sealed so far (all engines). Results: "+T.results_matched+" matched final scores from "+T.results_files+" file(s)"+(T.corrections?", "+T.corrections+" corrected":"")+"."),
    rows.length?el("div",{},rows):el("p",{class:"mute"},"No games within 24 h of kickoff.")),
-  cohortCard(rep.cohorts),
-  card(el("h3",{},"All Need sides (every sealed game, both sports)"),sumLine(rep.all_need)),
-  card(el("h3",{},"Research subset: qualified and aligned"),sumLine(rep.research_subset)),
-  card(el("h3",{},"Qualified but the Need disagrees with fading the public"),el("p",{class:"small"},dis.games+" game(s). "+(dis.note||"")),sumLine(dis.need_side)),
-  card(brkTable(rep.by_largest_bettor_share,"All Need sides by largest-bettor share"),brkTable(rep.by_week_handle_percentile,"By weekly handle percentile"),brkTable(rep.by_sport,"By sport")),
-  card(el("h3",{},"Sealed decisions ("+(st.sport==="nfl"?"NFL":"CFB")+")"),
-   el("p",{class:"small mute"},"Results: "+T.results_matched+" matched final scores from "+T.results_files+" file(s)"+(T.corrections?", "+T.corrections+" corrected":"")+". A game without a final score from its source stays awaiting; nothing is inferred."),
-   graded.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Need pick"),el("th",{},"Status"),el("th",{},"Result"))),
-    el("tbody",{},graded.map(x=>el("tr",{},el("td",{},x.away+" @ "+x.home,el("div",{class:"mute small"},local(x.kickoff))),
-     el("td",{class:"small"},x.need_side?((x.need_side==="home"?x.home:x.away)+" "+ln(x.line)+" "+am(x.price)):"–",el("div",{class:"mute"},(x.qualified?"qualified · ":"")+(x.alignment||""))),
-     el("td",{class:"small"},x.status,x.decision_status!=="OK"?el("div",{class:"mute"},x.decision_status):null),
-     el("td",{class:"small"},x.status==="GRADED"?(x.away_score+"–"+x.home_score+" (away–home): "+x.ats+(x.units!=null?", "+(x.units>=0?"+":"")+x.units.toFixed(2)+"u":"")):"–")))))):el("p",{class:"mute"},"No sealed decisions yet."))]};
+  ...(engines.length?engines.flatMap(section):[card(el("p",{class:"mute"},"No sealed decisions yet."))])]};
 R.sharp=()=>{const f=st.f;const rows=(S().sharp||[]).filter(r=>cfbGate(r.top25)&&(!f.market||r.market===f.market)&&upcoming(r)&&gameMatch(r));
  const ev=rows.filter(r=>r.status!=="INSUFFICIENT EVIDENCE");
  return[freshBanner(),cfbBanner(),card(el("h2",{},badge("EXPERIMENTAL"),"Sharp money"),

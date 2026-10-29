@@ -155,7 +155,7 @@ def alignment(need_side, fade_side):
     return "ALIGNED" if need_side == fade_side else "DISAGREE"
 
 
-def snapshot(*, sport, run, game, spread_wagers, week_handles, offer, reference, taken_at, built_at):
+def snapshot(*, sport, run, game, spread_wagers, week_handles, offer, reference, taken_at, built_at, extra=None):
     """One immutable pre-kickoff record. taken_at: the ledger's data time; built_at: wall clock."""
     kick = to_epoch(game["kickoff"])
     if not (taken_at < kick and built_at < kick):
@@ -185,6 +185,7 @@ def snapshot(*, sport, run, game, spread_wagers, week_handles, offer, reference,
         "research_pick": nd["side"] if (q["qualified"] and al == "ALIGNED") else None,
         "reference": reference, "thresholds": QUALIFY,
     }
+    rec.update(extra or {})     # informational (V5: need_stability, ledger_basis); never used by cohort rules
     # pre-registered cohorts: evaluated NOW, stored in the immutable record (never re-evaluated later)
     rec["cohorts"] = None
     if taken_at >= to_epoch(C.REGISTERED_AT):
