@@ -1,0 +1,38 @@
+{
+ "v4_history_intact": {
+  "ok": true,
+  "runs_checked": 4,
+  "wagers_checked": 2922
+ },
+ "no_duplicate_wagers": {
+  "ok": true,
+  "wagers": 3975
+ },
+ "deterministic_replay": {
+  "ok": true,
+  "v5_runs": 2,
+  "independent_builds_identical": true
+ },
+ "liability_exact": {
+  "ok": true,
+  "games_checked": 32,
+  "mismatches": 0,
+  "note": "book P&L from the exposure engine vs the sum of per-wager settlements, within per-wager cent rounding"
+ },
+ "settlement_reconciles": {
+  "ok": true,
+  "reconciliation": {
+   "games_settled": 0,
+   "book_realized_cents": 0,
+   "bettor_settled_pnl_cents": 0,
+   "game_mismatch_cents": 0,
+   "bettor_mismatch_cents": 0,
+   "ok": true
+  }
+ },
+ "v5_snapshot_bound": {
+  "ok": true,
+  "v5_runs": 2
+ },
+ "all_pass": true
+}
