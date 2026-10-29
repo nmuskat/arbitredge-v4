@@ -324,10 +324,25 @@ def _choose_market(rng, arch, offers):
     return avail[-1][0]
 
 
-def _recreational_side(rng, bettor, arch, game, offer, facts):
+def _fav_scale(arch, abs_spread):
+    """Spread-size dependence of the favourite pull: piecewise-linear [(abs spread, multiplier), ...] from
+    an EXPERIMENTAL archetype key 'fav_spread_curve'. Absent (every active m4 archetype) = 1.0."""
+    curve = arch.get("fav_spread_curve")
+    if not curve or abs_spread is None:
+        return 1.0
+    pts = sorted(curve)
+    if abs_spread <= pts[0][0]:
+        return pts[0][1]
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if abs_spread <= x1:
+            return y0 + (y1 - y0) * (abs_spread - x0) / (x1 - x0)
+    return pts[-1][1]
+
+
+def _recreational_side(rng, bettor, arch, game, offer, facts, abs_spread=None):
     tr = bettor["traits"]
     hs = offer["home_spread"]
-    fav_sign = 1.0 if hs < 0 else (-1.0 if hs > 0 else 0.0)
+    fav_sign = (1.0 if hs < 0 else (-1.0 if hs > 0 else 0.0)) * _fav_scale(arch, abs_spread)
     loyal = tr.get("loyal_team")
     loyalty = arch["loyalty"] * (1.0 if loyal == game.home_team_id else -1.0 if loyal == game.away_team_id else 0.0)
     # Every term is antisymmetric under a home/away swap except home_pref,
@@ -348,7 +363,7 @@ def _recreational_side(rng, bettor, arch, game, offer, facts):
 def _recreational_pick(rng, bettor, arch, game, market, offer, facts):
     """Returns (side, p_side, detail) for a non-sharp bettor in the chosen market."""
     if market == "spread":
-        side, d = _recreational_side(rng, bettor, arch, game, offer, facts)
+        side, d = _recreational_side(rng, bettor, arch, game, offer, facts, abs(offer["home_spread"]))
         return side, (d["p_home"] if side == "home" else 1.0 - d["p_home"]), d
     if market == "moneyline":
         # favourite = higher implied probability; the same antisymmetric utility as spreads

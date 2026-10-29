@@ -1,0 +1,58 @@
+name: Observed betting split (manual entry)
+description: Record a betting split you saw published by a sportsbook (OBSERVED, third-party). Calibration only.
+title: "Observed split"
+labels: ["observed-split"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Copy the numbers exactly as published. Leave a percentage blank if it was not shown; nothing is filled in for you.
+        One form = one market of one game at one moment (both sides).
+  - type: dropdown
+    id: sport
+    attributes: {label: Sport, options: [nfl, cfb]}
+    validations: {required: true}
+  - type: input
+    id: away
+    attributes: {label: Away team (as listed)}
+    validations: {required: true}
+  - type: input
+    id: home
+    attributes: {label: Home team (as listed)}
+    validations: {required: true}
+  - type: input
+    id: kickoff_et_date
+    attributes: {label: Kickoff date, Eastern (YYYY-MM-DD)}
+    validations: {required: true}
+  - type: input
+    id: sportsbook
+    attributes: {label: Sportsbook the split is for (e.g. draftkings, circa)}
+    validations: {required: true}
+  - type: dropdown
+    id: aggregation
+    attributes: {label: One sportsbook or several?, options: [single_book, multiple_books, unknown]}
+    validations: {required: true}
+  - type: dropdown
+    id: market
+    attributes: {label: Market, options: [spread, total, moneyline]}
+    validations: {required: true}
+  - type: input
+    id: line
+    attributes: {label: Line shown (home spread or total; blank for moneyline)}
+  - type: input
+    id: side_a
+    attributes: {label: "First side: home / over — tickets %, handle % (e.g. 62, 48)"}
+  - type: input
+    id: side_b
+    attributes: {label: "Second side: away / under — tickets %, handle %"}
+  - type: input
+    id: observed_at
+    attributes: {label: When you saw it (e.g. 2026-11-01 12:05 ET)}
+    validations: {required: true}
+  - type: input
+    id: source
+    attributes: {label: Where it was published (site / page name)}
+    validations: {required: true}
+  - type: input
+    id: source_url
+    attributes: {label: Page URL (optional)}

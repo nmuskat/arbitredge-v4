@@ -1,0 +1,44 @@
+# ArbitrEdge V4 -- manual observed-split entry (OBSERVED, third-party; calibration only).
+# Runs only for issues the repository owner opens with the observed-split form. Uses no secret.
+# Saves an immutable observed_*.json.gz to release v4-observed-splits and replies on the issue.
+name: observed-splits
+on:
+  issues:
+    types: [opened]
+permissions:
+  contents: read
+jobs:
+  record:
+    if: contains(github.event.issue.labels.*.name, 'observed-split') && github.event.issue.user.login == github.repository_owner
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      contents: write           # release assets only
+      issues: write             # reply and close
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Parse and validate
+        id: parse
+        env:
+          BODY: ${{ github.event.issue.body }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: python3 -m data_v4.observed_issue --out observed --issue "$ISSUE" > result.txt; echo "rc=$?" >> "$GITHUB_OUTPUT"; cat result.txt
+        continue-on-error: true
+      - name: Save and reply
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          shopt -s nullglob
+          files=(observed/observed_*.json.gz)
+          if (( ${#files[@]} )); then
+            gh release view v4-observed-splits >/dev/null 2>&1 || gh release create v4-observed-splits --prerelease \
+              --title "V4 observed betting splits (third-party, do not delete)" --notes "Manual-entry OBSERVED splits for calibration only."
+            gh release upload v4-observed-splits "${files[@]}"
+            gh issue comment "$ISSUE" --body-file result.txt
+            gh issue close "$ISSUE"
+          else
+            gh issue comment "$ISSUE" --body-file result.txt
+          fi

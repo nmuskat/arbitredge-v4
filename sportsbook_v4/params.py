@@ -305,13 +305,14 @@ def params_hash():
 
 
 @contextmanager
-def variant(name, archetype_overrides=None, book_overrides=None, all_archetypes=None):
+def variant(name, archetype_overrides=None, book_overrides=None, all_archetypes=None, team_popularity=None):
     """
     DIAGNOSTICS ONLY: temporarily apply a named parameter variant.
 
     archetype_overrides: {ARCHETYPE: {field: value}}
     all_archetypes:      {field: value} applied to every archetype first
     book_overrides:      {field: value}
+    team_popularity:     {team_id: multiplier} replacing TEAM_POPULARITY_PRIOR (experimental models)
     Shares are re-validated, and the variant name and overrides are part of
     params_hash() -- so any population/run created under a variant is
     distinguishable from the baseline and can never continue a baseline run.
@@ -319,8 +320,11 @@ def variant(name, archetype_overrides=None, book_overrides=None, all_archetypes=
     """
     if ACTIVE_VARIANT["name"] is not None:
         raise RuntimeError("variants do not nest")
-    saved_a, saved_b = copy.deepcopy(ARCHETYPES), copy.deepcopy(BOOK)
+    saved_a, saved_b, saved_p = copy.deepcopy(ARCHETYPES), copy.deepcopy(BOOK), dict(TEAM_POPULARITY_PRIOR)
     try:
+        if team_popularity is not None:
+            TEAM_POPULARITY_PRIOR.clear()
+            TEAM_POPULARITY_PRIOR.update(team_popularity)
         for a in ARCHETYPES.values():
             a.update(copy.deepcopy(all_archetypes or {}))
         for arch, changes in (archetype_overrides or {}).items():
@@ -330,13 +334,15 @@ def variant(name, archetype_overrides=None, book_overrides=None, all_archetypes=
         BOOK.update(copy.deepcopy(book_overrides or {}))
         _validate_variant()
         ACTIVE_VARIANT.update(name=name, overrides={"all": all_archetypes, "archetypes": archetype_overrides,
-                                                    "book": book_overrides})
+                                                    "book": book_overrides, "team_popularity": team_popularity})
         yield
     finally:
         ARCHETYPES.clear()
         ARCHETYPES.update(saved_a)
         BOOK.clear()
         BOOK.update(saved_b)
+        TEAM_POPULARITY_PRIOR.clear()
+        TEAM_POPULARITY_PRIOR.update(saved_p)
         ACTIVE_VARIANT.update(name=None, overrides=None)
 
 
