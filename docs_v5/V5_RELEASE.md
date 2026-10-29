@@ -72,6 +72,34 @@
 - re-run the full suite on the final commit;
 - Friday's sanity review of the behaviour metrics.
 
+## 3b. Owner's additional requirements (Oct 29 evening)
+
+| # | Requirement | Status |
+|---|---|---|
+| 1 | Tuesday–Friday V5 wagers labelled reconstructed | **Done.** Every V5 run records its real opening time. Wagers simulated for moments before it are counted and labelled RECONSTRUCTED (run audit, each game on the Need tab, each Need Tracker snapshot's `ledger_basis`). Wagers after opening are prospective (simulated at the next build after their time). |
+| 2 | Only information available at placement | **Verified on real data:** 1,053 V5 wagers, every quote used was fetched at or before its offer time, which is at or before placement; 0 violations. The engine has no score input (NoFacts); week-open bankrolls use only settlements of earlier weeks (tested); no closing prices are read by the engine. |
+| 3 | V4 and V5 records separate | **Done.** The Need Tracker builds one record per engine (cohorts, all-Need, research subset, breakdowns) and never combines them; m4's TNF decision stays in the m4 record. |
+| 4 | Real Thursday settlement, reconciliation, replay, no duplicates | replay and no-duplicates pass; **settlement on the real TNF score: Friday** (results ingest ~9:23 am ET) |
+| 5 | Behavioural plausibility | §3c |
+| 6 | Need stability prominent | **Done.** A STABLE / FRAGILE NEED badge on every game in the Need tab and the Need Tracker, naming the assumptions that flip the side; also stored in each pre-kickoff snapshot (informational; cohort rules unchanged) |
+| 7 | Billed minutes, free-tier capacity, Cloudflare | **Friday** (GitHub job timings for October; Cloudflare deploy count) |
+| 8 | Rollback without deleting or corrupting V5 records | **Verified:** an m4 build on the V5 ledger re-activates m4; V5 runs are kept unchanged and shown as superseded |
+| 9 | Sunday slate complete, timestamped, Need accurate | **Verified now:** 12 Sunday games and 32 games overall have V5 wagers, all before kickoff; Need computed for every game with wagers; liability exact. Activity through Sunday accrues at each build until kickoff. |
+
+## 3c. Plausibility review: what is unsupported
+
+Measured this week (V5, real odds, data through Oct 29 10:00 UTC). These are outputs; nothing is tuned toward a target.
+
+| Measure | V5 | Comment |
+|---|---|---|
+| Weekly active customers | 51–52% (casual 44%, sharps 79%) | **Unsupported assumption** (engagement distributions). Published account studies show heavy-tailed activity, but no source gives a weekly NFL participation rate for a large US book. |
+| Wagers per betting customer | median 1, max 2–3 (mid-week) | will rise through Sunday; plausible shape, magnitude unverified |
+| **Sharp share of spread handle** | **NFL 44%, CFB 40%** (5–6% of tickets) | **Probably implausible for a large recreational book.** Real books limit sharp accounts heavily, and V5 r1 has no house limits beyond m4's flat $3,000 sharp maximum; sharps also participate most weeks. *Owner decision:* launch as is (labelled), or a V5 house-policy setting such as a lower sharp limit (a behaviour change needing approval; not applied). |
+| High-stakes recreational share | 41–45% of handle from ~5% of tickets | direction plausible (VIP concentration); size unverified |
+| Casual share | ~50% of tickets, ~8% of handle | consistent with small typical stakes ($20 median); unverified |
+| Top 10% of customers' share of handle | 83–85% | very concentrated; unverified |
+| Arrivals passing on price | 0.5% NFL, 2.6% CFB | price sensitivity is a cap, not a curve; deferred |
+
 ## 4. Rollback to the last known-good V4
 
 1. Set `ENGINE_VERSION` back to `"sportsbook_v4.m4"` (one line), or revert `v4-dev` to the pre-V5 commit `31c2ef3`. Push normally; no force-push.
