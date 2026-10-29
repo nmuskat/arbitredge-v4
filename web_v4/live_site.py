@@ -113,6 +113,46 @@ def build_snapshot(conn, ledger_rows, snaps, now, book_conn=None, bettors=10_000
     return _clean(out)
 
 
+def tracker_step(snap, snaps, now, need_dir=None, results_dir=None, need_out=None):
+    """Book Need Tracker: save this build's pre-kickoff snapshots, seal decisions for games that have
+    kicked off, grade decisions against final scores. Files go to need_out/<release tag>/ (new only)."""
+    from data_v4 import results as R
+    from sportsbook_v4 import need_tracker as NT
+    try:
+        raw = NT.load(need_dir, "need_*.json.gz")
+        decisions = NT.load(need_dir, "decisions_*.json.gz")
+        docs = R.load(results_dir)
+    except (NT.TrackerIntegrityError, ValueError) as e:
+        snap["need_tracker"] = {"status": "INTEGRITY_FAILED", "reason": str(e), "label": NT.LABEL}
+        return
+    fresh, games = [], []
+    for sport in SPORTS:
+        bk = snap["sports"][sport].get("book") or {}
+        recs = bk.pop("need_snapshots", None) or []
+        games += bk.pop("tracker_games", None) or []
+        if recs and need_out:
+            NT.write(os.path.join(need_out, NT.release_for(now)), NT.snapshot_name(sport, now), recs)
+        fresh += recs
+    new = NT.seal(games, raw + fresh, decisions, now)
+    if new and need_out:
+        NT.write(os.path.join(need_out, "v4-need-decisions"), NT.decisions_name(now), new)
+    latest_snap = max((x for x in snaps if x.get("teams")), key=lambda x: x["fetched_at"], default=None)
+    matcher = rankings.TeamMatcher(latest_snap["teams"]) if latest_snap else None
+    all_dec = decisions + new
+    res = R.match([{k: d[k] for k in ("sport", "event_id", "home", "away", "kickoff")} for d in all_dec], docs, matcher)
+    rep = NT.report(all_dec, res)
+    watch = {}
+    for r in fresh:      # latest snapshot per upcoming game (this build)
+        watch[(r["sport"], r["event_id"])] = r
+    snap["need_tracker"] = {
+        "status": "OK", "label": NT.LABEL, "version": NT.TRACKER_VERSION, "thresholds": NT.QUALIFY,
+        "snapshots_this_build": len(fresh), "decisions_sealed_this_build": len(new),
+        "decisions_total": len(all_dec), "results_files": len(docs),
+        "results_matched": len(res), "corrections": sum(1 for v in res.values() if v["corrected"]),
+        "upcoming": sorted(watch.values(), key=lambda r: (r["kickoff"], r["sport"])),
+        "report": rep}
+
+
 def rebuild_store(shards_dir, db_path=":memory:"):
     from analysis_v4.actions_analyze import rebuild
     paths = sorted(glob.glob(os.path.join(shards_dir, "**", "quotes_*.jsonl.gz"), recursive=True))
@@ -184,7 +224,7 @@ vertical-align:top}th{font-size:12px;color:var(--mute);font-weight:600}
 "use strict";
 const D=JSON.parse(document.getElementById("data").textContent);
 const SECTIONS=[["overview","Overview"],["odds","Odds Board"],["splits","Betting Splits"],["need","ArbitrEdge Need"],
-["sharp","Sharp Money"],["ev","EV Scanner"],["sims","SIMS"],["performance","Performance"],["health","Health"]];
+["tracker","Need Tracker"],["sharp","Sharp Money"],["ev","EV Scanner"],["sims","SIMS"],["performance","Performance"],["health","Health"]];
 const MK={spreads:"Spread",totals:"Total",h2h:"Moneyline"};const BMK={spread:"spreads",total:"totals",moneyline:"h2h"};
 const st={sport:"nfl",sec:"overview",game:null,f:{q:"",market:"",book:"",date:"",strength:"0",fresh:"all",unfiltered:false}};
 try{const s=localStorage.getItem("v4sport");if(s==="nfl"||s==="cfb")st.sport=s}catch(e){}
@@ -289,7 +329,7 @@ R.splits=()=>{const f=st.f,bk=S().book||{};const head=[card(el("h2",{},"Betting 
   out.push(card(el("div",{class:"game",on:{click:()=>openGame(g.event_id)}},el("h3",{},badge("MODELED"),gameHead(g)),el("div",{class:"mute small"},local(g.kickoff))),...rows))}
  return[...head,...(out.length?out:[card(el("p",{class:"mute"},"No modeled wagers on upcoming games yet. The synthetic book only trades while real prices are being collected."))])]};
 R.need=()=>{const bk=S().book||{};const head=[card(el("h2",{},"ArbitrEdge Need"),el("p",{class:"small"},badge("MODELED"),
- " The outcome the synthetic book's own liability most needs, computed exactly from its accepted wagers (P&L over every final score). It is a liability fact about simulated customers, NOT a prediction, NOT fading the public, and NOT a betting recommendation. Need is not betting value: it says nothing about whether a price is good. Estimated value lives only in the EV Scanner, as unvalidated paper candidates."),ledgerLine(),filters({}))];
+ " The outcome the synthetic book's own liability most needs, computed exactly from its accepted wagers (P&L over every final score). It is a liability fact about simulated customers, NOT a prediction, NOT fading the public, and NOT a betting recommendation. Need is not betting value: it says nothing about whether a price is good. Whether betting the Need has any advantage is being tested, on paper, in the Need Tracker tab. Estimated value lives only in the EV Scanner, as unvalidated paper candidates."),ledgerLine(),filters({}))];
  const b=bookBlock();if(b)return[...head,b];const out=[];
  for(const g of bookGames()){const n=g.need;if(!n){continue}const sp=n.spread||{},to=n.total||{},ml=n.moneyline||{};
   out.push(card(el("div",{class:"game",on:{click:()=>openGame(g.event_id)}},el("h3",{},gameHead(g))),
@@ -299,6 +339,50 @@ R.need=()=>{const bk=S().book||{};const head=[card(el("h2",{},"ArbitrEdge Need")
     ml.status?el("tr",{},el("td",{},"Moneyline"),el("td",{},ml.financial_need_side?el("b",{},ml.financial_need_side+" wins"):"balanced"),el("td",{class:"num"},ml.handle!=null?"handle $"+Math.round(ml.handle).toLocaleString():"")):null)),
    n.joint?el("p",{class:"small mute"},"Joint book: best $"+Math.round(n.joint.best_case.pnl).toLocaleString()+" at "+n.joint.best_case.home_score+"–"+n.joint.best_case.away_score+" (home–away), worst $"+Math.round(n.joint.worst_case.pnl).toLocaleString()+" at "+n.joint.worst_case.home_score+"–"+n.joint.worst_case.away_score+"."):null))}
  return[...head,...(out.length?out:[card(el("p",{class:"mute"},"No modeled liability yet on upcoming games."))])]};
+const money=x=>x==null?"–":(x<0?"−$":"$")+Math.abs(Math.round(x)).toLocaleString();
+const CHECK={weekly_handle_top_25pct:"top 25% weekly handle",min_100_spread_wagers:"≥100 spread wagers",no_bettor_over_25pct:"no bettor >25% of handle",
+ rec_handle_70pct_one_side:"≥70% rec handle one side",rec_ticket_majority_same_side:"rec ticket majority same side"};
+function sumLine(x){if(!x||!x.games)return el("p",{class:"mute"},"No games yet.");const r=x.roi;
+ return el("div",{},el("div",{class:"grid"},el("div",{class:"kpi"},el("b",{},x.record),"W-L-P ATS ("+x.graded+" graded)"),
+  el("div",{class:"kpi"},el("b",{},x.win_pct_ex_push==null?"–":pct(x.win_pct_ex_push)),"win % ex-push"+(x.win_pct_95ci?" (95% CI "+pct(x.win_pct_95ci[0])+"–"+pct(x.win_pct_95ci[1])+")":"")),
+  el("div",{class:"kpi"},el("b",{},r?pct(r.roi):"–"),"ROI at recorded price"+(r&&r.roi_95ci?" (95% CI "+pct(r.roi_95ci[0])+" to "+pct(r.roi_95ci[1])+")":"")),
+  el("div",{class:"kpi"},el("b",{},x.awaiting_result),"awaiting final score")),
+  r?el("p",{class:"small mute"},"Break-even at the recorded prices: "+pct(r.breakeven_win_pct)+" · "+r.units.toFixed(2)+" units on "+r.n+" priced picks"):null,
+  x.sample_warning?el("p",{class:"small"},badge("INSUFFICIENT SAMPLE","LOW")," "+x.sample_warning):null)}
+function brkTable(o,t){return el("div",{},el("h3",{},t),el("table",{},el("tbody",{},Object.entries(o||{}).map(([k,v])=>el("tr",{},el("td",{},k),el("td",{class:"num"},v.record+" ("+v.graded+" graded)"),
+ el("td",{class:"num"},v.win_pct_ex_push==null?"–":pct(v.win_pct_ex_push)),el("td",{class:"num"},v.roi?"ROI "+pct(v.roi.roi):"–"))))))}
+R.tracker=()=>{const T=D.need_tracker;const head=card(el("h2",{},badge("MODELED"),"Book Need Tracker"),
+ el("p",{class:"small"},badge("RESEARCH ONLY","WATCH")," Tests one question: when broad recreational betting pressure leaves our synthetic sportsbook with a large financial Need, does betting the side the book needs win often enough to beat the price? The Need comes from the book's actual simulated P&L (every accepted wager at its own line and price). The bettors are simulated with unvalidated assumptions, not real customers. Nothing here is a recommendation; every result is paper until it passes the evidence gate."),
+ T&&T.thresholds?el("p",{class:"small mute"},"Pre-registered experimental filter (not validated): "+Object.values(CHECK).join(" · ")+". A qualified game is a research pick only when fading the public is also the side the book needs; when they disagree it is flagged, not picked."):null);
+ if(!T)return[head,card(el("p",{class:"mute"},"Tracker not built yet."))];
+ if(T.status!=="OK")return[head,card(badge(T.status,"UNAVAILABLE")," "+(T.reason||""))];
+ const up=(T.upcoming||[]).filter(r=>r.sport===st.sport&&Date.parse(r.kickoff)>Date.now());
+ const rows=up.map(r=>{const p=r.pressure,q=r.qualification,n=r.need,pk=r.need_pick,pub=q.public_side;
+  const fails=Object.entries(q.checks).filter(([k,c])=>!c.pass).map(([k])=>CHECK[k]);const nm=sd=>sd==="home"?r.home:r.away;
+  return el("div",{class:"game",style:"padding:8px 0;border-bottom:1px solid var(--line)",on:{click:()=>openGame(r.event_id)}},
+   el("div",{},el("b",{},r.away+" @ "+r.home)," ",r.alignment==="ALIGNED"?badge("ALIGNED","INFO"):r.alignment==="DISAGREE"?badge("DISAGREE","LOW"):badge(r.alignment,"INFO")," ",q.qualified?badge("QUALIFIED","WATCH"):null),
+   el("div",{class:"mute small"},local(r.kickoff)+" · snapshot "+local(r.taken_at)),
+   el("div",{class:"small"},"Book needs: ",n.side?el("b",{},nm(n.side)+" "+ln(pk.line)+" "+am(pk.price)):"balanced",pk.price_book?" ("+pk.price_book+")":""," · liability "+money(n.liability)+" · swing "+money(n.swing)),
+   el("div",{class:"small"},"Recreational pressure: "+(pub?nm(pub)+" "+pct(p.sides[pub].rec_handle_share)+" of rec handle, "+pct(p.sides[pub].rec_ticket_share)+" of rec tickets":"–")+" · sharp "+pct(p.sharp_handle_share)+" of handle"),
+   el("div",{class:"small mute"},"Spread handle "+money(p.handle)+" (rank "+r.week_handle_rank+" of "+r.week_games+" this week) · "+p.wagers+" wagers from "+p.bettors+" bettors · largest bettor "+pct(p.largest_bettor_share)),
+   q.qualified?(r.research_pick?el("div",{class:"small"},el("b",{},"Research pick (paper): "+nm(r.research_pick))):el("div",{class:"small"},"Qualified, but the book's Need is on the public side: flagged, no pick")):
+    el("div",{class:"small mute"},"Not qualified: "+fails.join(", ")))});
+ const rep=T.report||{};const dis=rep.qualified_disagreements||{};
+ const graded=(rep.rows||[]).filter(x=>x.sport===st.sport).slice(-40).reverse();
+ return[head,card(el("h3",{},"Upcoming (final 24 h): latest pre-kickoff snapshot"),
+   el("p",{class:"small mute"},"Snapshots are saved immutably before kickoff; after kickoff the last one is sealed as the game's decision. "+T.snapshots_this_build+" snapshot(s) this build, "+T.decisions_total+" decisions sealed so far."),
+   rows.length?el("div",{},rows):el("p",{class:"mute"},"No games within 24 h of kickoff.")),
+  card(el("h3",{},"All Need sides (every sealed game, both sports)"),sumLine(rep.all_need)),
+  card(el("h3",{},"Research subset: qualified and aligned"),sumLine(rep.research_subset)),
+  card(el("h3",{},"Qualified but the Need disagrees with fading the public"),el("p",{class:"small"},dis.games+" game(s). "+(dis.note||"")),sumLine(dis.need_side)),
+  card(brkTable(rep.by_largest_bettor_share,"All Need sides by largest-bettor share"),brkTable(rep.by_week_handle_percentile,"By weekly handle percentile"),brkTable(rep.by_sport,"By sport")),
+  card(el("h3",{},"Sealed decisions ("+(st.sport==="nfl"?"NFL":"CFB")+")"),
+   el("p",{class:"small mute"},"Results: "+T.results_matched+" matched final scores from "+T.results_files+" file(s)"+(T.corrections?", "+T.corrections+" corrected":"")+". A game without a final score from its source stays awaiting; nothing is inferred."),
+   graded.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Need pick"),el("th",{},"Status"),el("th",{},"Result"))),
+    el("tbody",{},graded.map(x=>el("tr",{},el("td",{},x.away+" @ "+x.home,el("div",{class:"mute small"},local(x.kickoff))),
+     el("td",{class:"small"},x.need_side?((x.need_side==="home"?x.home:x.away)+" "+ln(x.line)+" "+am(x.price)):"–",el("div",{class:"mute"},(x.qualified?"qualified · ":"")+(x.alignment||""))),
+     el("td",{class:"small"},x.status,x.decision_status!=="OK"?el("div",{class:"mute"},x.decision_status):null),
+     el("td",{class:"small"},x.status==="GRADED"?(x.away_score+"–"+x.home_score+" (away–home): "+x.ats+(x.units!=null?", "+(x.units>=0?"+":"")+x.units.toFixed(2)+"u":"")):"–")))))):el("p",{class:"mute"},"No sealed decisions yet."))]};
 R.sharp=()=>{const f=st.f;const rows=(S().sharp||[]).filter(r=>cfbGate(r.top25)&&(!f.market||r.market===f.market)&&upcoming(r)&&gameMatch(r));
  const ev=rows.filter(r=>r.status!=="INSUFFICIENT EVIDENCE");
  return[freshBanner(),cfbBanner(),card(el("h2",{},badge("EXPERIMENTAL"),"Sharp money"),
@@ -385,6 +469,9 @@ def main(argv=None):
     ap.add_argument("--now", default=None, help="ISO time to build as of (default: current time)")
     ap.add_argument("--book-dir", default=None, help="persisted synthetic-book ledger files (release v4-book)")
     ap.add_argument("--book-out", default=None, help="where to write ledger files created by this build")
+    ap.add_argument("--need-dir", default=None, help="saved Need-tracker snapshots and decisions (v4-need*)")
+    ap.add_argument("--results-dir", default=None, help="saved final scores (release v4-results)")
+    ap.add_argument("--need-out", default=None, help="where to write Need-tracker files created by this build")
     a = ap.parse_args(argv)
     now = _epoch(a.now) if a.now else time.time()
     if a.live_db:
@@ -402,6 +489,8 @@ def main(argv=None):
                           book_out=a.book_out,
                           commit=(os.environ.get("GITHUB_SHA") or "")[:7] or None)
     snap["shards"] = n_shards
+    tracker_step(snap, load_rankings(a.rankings_dir), now, a.need_dir, a.results_dir, a.need_out)
+    snap = _clean(snap)
     bconn.close()
     with open(os.path.join(a.out, "site_snapshot.json"), "w") as fh:
         json.dump(snap, fh, separators=(",", ":"))

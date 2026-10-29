@@ -38,7 +38,7 @@ jobs:
         run: |
           python3 -m pip install --quiet "$(grep -i '^numpy==' requirements-v4.txt)"
           python3 -m web_v4.live_site --shards shards --ledger state/ledger.jsonl --rankings-dir rankings --out site \
-            --book-dir book --book-out book_new
+            --book-dir book --book-out book_new --need-dir need --results-dir results --need-out need_new
       - name: Save synthetic-book ledger (new files only, never overwritten)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,6 +49,20 @@ jobs:
           gh release view v4-book >/dev/null 2>&1 || gh release create v4-book --prerelease \
             --title "V4 synthetic-book ledger (do not delete)" --notes "Immutable MODELED wager files, one per advance of a weekly run."
           gh release upload v4-book "${files[@]}"
+      - name: Save Need-tracker records (new files only, never overwritten)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          for dir in need_new/*/; do
+            tag=$(basename "$dir")
+            [[ "$tag" =~ ^v4-need(-decisions|-[0-9]{4}-W[0-9]{2})$ ]] || { echo "unexpected release $tag"; exit 1; }
+            files=("$dir"*.json.gz)
+            (( ${#files[@]} )) || continue
+            gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --prerelease \
+              --title "V4 Book Need Tracker: $tag (do not delete)" --notes "Immutable MODELED research records."
+            gh release upload "$tag" "${files[@]}"
+          done
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

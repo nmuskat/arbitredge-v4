@@ -540,6 +540,8 @@ case "$1" in
   api)
     case "$*" in
       *releases/tags/v4-book*) [[ -n "${FAKE_BOOK:-}" ]] || exit 1; echo "${FAKE_BOOK%%:*}"; exit 0 ;;
+      *releases/tags/v4-need-decisions*) [[ -n "${FAKE_DEC:-}" ]] || exit 1; echo "${FAKE_DEC%%:*}"; exit 0 ;;
+      *releases/tags/v4-need-*|*releases/tags/v4-results*) exit 1 ;;
       *) printf '%s\n' $FAKE_TAGS; exit 0 ;;
     esac ;;
   release)
@@ -548,6 +550,7 @@ case "$1" in
       *v4-state*) [[ "${FAKE_NO_LEDGER:-0}" == 1 ]] && exit 1; mkdir -p "$last"; echo '{}' > "$last/ledger.jsonl" ;;
       *cfb-rankings*) [[ "${FAKE_RANKINGS:-0}" == 1 ]] || exit 1; mkdir -p "$last"; echo '{}' > "$last/rankings_x.json" ;;
       *v4-book*) mkdir -p "$last"; for i in $(seq 1 "${FAKE_BOOK##*:}"); do echo x > "$last/book_nfl_x_$i.json.gz"; done ;;
+      *v4-need-decisions*) mkdir -p "$last"; for i in $(seq 1 "${FAKE_DEC##*:}"); do echo x > "$last/decisions_$i.json.gz"; done ;;
       *) mkdir -p "$last"; echo x > "$last/quotes_1.jsonl.gz" ;;
     esac; exit 0 ;;
 esac
@@ -1138,3 +1141,33 @@ def test_hourly_rule_tolerates_github_start_jitter(since_min, want):
 def test_gap_tolerance_is_bounded():
     assert SP._gap_met(0.25 - 0.05, 0.25) and not SP._gap_met(0.25 - 0.051, 0.25)   # 15-min gap: 3 min
     assert SP._gap_met(4 - 0.25, 4) and not SP._gap_met(4 - 0.26, 4)               # long gaps: at most 15 min
+
+
+@pytest.mark.parametrize("dec,ok,n", [(None, True, 0), ("2:2", True, 2), ("3:2", False, None)])
+def test_site_inputs_need_tracker_decisions(tmp_path, dec, ok, n):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text(FAKE_GH_SITE)
+    (bin_dir / "gh").chmod(0o755)
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_TAGS="odds-data-2026-W44",
+               GITHUB_REPOSITORY="o/r", **({"FAKE_DEC": dec} if dec else {}))
+    r = subprocess.run(["bash", os.path.join(REPO, ".github", "scripts", "site_inputs.sh")], cwd=tmp_path, env=env,
+                       capture_output=True, text=True)
+    assert (r.returncode == 0) == ok, r.stdout + r.stderr
+    if ok:
+        assert len(list((tmp_path / "need").rglob("decisions_*.json.gz"))) == n
+
+
+def test_need_tracker_records_saved_before_publishing_never_overwritten_and_no_secrets():
+    steps = _yaml("site-build.yml")["jobs"]["build"]["steps"]
+    names = [s.get("name") for s in steps]
+    save = names.index("Save Need-tracker records (new files only, never overwritten)")
+    assert names.index("Build site") < save < names.index("Publish")
+    run = steps[save]["run"]
+    assert "--clobber" not in run and "gh release upload" in run
+    assert set(steps[save]["env"]) == {"GH_TOKEN"}
+    assert "--need-dir need --results-dir results --need-out need_new" in steps[names.index("Build site")]["run"]
+    analyze = _wf("odds-analyze.yml")
+    assert "secrets." not in analyze
+    nfl = [s for s in _yaml("odds-analyze.yml")["jobs"]["analyze"]["steps"] if "data_v4.results" in s.get("run", "")]
+    assert len(nfl) == 1 and "--sport nfl" in nfl[0]["run"] and "--clobber" not in nfl[0]["run"]

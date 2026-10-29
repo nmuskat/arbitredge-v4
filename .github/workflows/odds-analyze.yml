@@ -1,4 +1,5 @@
-# ArbitrEdge V4 -- daily line-shopping analysis of all collected odds (no API calls, no secret).
+# ArbitrEdge V4 -- daily line-shopping analysis of all collected odds, plus NFL final scores for the
+# Book Need Tracker from nflverse (public, no key). No Odds API calls, no secret.
 name: odds-analyze
 on:
   schedule:
@@ -38,3 +39,16 @@ jobs:
         run: |
           gh release view v4-state >/dev/null 2>&1 || gh release create v4-state --prerelease --title "V4 state (do not delete)" --notes "Managed by workflows."
           gh release upload v4-state report/line_shop_latest.json report/line_shop_summary.md --clobber
+      - name: NFL final scores (nflverse; saved only when they changed)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p results_old results_new
+          gh release download v4-results -p 'results_nfl_*.json.gz' -D results_old 2>/dev/null || true
+          python3 -m data_v4.results --sport nfl --existing results_old --out results_new
+          shopt -s nullglob
+          files=(results_new/results_*.json.gz)
+          (( ${#files[@]} )) || exit 0
+          gh release view v4-results >/dev/null 2>&1 || gh release create v4-results --prerelease \
+            --title "V4 final scores (do not delete)" --notes "Immutable final-score files for the Book Need Tracker."
+          gh release upload v4-results "${files[@]}"

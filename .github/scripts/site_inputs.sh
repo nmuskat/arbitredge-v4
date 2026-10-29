@@ -23,4 +23,20 @@ if n_book=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v4-book" --jq '[.as
 else
   echo "no synthetic-book ledger yet: this build starts it"
 fi
-echo "shards: $(find shards -name 'quotes_*.jsonl.gz' | wc -l), rankings snapshots: $(find rankings -name 'rankings_*.json' | wc -l), ledger files: $(find book -name 'book_*.json.gz' | wc -l)"
+# Book Need Tracker (immutable): raw snapshots of this and last ISO week, every sealed decision, final scores
+mkdir -p need results
+fetch_all() {   # $1 = release tag, $2 = asset pattern, $3 = destination; absent release = nothing yet
+  local n got
+  n=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/$1" --jq "[.assets[] | select(.name | test(\"$4\"))] | length" 2>/dev/null) || return 0
+  [[ "$n" =~ ^[0-9]+$ ]] || { echo "$1: unexpected asset count '$n'" >&2; exit 1; }
+  (( n > 0 )) || return 0
+  gh release download "$1" -p "$2" -D "$3/$1"
+  got=$(find "$3/$1" -name "$2" | wc -l)
+  (( got == n )) || { echo "$1 incomplete: $got of $n files" >&2; exit 1; }
+}
+for wk in "$(date -u +%G-W%V)" "$(date -u -d '7 days ago' +%G-W%V)"; do
+  fetch_all "v4-need-$wk" 'need_*.json.gz' need '^need_'
+done
+fetch_all v4-need-decisions 'decisions_*.json.gz' need '^decisions_'
+fetch_all v4-results 'results_*.json.gz' results '^results_'
+echo "shards: $(find shards -name 'quotes_*.jsonl.gz' | wc -l), rankings snapshots: $(find rankings -name 'rankings_*.json' | wc -l), ledger files: $(find book -name 'book_*.json.gz' | wc -l), need files: $(find need -name '*.json.gz' | wc -l), results files: $(find results -name 'results_*' | wc -l)"

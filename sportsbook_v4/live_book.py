@@ -45,7 +45,8 @@ from sportsbook_v4 import ENGINE_VERSION, params as P, persist
 from sportsbook_v4.engine import GameSpec, RunMismatch, SlateSpec, advance, create_run, load_run
 from sportsbook_v4.facts import NoFacts
 from sportsbook_v4.ledger_read import fetch_wagers
-from sportsbook_v4.market import MarketV4Source, profit_on_win
+from sportsbook_v4 import need_tracker
+from sportsbook_v4.market import MarketV4Source, profit_on_win, representative_offer
 from sportsbook_v4.population import ensure_population
 from sportsbook_v4.schema import ensure_schema
 from sportsbook_v4.settlement import book_need_all
@@ -295,6 +296,27 @@ def standalone_ids(all_week_games):
     return {e for e, k in ks if not any(o != e and abs(k2 - k) < STANDALONE_GAP_S for o, k2 in ks)}
 
 
+# Game-window classification v2, for weekly runs that OPEN on or after this time only (runs already open
+# keep the flags they were opened with, so no accepted wager or replay changes):
+#   NFL  national_tv = standalone (TNF / SNF / MNF / international / any lone window: exclusive national
+#        broadcasts). Regional Sunday games stay regional.
+#   CFB  primetime = standalone OR kickoff 7:00 pm - 11:59 pm ET (Saturday-night games). National-TV
+#        assignments are not in the data, so national_tv stays False rather than being guessed.
+CLASSIFICATION_V2_FROM = "2026-11-03T12:00:00Z"
+
+
+def classify(sport, kickoff, standalone, ws):
+    """(standalone/primetime flag, national_tv flag) used to open a run's GameSpec."""
+    if ws < to_epoch(CLASSIFICATION_V2_FROM):
+        return standalone, False
+    if sport == "nfl":
+        return standalone, standalone
+    import datetime
+    from zoneinfo import ZoneInfo
+    et_hour = datetime.datetime.fromtimestamp(kickoff, ZoneInfo("America/New_York")).hour
+    return standalone or et_hour >= 19, False
+
+
 def open_run(book_conn, live_conn, sport, ws, we, games, team_universe, bettors=10_000, matcher=None,
              standalone=frozenset()):
     pid = ensure_population(book_conn, sport, team_universe, bettor_count=bettors)
@@ -303,7 +325,8 @@ def open_run(book_conn, live_conn, sport, ws, we, games, team_universe, bettors=
     slate = SlateSpec(sport, slate_id(sport, ws), from_epoch(ws), from_epoch(we),
                       tuple(GameSpec(g["event_id"], _team_key(sport, g["home"], matcher),
                                      _team_key(sport, g["away"], matcher), from_epoch(g["kickoff"]),
-                                     standalone=g["event_id"] in standalone) for g in games))
+                                     *classify(sport, g["kickoff"], g["event_id"] in standalone, ws))
+                            for g in games))
     return create_run(book_conn, pid, slate, _market(live_conn, sport))
 
 
@@ -374,6 +397,18 @@ def _by_game(wagers):
     out = {}
     for w in wagers:
         out.setdefault(w["canonical_game_id"], []).append(w)
+    return out
+
+
+def _tracker_games(book_conn, live_conn, sport):
+    """Every game the current model's weekly runs carried (the Need tracker's universe)."""
+    out = []
+    for rid, in book_conn.execute("SELECT run_id FROM v4_run WHERE sport=? AND engine_version=? AND params_hash=?",
+                                  (sport, ENGINE_VERSION, P.params_hash())).fetchall():
+        for g in load_run(book_conn, rid)["slate"].games:
+            home, away = _names(live_conn, g.canonical_game_id)
+            out.append({"sport": sport, "event_id": g.canonical_game_id, "home": home, "away": away,
+                        "kickoff": _iso(to_epoch(g.commence_time))})
     return out
 
 
@@ -479,6 +514,12 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
             mem.close()
         block["sensitivity"] = {"variants": sorted(variants or {}),
                                 "method": "min/max of each split across the baseline and every variant"}
+        # Need tracker: immutable pre-kickoff snapshots of every game in its final SNAPSHOT_HORIZON_S
+        wm_t = to_epoch(wm)
+        week_handles = {g.canonical_game_id: math.fsum(w["stake"] for w in per_game.get(g.canonical_game_id, [])
+                                                       if w["market"] == "spread") for g in run["slate"].games}
+        block["need_snapshots"], block["tracker_games"] = [], _tracker_games(book_conn, live_conn, sport)
+        mkt = _market(live_conn, sport)
         for g in sorted(run["slate"].games, key=lambda x: (to_epoch(x.commence_time), x.canonical_game_id)):
             gid = g.canonical_game_id
             home, away = _names(live_conn, gid)
@@ -491,6 +532,16 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
             if rk is None and sport == "cfb" and rankings_snapshots:
                 rk = rankings.top25_status(home, away, to_epoch(g.commence_time),
                                            [x for x in rankings_snapshots if x["fetched_at"] <= L])
+            kick = to_epoch(g.commence_time)
+            if wm_t < kick <= wm_t + need_tracker.SNAPSHOT_HORIZON_S and T < kick:
+                block["need_snapshots"].append(need_tracker.snapshot(
+                    sport=sport, run=block["audit"],
+                    game={"event_id": gid, "home": home, "away": away, "kickoff": _iso(kick), "rankings": rk},
+                    spread_wagers=[w for w in ws_ if w["market"] == "spread"], week_handles=week_handles,
+                    offer=representative_offer(mkt.latest_quotes(gid, wm_t)),
+                    reference={"home_spread": ref_spread, "as_of": _iso(ref_at),
+                               "basis": "observed consensus at last collection"},
+                    taken_at=wm_t, built_at=T))
             block["games"].append({
                 "event_id": gid, "home": home, "away": away, "kickoff": _iso(to_epoch(g.commence_time)), "rankings": rk,
                 "reference": {"home_spread": ref_spread, "total": ref_total, "as_of": _iso(ref_at),

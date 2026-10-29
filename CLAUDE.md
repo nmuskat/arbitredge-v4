@@ -10,7 +10,7 @@ The owner (nmuskat) has no coding background. You do the engineering, testing an
    - Never read, print, log or commit it. Never call the Odds API outside the gate.
    - Never add a workflow, step or trigger that exposes it (pull_request triggers, third-party actions, debug printing).
    - **Never start `odds-verify` or `odds-collect` yourself, and never change the `V4_LIVE` variable.** Live activation is the owner's decision.
-2b. **CollegeFootballData key** (secret `CFBD_API_KEY`, free tier): only `.github/workflows/cfb-rankings.yml` may use it, through `data_v4/rankings_run.py`. It is switched on by the owner's variable `CFBD_ENABLED`. Never print it, never change that variable yourself.
+2b. **CollegeFootballData key** (secret `CFBD_API_KEY`, free tier): only `.github/workflows/cfb-rankings.yml` may use it, through `data_v4/rankings_run.py` (AP poll) and `data_v4/results.py` (CFB final scores for the Need tracker, owner-approved 2026-10-29, 1–2 calls per run). It is switched on by the owner's variable `CFBD_ENABLED`. Never print it, never change that variable yourself.
 2c. **Cloudflare Pages token** (secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`; scope: Account → Cloudflare Pages → Edit): used only by the deploy step of `.github/workflows/site-build.yml` through `.github/scripts/pages_deploy.sh`. Callers pass exactly these two secrets, never `secrets: inherit`. Deploys are switched on by the owner's variable `CF_PAGES_DEPLOY`; never change it yourself. Never weaken the Access check that refuses to deploy unless `<project>.pages.dev` and `*.<project>.pages.dev` both require Cloudflare Access login. See `docs_v4/CLOUDFLARE_PAGES.md`.
 3. **Credits** (shared 20,000/month subscription with V3):
    - The owner approved a V4 cap of 6,000/month, starting with a test budget of 500/month (60/day, 10 per request).
@@ -31,6 +31,7 @@ The owner (nmuskat) has no coding background. You do the engineering, testing an
 | Credit ledger and state | release `v4-state`: `ledger.jsonl`, `collector_state.json` |
 | Daily analysis | `.github/workflows/odds-analyze.yml` → `analysis_v4/actions_analyze.py` → `v4-state/line_shop_latest.json` |
 | Dashboard | `.github/workflows/site-build.yml` (after runs that saved new odds, paced by `schedule_policy.site_due`: 2 h quiet, 45 min in the final 6 h, always after closes, monthly limit 440) → release `v4-site` + owner-only Cloudflare Pages |
+| Book Need Tracker (MODELED, research only) | `sportsbook_v4/need_tracker.py`, run by site-build: pre-kickoff snapshots `v4-need-YYYY-Www/need_*.json.gz`, sealed decisions `v4-need-decisions/decisions_*.json.gz`, final scores `v4-results/results_*.json.gz` (NFL from `odds-analyze`, CFB from `cfb-rankings`). All immutable; never delete or overwrite |
 | Synthetic-book ledger (MODELED) | release `v4-book`: `book_<sport>_<week>_<run>_<seq>.json.gz`, one immutable file per advance of a weekly run; never delete or overwrite (`sportsbook_v4/persist.py`) |
 
 ## Current priority: does line shopping produce positive EV on real odds?

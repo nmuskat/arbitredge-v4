@@ -1,4 +1,5 @@
-# ArbitrEdge V4 -- weekly AP Top-25 snapshot from CollegeFootballData (3 free-tier calls per run).
+# ArbitrEdge V4 -- weekly AP Top-25 snapshot (3 free-tier calls) and CFB final scores for the Book
+# Need Tracker (1 call; 2 in bowl season) from CollegeFootballData. Owner-approved 2026-10-29.
 # OFF until the owner adds secret CFBD_API_KEY and sets repository variable CFBD_ENABLED = on.
 # No Odds API credits are used.
 name: cfb-rankings
@@ -29,12 +30,28 @@ jobs:
         env:
           CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
         run: python3 -m data_v4.rankings_run --out rankings
+      - name: CFB final scores (saved only when they changed)
+        continue-on-error: true     # a scores problem never blocks the AP poll snapshot
+        env:
+          CFBD_API_KEY: ${{ secrets.CFBD_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p results_old results_new
+          gh release download v4-results -p 'results_cfb_*.json.gz' -D results_old 2>/dev/null || true
+          python3 -m data_v4.results --sport cfb --existing results_old --out results_new
       - name: Save snapshot
         id: save
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           shopt -s nullglob
+          res=(results_new/results_*.json.gz)
+          if (( ${#res[@]} )); then
+            gh release view v4-results >/dev/null 2>&1 || gh release create v4-results --prerelease \
+              --title "V4 final scores (do not delete)" --notes "Immutable final-score files for the Book Need Tracker."
+            gh release upload v4-results "${res[@]}"
+            echo "saved=true" >> "$GITHUB_OUTPUT"
+          fi
           files=(rankings/rankings_*.json)
           (( ${#files[@]} )) || exit 0
           gh release view cfb-rankings >/dev/null 2>&1 || gh release create cfb-rankings --prerelease \
