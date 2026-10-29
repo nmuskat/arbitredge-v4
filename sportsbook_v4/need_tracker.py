@@ -29,6 +29,7 @@ import math
 import os
 import time
 
+from sportsbook_v4 import cohorts as C
 from sportsbook_v4.grading import ats, binom_two_sided, wilson
 from sportsbook_v4.market import implied_probability, profit_on_win
 from sportsbook_v4.params import ARCHETYPES
@@ -92,7 +93,8 @@ def pressure(spread_wagers):
 
     out = {"wagers": len(ws), "bettors": len(by_bettor), "handle": round(handle, 2),
            "rec_wagers": len(rec), "rec_handle": round(rec_h, 2),
-           "sharp_wagers": len(sh), "sharp_handle": round(handle - rec_h, 2),
+           "sharp_wagers": len(sh), "sharp_bettors": len({w["bettor_index"] for w in sh}),
+           "sharp_handle": round(handle - rec_h, 2),
            "sharp_handle_share": _r((handle - rec_h) / handle) if handle else None,
            "largest_bettor_handle": round(top, 2),
            "largest_bettor_share": _r(top / handle) if handle else None,
@@ -183,6 +185,11 @@ def snapshot(*, sport, run, game, spread_wagers, week_handles, offer, reference,
         "research_pick": nd["side"] if (q["qualified"] and al == "ALIGNED") else None,
         "reference": reference, "thresholds": QUALIFY,
     }
+    # pre-registered cohorts: evaluated NOW, stored in the immutable record (never re-evaluated later)
+    rec["cohorts"] = None
+    if taken_at >= to_epoch(C.REGISTERED_AT):
+        rec["cohorts"] = {"registry_hash": C.REGISTRY_HASH, "registered_at": C.REGISTERED_AT,
+                          "evaluation": C.evaluate(rec)}
     rec = _norm(rec)
     rec["record_hash"] = json_hash(rec)
     return rec
@@ -330,6 +337,101 @@ def summarize(rows):
     return out
 
 
+def _side_offer(offer, side):
+    if not offer or side not in ("home", "away") or offer.get("home_spread") is None:
+        return None, None
+    return (offer["home_spread"] if side == "home" else -offer["home_spread"],
+            offer["home_price"] if side == "home" else offer["away_price"])
+
+
+def clv(side, line, price, close):
+    """Closing-line value against the OBSERVED closing consensus (asof.observed_close of spreads):
+    points = recorded line - closing line for the same side; prob = devigged closing probability minus the
+    recorded price's implied probability, only when the recorded line equals the closing line."""
+    if not close or close.get("line") is None or line is None:
+        return {"close": "NOT_OBSERVED"}
+    cl = close["line"] if side == "home" else -close["line"]
+    out = {"close": "OBSERVED", "closing_line": cl, "clv_points": round(line - cl, 2)}
+    if price is not None and line == cl and close.get("fair"):
+        out["clv_prob"] = round(close["fair"][side] - implied_probability(price), 4)
+    return out
+
+
+def grade_cohort(decision, cid, result, close):
+    s = decision.get("snapshot") or {}
+    ev = ((s.get("cohorts") or {}).get("evaluation") or {}).get(cid)
+    if not ev or not ev["eligible"]:
+        return None
+    side = ev["pick_side"]
+    line, price = _side_offer((s.get("need_pick") or {}).get("offer"), side)
+    out = {"sport": decision["sport"], "event_id": decision["event_id"], "home": decision["home"],
+           "away": decision["away"], "kickoff": decision["kickoff"], "cohort": cid, "pick_side": side,
+           "line": line, "price": price, "pick_is_need_side": ev.get("pick_is_need_side"),
+           "decision_status": decision["status"], **clv(side, line, price, close)}
+    if line is None:
+        out["status"] = "NO_PRICE"
+    elif result is None:
+        out["status"] = "AWAITING_RESULT"
+    else:
+        out["status"] = "GRADED"
+        out["ats"] = ats(side, line, result["home_score"], result["away_score"])
+        if price is not None:
+            out["units"] = profit_on_win(1.0, price) if out["ats"] == "W" else -1.0 if out["ats"] == "L" else 0.0
+    return out
+
+
+def _p_edge(rows):
+    """One-sided exact binomial p-value of the win count against the break-even rate of the recorded prices."""
+    g = [r for r in rows if r["status"] == "GRADED" and r["ats"] != "P" and r.get("price") is not None]
+    if not g:
+        return None
+    w, n = sum(r["ats"] == "W" for r in g), len(g)
+    p0 = math.fsum(implied_probability(r["price"]) for r in g) / n
+    return min(1.0, math.fsum(math.comb(n, k) * p0 ** k * (1 - p0) ** (n - k) for k in range(w, n + 1)))
+
+
+def holm(pvals):
+    """Holm-Bonferroni adjusted p-values for {name: p or None}."""
+    items = sorted(((p, k) for k, p in pvals.items() if p is not None))
+    m, out, run = len(items), {k: None for k in pvals}, 0.0
+    for i, (p, k) in enumerate(items):
+        run = max(run, min(1.0, (m - i) * p))
+        out[k] = round(run, 4)
+    return out
+
+
+def clv_summary(rows):
+    obs = [r for r in rows if r.get("close") == "OBSERVED"]
+    pr = [r["clv_prob"] for r in obs if "clv_prob" in r]
+    pts = [r["clv_points"] for r in obs]
+    out = {"picks": len(rows), "close_observed": len(obs), "close_observed_share": _r(len(obs) / len(rows)) if rows else None,
+           "mean_clv_points": _r(math.fsum(pts) / len(pts)) if pts else None,
+           "share_beating_close_points": _r(sum(x > 0 for x in pts) / len(pts)) if pts else None,
+           "same_line_n": len(pr), "mean_clv_prob": _r(math.fsum(pr) / len(pr)) if pr else None}
+    if len(pr) > 1:
+        m = math.fsum(pr) / len(pr)
+        sd = math.sqrt(math.fsum((x - m) ** 2 for x in pr) / (len(pr) - 1))
+        out["clv_prob_95ci"] = [_r(m - 1.96 * sd / math.sqrt(len(pr))), _r(m + 1.96 * sd / math.sqrt(len(pr)))]
+    return out
+
+
+def cohort_report(decisions, results, closes):
+    rows = {cid: [] for cid in C.COHORTS}
+    for d in decisions:
+        for cid in C.COHORTS:
+            r = grade_cohort(d, cid, results.get((d["sport"], d["event_id"])), closes.get((d["sport"], d["event_id"])))
+            if r:
+                rows[cid].append(r)
+    p_raw = {cid: _p_edge(v) for cid, v in rows.items()}
+    p_adj = holm(p_raw)
+    return {"registry_hash": C.REGISTRY_HASH, "registered_at": C.REGISTERED_AT,
+            "multiple_testing": "Holm-Bonferroni across all registered cohorts; only C1 is primary",
+            "cohorts": {cid: {**{k: v for k, v in C.COHORTS[cid].items() if k != "rules"}, "rules": C.COHORTS[cid]["rules"],
+                              "summary": summarize(v), "clv": clv_summary(v),
+                              "p_edge_one_sided": _r(p_raw[cid]), "p_edge_holm": p_adj[cid], "rows": v}
+                        for cid, v in rows.items()}}
+
+
 def _bucket_share(x):
     if x is None:
         return "unknown"
@@ -342,12 +444,13 @@ def _bucket_pct(x):
     return "top 25%" if x > 0.75 else "50-75%" if x > 0.5 else "bottom 50%"
 
 
-def report(decisions, results):
-    """results: {(sport, event_id): {home_score, away_score, ...}}"""
+def report(decisions, results, closes=None):
+    """results: {(sport, event_id): {home_score, away_score, ...}}; closes: observed closing spread consensus."""
     rows = [grade(d, results.get((d["sport"], d["event_id"]))) for d in decisions]
     research = [r for r in rows if r["research_pick"]]
     disagree = [r for r in rows if r["qualified"] and r["alignment"] == "DISAGREE"]
     out = {"version": TRACKER_VERSION, "label": LABEL, "thresholds": QUALIFY,
+           "cohorts": cohort_report(decisions, results, closes or {}),
            "all_need": summarize(rows), "research_subset": summarize(research),
            "qualified_disagreements": {"games": len(disagree),
                                        "note": "qualified public pressure, but the book's actual Need is on the "

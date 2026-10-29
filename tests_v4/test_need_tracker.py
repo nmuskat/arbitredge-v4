@@ -335,3 +335,86 @@ def test_historical_sensitivity_tool_runs_and_labels_itself(tmp_path):
     nh.main(["--games", str(tmp_path / "games.csv"), "--seasons", "2024-2024", "--bettors", "400", "--out", str(out)])
     doc = json.load(open(out))
     assert doc["label"].startswith("EXPLORATORY SYNTHETIC BACKTEST")
+
+
+# ------------------------------------------------------------------ pre-registered cohorts
+
+from sportsbook_v4 import cohorts as CO  # noqa: E402
+
+
+def test_cohort_registry_is_frozen():
+    # changing ANY rule must create a new cohort id with a new registered_at, never edit these
+    assert CO.REGISTRY_HASH == "131cfb6b0819b1393e9df0163c4dfdce307b9abe0c6ef5790e1284fd4685342a"
+    assert CO.REGISTERED_AT == "2026-10-29T20:00:00Z"
+    assert [c["role"] for c in CO.COHORTS.values()] == ["PRIMARY", "EXPLORATORY", "EXPLORATORY", "EXPLORATORY"]
+
+
+def test_cohorts_apply_only_to_snapshots_taken_after_registration():
+    early = NT.snapshot(sport="nfl", run=RUN, game=dict(GAME, kickoff="2026-10-29T21:00:00Z"),
+                        spread_wagers=public_home(), week_handles={"g1": 1e9}, offer=OFFER, reference={},
+                        taken_at=to_epoch("2026-10-29T19:59:00Z"), built_at=to_epoch("2026-10-29T19:59:30Z"))
+    assert early["cohorts"] is None
+    s = snap(public_home())
+    assert s["cohorts"]["registry_hash"] == CO.REGISTRY_HASH and set(s["cohorts"]["evaluation"]) == set(CO.COHORTS)
+
+
+def test_c1_is_exactly_the_original_research_pick():
+    for ws, h in ((public_home(), None), (public_home(80), None), (public_home(120, 0.65), None)):
+        s = snap(ws)
+        e = s["cohorts"]["evaluation"]["C1_selective_need"]
+        assert e["pick_side"] == s["research_pick"]
+
+
+def test_c2_high_handle_takes_the_need_even_when_it_disagrees_with_fading():
+    ws = public_home(120, 0.8, stake=10.0) + [w(900 + i, "away", 225.0, "SHARP") for i in range(4)]
+    s = snap(ws, handles={"g1": 99999.0, "g2": 1.0, "g3": 1.0, "g4": 1.0})
+    ev = s["cohorts"]["evaluation"]
+    assert s["alignment"] == "DISAGREE"
+    assert ev["C2_high_handle_need"]["pick_side"] == "home" == s["need"]["side"]
+    assert not ev["C1_selective_need"]["eligible"] and not ev["C3_broad_rec_pressure_need"]["eligible"]
+    assert ev["C4_rec_vs_sharp_disagreement"]["pick_side"] == "away"                 # with the sharps
+    assert ev["C4_rec_vs_sharp_disagreement"]["pick_is_need_side"] is False
+    assert not snap(ws, handles={"g1": 1.0, "g2": 9.0, "g3": 9.0, "g4": 9.0})["cohorts"]["evaluation"][
+        "C2_high_handle_need"]["eligible"]                                             # not top 25%
+
+
+@pytest.mark.parametrize("frac,ok", [(0.60, True), (0.58, False)])
+def test_c3_broad_pressure_boundary_without_handle_rank(frac, ok):
+    s = snap(public_home(120, frac), handles={"g1": 1.0, "g2": 9e9, "g3": 9e9, "g4": 9e9})   # bottom of the week
+    assert s["cohorts"]["evaluation"]["C3_broad_rec_pressure_need"]["eligible"] == ok
+    assert not s["cohorts"]["evaluation"]["C1_selective_need"]["eligible"]
+
+
+def test_c4_needs_two_sharp_bettors_and_ten_percent_sharp_money():
+    one = public_home(120, 0.8, stake=10.0) + [w(900, "away", 300.0, "SHARP")]
+    assert "min_2_sharp_bettors" in snap(one)["cohorts"]["evaluation"]["C4_rec_vs_sharp_disagreement"]["failed"]
+    small = public_home(120, 0.8, stake=10.0) + [w(900 + i, "away", 20.0, "SHARP") for i in range(3)]
+    assert "sharp_10pct_of_handle" in snap(small)["cohorts"]["evaluation"]["C4_rec_vs_sharp_disagreement"]["failed"]
+
+
+def test_cohort_grading_uses_the_recorded_offer_for_the_picked_side_and_clv():
+    ws = public_home(120, 0.8, stake=10.0) + [w(900 + i, "away", 225.0, "SHARP") for i in range(4)]
+    d = NT.seal([g()], [snap(ws, handles={"g1": 99999.0, "g2": 1.0, "g3": 1.0, "g4": 1.0})], [], K + 60)[0]
+    res = {"home_score": 20, "away_score": 21}
+    close = {"line": -2.5, "fair": {"home": 0.5, "away": 0.5}}
+    c4 = NT.grade_cohort(d, "C4_rec_vs_sharp_disagreement", res, close)
+    assert (c4["pick_side"], c4["line"], c4["price"]) == ("away", 3.0, -108) and c4["ats"] == "W"
+    assert c4["clv_points"] == 0.5 and "clv_prob" not in c4                         # different number
+    c2 = NT.grade_cohort(d, "C2_high_handle_need", res, {"line": -3.0, "fair": {"home": 0.52, "away": 0.48}})
+    assert (c2["pick_side"], c2["line"], c2["price"]) == ("home", -3.0, -112) and c2["ats"] == "L"
+    assert c2["clv_points"] == 0.0 and c2["clv_prob"] == pytest.approx(0.52 - 112 / 212, abs=1e-4)
+    assert NT.grade_cohort(d, "C1_selective_need", res, close) is None
+    assert NT.grade_cohort(d, "C2_high_handle_need", res, None)["close"] == "NOT_OBSERVED"
+
+
+def test_selections_are_read_from_the_stored_snapshot_never_recomputed(monkeypatch):
+    d = NT.seal([g()], [snap(public_home())], [], K + 60)[0]
+    monkeypatch.setattr(CO, "evaluate", lambda *_: (_ for _ in ()).throw(AssertionError("re-evaluated")))
+    rep = NT.cohort_report([d], {("nfl", "g1"): {"home_score": 20, "away_score": 21}}, {})
+    assert rep["cohorts"]["C1_selective_need"]["summary"]["record"] == "1-0-0"
+
+
+def test_holm_adjustment():
+    adj = NT.holm({"a": 0.01, "b": 0.04, "c": 0.03, "d": None})
+    assert adj == {"a": 0.03, "b": 0.06, "c": 0.06, "d": None}
+    assert NT._p_edge([{"status": "GRADED", "ats": "W", "price": -110}] * 3) == pytest.approx((110 / 210) ** 3)

@@ -113,7 +113,7 @@ def build_snapshot(conn, ledger_rows, snaps, now, book_conn=None, bettors=10_000
     return _clean(out)
 
 
-def tracker_step(snap, snaps, now, need_dir=None, results_dir=None, need_out=None):
+def tracker_step(snap, snaps, now, need_dir=None, results_dir=None, need_out=None, conn=None):
     """Book Need Tracker: save this build's pre-kickoff snapshots, seal decisions for games that have
     kicked off, grade decisions against final scores. Files go to need_out/<release tag>/ (new only)."""
     from data_v4 import results as R
@@ -140,7 +140,13 @@ def tracker_step(snap, snaps, now, need_dir=None, results_dir=None, need_out=Non
     matcher = rankings.TeamMatcher(latest_snap["teams"]) if latest_snap else None
     all_dec = decisions + new
     res = R.match([{k: d[k] for k in ("sport", "event_id", "home", "away", "kickoff")} for d in all_dec], docs, matcher)
-    rep = NT.report(all_dec, res)
+    from market_v4 import asof
+    closes = {}
+    for d in all_dec if conn is not None else ():
+        st, _why = asof.observed_close(conn, d["event_id"], "spreads")
+        if st:
+            closes[(d["sport"], d["event_id"])] = {"line": st["line"], "fair": st["fair"]}
+    rep = NT.report(all_dec, res, closes)
     watch = {}
     for r in fresh:      # latest snapshot per upcoming game (this build)
         watch[(r["sport"], r["event_id"])] = r
@@ -351,6 +357,16 @@ function sumLine(x){if(!x||!x.games)return el("p",{class:"mute"},"No games yet."
   x.sample_warning?el("p",{class:"small"},badge("INSUFFICIENT SAMPLE","LOW")," "+x.sample_warning):null)}
 function brkTable(o,t){return el("div",{},el("h3",{},t),el("table",{},el("tbody",{},Object.entries(o||{}).map(([k,v])=>el("tr",{},el("td",{},k),el("td",{class:"num"},v.record+" ("+v.graded+" graded)"),
  el("td",{class:"num"},v.win_pct_ex_push==null?"–":pct(v.win_pct_ex_push)),el("td",{class:"num"},v.roi?"ROI "+pct(v.roi.roi):"–"))))))}
+function cohortCard(c){if(!c)return null;
+ return card(el("h3",{},"Pre-registered paper cohorts"),el("p",{class:"small"},"Rules were frozen at "+local(c.registered_at)+" (registry "+c.registry_hash.slice(0,12)+"…) and are evaluated when each snapshot is taken, so a selection can never change after a result is known. C1 is the primary strategy; C2–C4 are exploratory comparisons. P-values test the win rate against the break-even of the recorded prices and are Holm-adjusted across all four cohorts."),
+  ...Object.entries(c.cohorts).map(([id,x])=>{const sm=x.summary,cl=x.clv,r=sm.roi;
+   return el("div",{style:"padding:8px 0;border-top:1px solid var(--line)"},el("div",{},el("b",{},id.split("_")[0]+" "+x.name)," ",badge(x.role,x.role==="PRIMARY"?"WATCH":"INFO")),
+    el("div",{class:"small mute"},"Pick: "+x.pick+". Rules: "+Object.entries(x.rules).map(([k,v])=>k.replace(/_/g," ")+" "+v).join("; ")),
+    el("div",{class:"small"},"ATS "+sm.record+" ("+sm.graded+" graded, "+sm.awaiting_result+" awaiting)"+(sm.win_pct_ex_push!=null?" · win "+pct(sm.win_pct_ex_push)+" (95% CI "+pct(sm.win_pct_95ci[0])+"–"+pct(sm.win_pct_95ci[1])+")":"")+
+     (r?" · ROI "+pct(r.roi)+(r.roi_95ci?" ("+pct(r.roi_95ci[0])+" to "+pct(r.roi_95ci[1])+")":""):"")),
+    el("div",{class:"small"},"CLV: close observed "+cl.close_observed+"/"+cl.picks+(cl.mean_clv_points!=null?" · mean "+ln(cl.mean_clv_points)+" pts, "+pct(cl.share_beating_close_points)+" beat the close":"")+(cl.mean_clv_prob!=null?" · same-number price CLV "+pct(cl.mean_clv_prob)+" (n "+cl.same_line_n+")":"")),
+    el("div",{class:"small mute"},"p (edge vs break-even) "+(x.p_edge_one_sided==null?"–":x.p_edge_one_sided)+" · Holm-adjusted "+(x.p_edge_holm==null?"–":x.p_edge_holm)),
+    sm.sample_warning?el("div",{class:"small"},badge("INSUFFICIENT SAMPLE","LOW")):null)}))}
 R.tracker=()=>{const T=D.need_tracker;const head=card(el("h2",{},badge("MODELED"),"Book Need Tracker"),
  el("p",{class:"small"},badge("RESEARCH ONLY","WATCH")," Tests one question: when broad recreational betting pressure leaves our synthetic sportsbook with a large financial Need, does betting the side the book needs win often enough to beat the price? The Need comes from the book's actual simulated P&L (every accepted wager at its own line and price). The bettors are simulated with unvalidated assumptions, not real customers. Nothing here is a recommendation; every result is paper until it passes the evidence gate."),
  T&&T.thresholds?el("p",{class:"small mute"},"Pre-registered experimental filter (not validated): "+Object.values(CHECK).join(" · ")+". A qualified game is a research pick only when fading the public is also the side the book needs; when they disagree it is flagged, not picked."):null);
@@ -366,12 +382,14 @@ R.tracker=()=>{const T=D.need_tracker;const head=card(el("h2",{},badge("MODELED"
    el("div",{class:"small"},"Recreational pressure: "+(pub?nm(pub)+" "+pct(p.sides[pub].rec_handle_share)+" of rec handle, "+pct(p.sides[pub].rec_ticket_share)+" of rec tickets":"–")+" · sharp "+pct(p.sharp_handle_share)+" of handle"),
    el("div",{class:"small mute"},"Spread handle "+money(p.handle)+" (rank "+r.week_handle_rank+" of "+r.week_games+" this week) · "+p.wagers+" wagers from "+p.bettors+" bettors · largest bettor "+pct(p.largest_bettor_share)),
    q.qualified?(r.research_pick?el("div",{class:"small"},el("b",{},"Research pick (paper): "+nm(r.research_pick))):el("div",{class:"small"},"Qualified, but the book's Need is on the public side: flagged, no pick")):
-    el("div",{class:"small mute"},"Not qualified: "+fails.join(", ")))});
+    el("div",{class:"small mute"},"Not qualified: "+fails.join(", ")),
+   r.cohorts?el("div",{class:"small"},"Cohorts: "+(Object.entries(r.cohorts.evaluation).filter(([k,v])=>v.eligible).map(([k,v])=>k.split("_")[0]+" "+nm(v.pick_side)).join(" · ")||"none")):el("div",{class:"small mute"},"Snapshot predates cohort registration"))});
  const rep=T.report||{};const dis=rep.qualified_disagreements||{};
  const graded=(rep.rows||[]).filter(x=>x.sport===st.sport).slice(-40).reverse();
  return[head,card(el("h3",{},"Upcoming (final 24 h): latest pre-kickoff snapshot"),
    el("p",{class:"small mute"},"Snapshots are saved immutably before kickoff; after kickoff the last one is sealed as the game's decision. "+T.snapshots_this_build+" snapshot(s) this build, "+T.decisions_total+" decisions sealed so far."),
    rows.length?el("div",{},rows):el("p",{class:"mute"},"No games within 24 h of kickoff.")),
+  cohortCard(rep.cohorts),
   card(el("h3",{},"All Need sides (every sealed game, both sports)"),sumLine(rep.all_need)),
   card(el("h3",{},"Research subset: qualified and aligned"),sumLine(rep.research_subset)),
   card(el("h3",{},"Qualified but the Need disagrees with fading the public"),el("p",{class:"small"},dis.games+" game(s). "+(dis.note||"")),sumLine(dis.need_side)),
@@ -489,7 +507,7 @@ def main(argv=None):
                           book_out=a.book_out,
                           commit=(os.environ.get("GITHUB_SHA") or "")[:7] or None)
     snap["shards"] = n_shards
-    tracker_step(snap, load_rankings(a.rankings_dir), now, a.need_dir, a.results_dir, a.need_out)
+    tracker_step(snap, load_rankings(a.rankings_dir), now, a.need_dir, a.results_dir, a.need_out, conn)
     snap = _clean(snap)
     bconn.close()
     with open(os.path.join(a.out, "site_snapshot.json"), "w") as fh:
