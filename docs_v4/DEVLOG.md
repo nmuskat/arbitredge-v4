@@ -220,3 +220,40 @@ An intermediate version of the population cache ignored the sensitivity variants
 **Bug fixed: GitHub start jitter halved the hourly cadence.** The 04:52 slot started 58 min after the previous fetch, so the 1-hour rule skipped it. Gaps now count as met within 20% (at most 15 min).
 - Simulated with random 5–50 min delays: 2,590–3,075 credits a month, against 2,450–2,880 before the fix.
 - Worst 24 h ≤ 177; all closes observed.
+
+## 2026-10-29: Book Need Tracker (research / paper only)
+
+**Owner-approved design; see `docs_v4/NEED_TRACKER.md`.**
+
+**Audit.**
+- Ready and reused: the ledger, exact per-outcome book P&L, and grading.
+- Missing, now built:
+  - persistent pre-kickoff records (`prospective.py`'s SQLite table does not survive between Actions runs);
+  - live final scores;
+  - recreational / sharp / concentration metrics.
+- Bettor settlement and bankrolls are not needed for this tracker.
+
+**Built.**
+- Pressure metrics and the pre-registered five-rule filter.
+- Need/fade alignment: DISAGREE is flagged, not picked.
+- Immutable snapshots (`v4-need-YYYY-Www`) and sealed decisions (`v4-need-decisions`).
+- Final scores: NFL via nflverse in `odds-analyze`; CFB via CFBD in `cfb-rankings` (owner-approved key use).
+- Grading at the recorded price with confidence intervals.
+- The Need Tracker tab.
+
+**Classification v2.**
+- NFL national TV = standalone; CFB primetime = 7 pm – midnight ET.
+- Applies to weekly runs opening from 2026-11-03 only.
+
+**Verified.**
+- Snapshot of Panthers @ Packers from real data: ALIGNED (Need: Carolina +3.5 −108). Not qualified: one bettor holds 33.4% of the spread handle.
+- Tracker records are byte-reproducible.
+- Ledger hash and splits are identical with and without the tracker (NFL 530, CFB 1,005 wagers).
+- Mutation checks: the alignment and wall-clock rules are caught by tests.
+
+**Exploratory historical test (synthetic, not evidence).** NFL 2016–2025, 2,634 games:
+- all Need sides 1292-1278-64: 50.3% (95% CI 48.3–52.2), ROI −2.9% (−6.5% to +0.8%);
+- research subset 12-11-1 (24 games);
+- no trend with pressure strength.
+
+See `docs_v4/NEED_TRACKER_HISTORY.md`. Thresholds unchanged.

@@ -312,3 +312,26 @@ def test_classification_v2_applies_only_to_weeks_opening_after_the_cutoff():
     assert classify("nfl", snf, False, new_week) == (False, False)        # regional Sunday game
     assert classify("cfb", sat_night, False, new_week) == (True, False)   # 7:30 pm ET: primetime
     assert classify("cfb", sat_noon, False, new_week) == (False, False)
+
+
+def test_historical_sensitivity_tool_runs_and_labels_itself(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("need_history", os.path.join(os.path.dirname(__file__), "..",
+                                                                               "tools_v4", "need_history.py"))
+    nh = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(nh)
+    csv_text = ("game_id,season,game_type,week,gameday,gametime,away_team,away_score,home_team,home_score,spread_line,"
+                "away_spread_odds,home_spread_odds\n"
+                "2024_01_A,2024,REG,1,2024-09-08,13:00,DAL,10,PHI,24,6.5,-110,-110\n"
+                "2024_01_B,2024,REG,1,2024-09-08,16:25,KC,27,DEN,20,-3,-105,-115\n"
+                "2024_01_C,2024,POST,1,2024-09-09,20:15,NYJ,9,SF,32,4,NA,NA\n")
+    (tmp_path / "games.csv").write_text(csv_text)
+    games = nh.load_games(str(tmp_path / "games.csv"), range(2024, 2025))
+    assert [g["event_id"] for g in games] == ["2024_01_A", "2024_01_B"]               # regular season only
+    assert games[1]["home_spread"] == 3.0 and games[1]["home_price"] == -115          # KC favoured at Denver
+    rows = nh.run_week(games, bettors=400)
+    assert rows and all(r["ats"] in "WLP" for r in rows)
+    out = tmp_path / "h.json"
+    nh.main(["--games", str(tmp_path / "games.csv"), "--seasons", "2024-2024", "--bettors", "400", "--out", str(out)])
+    doc = json.load(open(out))
+    assert doc["label"].startswith("EXPLORATORY SYNTHETIC BACKTEST")
