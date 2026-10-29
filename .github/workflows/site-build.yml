@@ -34,12 +34,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/site_inputs.sh
+      - name: Cache pip and npm downloads (integrity-checked on install)
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809   # v4.2.4
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.npm
+          key: site-${{ runner.os }}-${{ hashFiles('requirements-v4.txt', 'deploy/cloudflare/package-lock.json') }}
       - name: Build site
         run: |
           python3 -m pip install --quiet "$(grep -i '^numpy==' requirements-v4.txt)"
           python3 -m web_v4.live_site --shards shards --ledger state/ledger.jsonl --rankings-dir rankings --out site \
             --book-dir book --book-out book_new --need-dir need --results-dir results --need-out need_new \
-            --settle-dir settle
+            --settle-dir settle --sensitivity-cache prev/sensitivity_cache.json
       - name: Save synthetic-book ledger (new files only, never overwritten)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -70,7 +77,7 @@ jobs:
         run: |
           gh release view v4-site >/dev/null 2>&1 || gh release create v4-site --prerelease \
             --title "V4 site (private)" --notes "Rebuilt automatically from collected data. Download index.html and open it."
-          gh release upload v4-site site/index.html site/site_snapshot.json --clobber
+          gh release upload v4-site site/index.html site/site_snapshot.json site/sensitivity_cache.json --clobber
       - name: Check owner-only protection (no secrets)
         if: vars.CF_PAGES_DEPLOY == 'on'
         env:

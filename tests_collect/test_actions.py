@@ -493,7 +493,11 @@ def test_site_build_workflow_has_only_cloudflare_secrets_and_is_pinned():
     assert "ODDS_API_KEY" not in text and "CFBD_API_KEY" not in text
     assert "pull_request" not in text
     for ref in re.findall(r"uses: ([^\s]+)", text):
-        assert re.fullmatch(r"actions/checkout@[0-9a-f]{40}", ref), ref
+        assert re.fullmatch(r"actions/(checkout|cache)@[0-9a-f]{40}", ref), ref       # GitHub's own, pinned
+    cache = [s for s in _yaml("site-build.yml")["jobs"]["build"]["steps"] if "actions/cache@" in str(s.get("uses"))]
+    assert len(cache) == 1 and "env" not in cache[0]                                  # never sees a secret
+    assert set(cache[0]["with"]["path"].split()) == {"~/.cache/pip", "~/.npm"}         # download stores only
+    assert "--prefer-offline" in open(os.path.join(REPO, ".github", "scripts", "pages_deploy.sh")).read()
     assert "permissions:\n  contents: read" in text and "persist-credentials: false" in text
     on = _yaml("site-build.yml")[True]
     assert set(on) == {"workflow_call", "workflow_dispatch"}          # never on a schedule of its own

@@ -412,8 +412,11 @@ def _tracker_games(book_conn, live_conn, sport):
     return out
 
 
+SENSITIVITY_REFRESH_S = 3 * 3600   # variant replays (most of a build's time) at most this often per weekly run
+
+
 def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, variants=SENSITIVITY_VARIANTS,
-          book_in=None, book_out=None):
+          book_in=None, book_out=None, sensitivity_cache=None):
     """Both sports. Loads the persisted ledger (book_in), advances each sport's weekly run to its last
     observation, exports new intervals (book_out). Returns {sport: {status, coverage, audit, games, ...}}."""
     from data_v4 import rankings
@@ -506,13 +509,23 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
         block["status"] = "OK" if wagers else "NO_WAGERS"
 
         # sensitivity: the same week re-simulated under each variant (common random numbers)
-        var_splits = {}
-        for name, kw in (variants or {}).items():
-            mem, rid = replay(book_conn, live_conn, run_id, wm, _iso(D), variant=(name, kw))
-            for gid, ws_ in _by_game(fetch_wagers(mem, rid, market=None)).items():
-                var_splits.setdefault(gid, {})[name] = splits(ws_)
-            mem.close()
-        block["sensitivity"] = {"variants": sorted(variants or {}),
+        # sensitivity: the same week re-simulated under each variant (common random numbers). Re-run at most
+        # every SENSITIVITY_REFRESH_S per weekly run; in between the last variant splits are reused, labelled
+        # with their time (the baseline split is always current).
+        cached = (sensitivity_cache or {}).get(sport) or {}
+        if (cached.get("run_id") == run_id and sorted(cached.get("variants") or []) == sorted(variants or {})
+                and T - cached.get("computed_at", 0) < SENSITIVITY_REFRESH_S):
+            var_splits, bands_at, reused = cached["variant_splits"], cached["computed_at"], True
+        else:
+            var_splits, bands_at, reused = {}, T, False
+            for name, kw in (variants or {}).items():
+                mem, rid = replay(book_conn, live_conn, run_id, wm, _iso(D), variant=(name, kw))
+                for gid, ws_ in _by_game(fetch_wagers(mem, rid, market=None)).items():
+                    var_splits.setdefault(gid, {})[name] = splits(ws_)
+                mem.close()
+        block["sensitivity_cache"] = {"run_id": run_id, "variants": sorted(variants or {}), "computed_at": bands_at,
+                                      "variant_splits": var_splits}
+        block["sensitivity"] = {"variants": sorted(variants or {}), "variants_as_of": _iso(bands_at), "reused": reused,
                                 "method": "min/max of each split across the baseline and every variant"}
         # Need tracker: immutable pre-kickoff snapshots of every game in its final SNAPSHOT_HORIZON_S
         wm_t = to_epoch(wm)

@@ -430,3 +430,24 @@ def test_standalone_games_detected_from_the_schedule():
     g = [{"event_id": "tnf", "kickoff": 1000 * 3600}, {"event_id": "e1", "kickoff": 1100 * 3600},
          {"event_id": "e2", "kickoff": 1100 * 3600 + 3600}, {"event_id": "snf", "kickoff": 1105 * 3600}]
     assert LB.standalone_ids(g) == {"tnf", "snf"}        # e1/e2 overlap (60 min apart); snf is 4 h after e2
+
+
+def test_sensitivity_replays_are_reused_for_at_most_three_hours_and_only_for_the_same_run():
+    live = build_store()
+    pol = [poll(T0 - 86400)]
+    one = {"sharp_share_6pct": LB.SENSITIVITY_VARIANTS["sharp_share_6pct"]}
+    first = LB.build(new_book(), live, NOW, pol, bettors=500, variants=one)
+    cache = {sp: first[sp].pop("sensitivity_cache") for sp in ("nfl", "cfb")}
+    assert first["nfl"]["sensitivity"]["reused"] is False
+
+    def again(t, c):
+        boom = {"sharp_share_6pct": lambda: (_ for _ in ()).throw(AssertionError("replayed"))}
+        return LB.build(new_book(), live, t, pol, bettors=500, variants=boom, sensitivity_cache=c)
+    hit = again(NOW + 60, {sp: dict(c, variants=["sharp_share_6pct"]) for sp, c in cache.items()})
+    assert hit["nfl"]["sensitivity"]["reused"] is True
+    assert hit["nfl"]["sensitivity"]["variants_as_of"] == first["nfl"]["sensitivity"]["variants_as_of"]
+    assert [g["bands"] for g in hit["nfl"]["games"]] == [g["bands"] for g in first["nfl"]["games"]]
+    with pytest.raises(AssertionError, match="replayed"):          # older than 3 h: recomputed
+        again(NOW + LB.SENSITIVITY_REFRESH_S, cache)
+    with pytest.raises(AssertionError, match="replayed"):          # another run's cache: recomputed
+        again(NOW + 60, {sp: dict(c, run_id="other") for sp, c in cache.items()})

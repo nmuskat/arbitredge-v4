@@ -71,7 +71,7 @@ def _clean(o):
 
 
 def build_snapshot(conn, ledger_rows, snaps, now, book_conn=None, bettors=10_000, commit=None, book_in=None,
-                   book_out=None):
+                   book_out=None, sensitivity_cache=None):
     """Everything the page shows, from the market store as of `now`."""
     out = {"schema": SCHEMA, "generated_at": _iso(now), "commit": commit, "freshness_policy": FRESH,
            "sports": {}, "collection": live.collection_health(conn, ledger_rows, now),
@@ -107,7 +107,9 @@ def build_snapshot(conn, ledger_rows, snaps, now, book_conn=None, bettors=10_000
                                                                  "free API key has not been added yet."})
         out["sports"][sport] = s
     if book_conn is not None:
-        bk = live_book.build(book_conn, conn, now, snaps, bettors=bettors, book_in=book_in, book_out=book_out)
+        bk = live_book.build(book_conn, conn, now, snaps, bettors=bettors, book_in=book_in, book_out=book_out,
+                             sensitivity_cache=sensitivity_cache)
+        out["_sensitivity_cache"] = {sp: bk[sp].pop("sensitivity_cache", None) for sp in SPORTS}
         for sport in SPORTS:
             out["sports"][sport]["book"] = bk[sport]
     return _clean(out)
@@ -367,7 +369,7 @@ function ledgerLine(){const a=(S().book||{}).audit;if(!a)return null;
 function bookGames(){const bk=S().book||{};return(bk.games||[]).filter(g=>upcoming(g)&&gameMatch(g))}
 R.splits=()=>{const f=st.f,bk=S().book||{};const head=[card(el("h2",{},"Betting splits"),
   el("p",{},badge("UNAVAILABLE")," Real splits: "+D.splits_real.reason),
-  el("p",{class:"small"},badge("MODELED")," Below: the synthetic sportsbook's own customers ("+(bk.audit?bk.audit.bettors.toLocaleString():"10,000")+" persistent simulated bettors for this sport) betting into the real collected prices. Tickets come from wager counts and handle from stakes. Ranges show how far each split moves under alternative behaviour assumptions ("+((bk.sensitivity||{}).variants||[]).join(", ")+"). These are not DraftKings, FanDuel or market-wide splits."),
+  el("p",{class:"small"},badge("MODELED")," Below: the synthetic sportsbook's own customers ("+(bk.audit?bk.audit.bettors.toLocaleString():"10,000")+" persistent simulated bettors for this sport) betting into the real collected prices. Tickets come from wager counts and handle from stakes. Ranges show how far each split moves under alternative behaviour assumptions ("+((bk.sensitivity||{}).variants||[]).join(", ")+"; replays as of "+local((bk.sensitivity||{}).variants_as_of)+", refreshed at most every 3 h). These are not DraftKings, FanDuel or market-wide splits."),
   ledgerLine(),filters({market:1}))];
  const b=bookBlock();if(b)return[...head,b];const out=[];
  for(const g of bookGames()){const ms=f.market?[f.market]:["spreads","totals","h2h"];const rows=[];
@@ -546,6 +548,7 @@ def main(argv=None):
     ap.add_argument("--results-dir", default=None, help="saved final scores (release v4-results)")
     ap.add_argument("--need-out", default=None, help="where to write Need-tracker files created by this build")
     ap.add_argument("--settle-dir", default=None, help="saved wager settlements (release v4-settlement)")
+    ap.add_argument("--sensitivity-cache", default=None, help="previous build's variant splits (v4-site, optional)")
     a = ap.parse_args(argv)
     now = _epoch(a.now) if a.now else time.time()
     if a.live_db:
@@ -559,12 +562,20 @@ def main(argv=None):
         os.remove(bpath)
     bconn = sqlite3.connect(bpath)
     ensure_schema(bconn)
+    cache = None
+    if a.sensitivity_cache and os.path.exists(a.sensitivity_cache):
+        try:
+            cache = json.load(open(a.sensitivity_cache))
+        except ValueError:
+            cache = None           # unreadable cache: simply recompute
     snap = build_snapshot(conn, ledger_rows, load_rankings(a.rankings_dir), now, bconn, a.bettors, book_in=a.book_dir,
-                          book_out=a.book_out,
+                          book_out=a.book_out, sensitivity_cache=cache,
                           commit=(os.environ.get("GITHUB_SHA") or "")[:7] or None)
     snap["shards"] = n_shards
     tracker_step(snap, load_rankings(a.rankings_dir), now, a.need_dir, a.results_dir, a.need_out, conn)
     settlement_step(snap, bconn, conn, load_rankings(a.rankings_dir), now, a.results_dir, a.settle_dir, a.need_out)
+    with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
+        json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))
     snap = _clean(snap)
     bconn.close()
     with open(os.path.join(a.out, "site_snapshot.json"), "w") as fh:

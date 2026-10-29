@@ -74,7 +74,9 @@ print(r["production_branch"])')
   if [[ -z "${WRANGLER:-}" ]]; then
     node -e 'process.exit(+process.versions.node.split(".")[0] >= 22 ? 0 : 1)' || {
       echo "::error::Node.js 22+ is required by the pinned wrangler"; exit 1; }
-    npm ci --prefix deploy/cloudflare --ignore-scripts --no-audit --no-fund --loglevel=error
+    # --prefer-offline: reuse the cached download store; npm still verifies every package against the
+    # lockfile's integrity hashes before installing
+    npm ci --prefix deploy/cloudflare --ignore-scripts --no-audit --no-fund --loglevel=error --prefer-offline
     WRANGLER=deploy/cloudflare/node_modules/.bin/wrangler
   fi
   "$WRANGLER" pages deploy dist --project-name "$PROJECT" --branch "$branch" \
