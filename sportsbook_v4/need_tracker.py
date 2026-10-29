@@ -424,11 +424,18 @@ def cohort_report(decisions, results, closes):
                 rows[cid].append(r)
     p_raw = {cid: _p_edge(v) for cid, v in rows.items()}
     p_adj = holm(p_raw)
+    eng = {}
+    for d in decisions:
+        eng[(d["sport"], d["event_id"])] = ((d.get("snapshot") or {}).get("engine_version") or "unknown")
     return {"registry_hash": C.REGISTRY_HASH, "registered_at": C.REGISTERED_AT,
             "multiple_testing": "Holm-Bonferroni across all registered cohorts; only C1 is primary",
+            "by_engine_note": "rules unchanged; results also shown separately for each sportsbook engine",
             "cohorts": {cid: {**{k: v for k, v in C.COHORTS[cid].items() if k != "rules"}, "rules": C.COHORTS[cid]["rules"],
                               "summary": summarize(v), "clv": clv_summary(v),
-                              "p_edge_one_sided": _r(p_raw[cid]), "p_edge_holm": p_adj[cid], "rows": v}
+                              "p_edge_one_sided": _r(p_raw[cid]), "p_edge_holm": p_adj[cid],
+                              "by_engine": {e: summarize([r for r in v if eng.get((r["sport"], r["event_id"])) == e])
+                                            for e in sorted({eng.get((r["sport"], r["event_id"])) for r in v})},
+                              "rows": v}
                         for cid, v in rows.items()}}
 
 

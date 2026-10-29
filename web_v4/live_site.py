@@ -485,7 +485,21 @@ function settleCard(){const X=D.settlement;if(!X)return null;
   el("table",{class:"small"},el("tbody",{},Object.entries(sm.by_archetype||{}).map(([a,v])=>el("tr",{},el("td",{},a),el("td",{class:"num"},v.bettors+" bettors"),
    el("td",{class:"num"},v.up+" up · "+v.down+" down · "+v.even+" even"),el("td",{class:"num"},c(v.pnl_cents)))))),
   el("p",{class:"small mute"},X.settlement_rows+" settlement records ("+X.corrections+" corrections); "+X.open_overdue_48h+" open wagers more than 48 h past kickoff; "+(sm.bettors_below_min_stake||0)+" bettors below the minimum stake. Simulated customers: not a betting result."))}
-R.health=()=>{const c=D.collection;return[settleCard(),card(el("h2",{},"Collection health"),
+function behaviourCard(){const bk=S().book||{},m=bk.behaviour;if(!m)return null;const p=m.participation;
+ const row=(k,v)=>el("tr",{},el("td",{},k),el("td",{class:"num"},v));
+ return card(el("h3",{},badge("MODELED"),"Customer behaviour this week ("+m.engine_version+")"),
+  el("p",{class:"small mute"},"How the simulated customers actually behaved: an output of individual decisions, not a target. Not observed data."),
+  el("table",{class:"small"},el("tbody",{},
+   p?row("Customers active / sitting out / busted",p.active_this_week.toLocaleString()+" / "+p.sitting_out.toLocaleString()+" / "+p.busted.toLocaleString()):null,
+   row("Customers who bet",m.customers_with_wagers.toLocaleString()+" of "+m.customers.toLocaleString()),
+   row("Wagers per betting customer (median / p90 / max)",m.wagers_per_betting_customer.median+" / "+m.wagers_per_betting_customer.p90+" / "+m.wagers_per_betting_customer.max),
+   row("Handle held by top 1% / top 10% of customers",pct(m.concentration.top_1pct_customers_share)+" / "+pct(m.concentration.top_10pct_customers_share)),
+   row("Weekly stake ÷ bankroll (median / p90)",pct(m.weekly_turnover_of_bankroll.median)+" / "+pct(m.weekly_turnover_of_bankroll.p90)),
+   row("Market mix (spread / total / moneyline)",pct(m.market_mix.spread)+" / "+pct(m.market_mix.total)+" / "+pct(m.market_mix.moneyline)),
+   row("Arrivals that passed because the price was too expensive",pct(m.price_sensitivity_pass_share)))),
+  el("table",{class:"small"},el("tbody",{},Object.entries(m.stake_by_group).map(([g,v])=>row(g,v.n+" wagers · median $"+v.median+" · p90 $"+v.p90+" · max $"+v.max)))),
+  p?el("p",{class:"small mute"},"Active share by group: "+Object.entries(p.active_share_by_group).map(([g,v])=>g+" "+pct(v)).join(" · ")):null)}
+R.health=()=>{const c=D.collection;return[settleCard(),behaviourCard(),card(el("h2",{},"Collection health"),
  el("table",{},el("tbody",{},el("tr",{},el("td",{},"V4 credits this month"),el("td",{class:"num"},c.v4_credits_this_month)),
   el("tr",{},el("td",{},"Requests this month"),el("td",{class:"num"},c.requests_this_month)),
   el("tr",{},el("td",{},"Provider credits remaining (shared with V3)"),el("td",{class:"num"},c.provider_remaining==null?"–":c.provider_remaining.toLocaleString())),

@@ -540,6 +540,8 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                                        w["accepted_price"], w["stake"], w["accepted_at"]] for w in wagers]),
             "market_source": run["market_source_id"]}
         block["status"] = "OK" if wagers else "NO_WAGERS"
+        from sportsbook_v4 import behaviour_metrics
+        block["behaviour"] = behaviour_metrics.run_metrics(book_conn, run_id, wagers)
 
         # sensitivity: the same week re-simulated under each variant (common random numbers)
         # sensitivity: the same week re-simulated under each variant (common random numbers). Re-run at most
