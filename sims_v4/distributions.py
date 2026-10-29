@@ -22,7 +22,16 @@ def _norm_cdf(x):
 
 
 def discrete_normal(values, mu, sigma):
-    p = _norm_cdf((values + 0.5 - mu) / sigma) - _norm_cdf((values - 0.5 - mu) / sigma)
+    values = np.asarray(values)
+    if values.ndim == 1 and len(values) > 1 and np.all(np.diff(values) == 1):
+        # consecutive integers: bin k's upper edge is bin k+1's lower edge (k + 0.5 == (k + 1) - 0.5
+        # exactly), so each edge's CDF is computed once -- same arithmetic, same floats
+        edges = np.append(values - 0.5, values[-1] + 0.5)
+        r2 = math.sqrt(2.0)
+        c = 0.5 * (1.0 + np.fromiter((math.erf(x) for x in ((edges - mu) / sigma) / r2), float, len(edges)))
+        p = c[1:] - c[:-1]
+    else:
+        p = _norm_cdf((values + 0.5 - mu) / sigma) - _norm_cdf((values - 0.5 - mu) / sigma)
     return p / p.sum()
 
 
@@ -74,12 +83,18 @@ class KeyNumberModel:
         self.w = w
         return self
 
+    def _weights(self):
+        if getattr(self, "_wv", (None,))[0] is not self.w:          # rebuilt whenever fit() replaces w
+            keys = np.abs(self.values) if self.absolute else self.values
+            self._wv = (self.w, np.array([self.w.get(int(k), 1.0) for k in keys]), self.values.tolist())
+        return self._wv
+
     def pmf(self, mu, sigma):
         base = discrete_normal(self.values, mu, sigma)
-        keys = np.abs(self.values) if self.absolute else self.values
-        p = base * np.array([self.w.get(int(k), 1.0) for k in keys])
+        _w, wv, vals = self._weights()
+        p = base * wv
         p = p / p.sum()
-        return dict(zip(self.values.tolist(), p.tolist()))
+        return dict(zip(vals, p.tolist()))
 
 
 def margin_probs(pmf, home_line):

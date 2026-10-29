@@ -285,7 +285,21 @@ class MarketV4Source(MarketSource):
     def __init__(self, conn, max_age_seconds=45 * 60, source_id=None):
         self.conn, self.max_age = conn, max_age_seconds
         self.source_id = source_id or f"market_v4:max_age={max_age_seconds}"
-        self._cache = {}
+        self._cache, self._breaks = {}, {}
+
+    def state_key(self, game_id, as_of_epoch):
+        """latest_quotes(game_id, t) is constant between consecutive change points: a fetch or a
+        book-reported update becomes visible at t >= that time, and an observation goes stale at
+        t > fetch + max_age. Two times with the same key get identical quotes (a pure memo key)."""
+        if game_id not in self._breaks:
+            at_or_after, after = set(), set()
+            for times, obs in self._load(game_id).values():
+                for fa, mlu, _ in obs:
+                    at_or_after.update((fa, mlu))
+                    after.add(fa + self.max_age)
+            self._breaks[game_id] = (sorted(at_or_after), sorted(after))
+        a, c = self._breaks[game_id]
+        return (game_id, bisect.bisect_right(a, as_of_epoch), bisect.bisect_left(c, as_of_epoch))
 
     def _load(self, game_id):
         """All observations of a game, once: {(book, market): (fetch_times, [(t, mlu, {side: (price, point)})])}."""

@@ -75,6 +75,9 @@ def population_id_for(sport, bettor_count, team_universe):
     return f"{sport}|{PARAMS_VERSION}|n{bettor_count}|teams:{json_hash(sorted(team_universe))[:10]}"
 
 
+_GENERATED = {}
+
+
 def ensure_population(conn, sport, team_universe, bettor_count=DEFAULT_BETTOR_COUNT):
     """Idempotent. Returns population_id. Never rewrites an existing population."""
     if sport not in ("nfl", "cfb"):
@@ -91,7 +94,10 @@ def ensure_population(conn, sport, team_universe, bettor_count=DEFAULT_BETTOR_CO
             )
         return pid
 
-    bettors = [generate_bettor(sport, i, team_universe) for i in range(bettor_count)]
+    key = (pid, params_hash())     # deterministic in both (variants change parameters, not pid)
+    if key not in _GENERATED:      # a replay into a fresh database reuses it
+        _GENERATED[key] = [generate_bettor(sport, i, team_universe) for i in range(bettor_count)]
+    bettors = _GENERATED[key]
     pop_hash = json_hash(bettors)
     now = datetime.now(timezone.utc).strftime(ISO_FMT)  # provenance only, never an input
     try:

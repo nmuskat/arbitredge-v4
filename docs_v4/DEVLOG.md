@@ -168,3 +168,37 @@ See `docs_v4/SPORTSBOOK_AUDIT.md`.
   - fixed: the V3 floor was skipped when no balance had been recorded yet this month (fail-open);
   - fixed: on equal timestamps, the "last balance" lookup could pick the older row.
 - **Proposed when activating:** `V4_MONTHLY_CAP` 5000 and `V4_DAILY_CAP` 250. Owner decision.
+
+## 2026-10-29: Expanded tier fitted to GitHub Free and Cloudflare Free (still not active)
+
+**Constraint.** The owner requires GitHub and Cloudflare to stay $0/month. Before this change, Expanded projected ~2,000–2,070 Actions minutes a month, at or over GitHub Free's 2,000.
+
+**Collection schedule:**
+- 238 scheduled runs a week under expanded (was 276).
+- Idle Tuesday and Wednesday daytime hourly runs removed.
+- 14 redundant 3-hourly runs a week skipped only under expanded.
+- **Bug fixed:** 12 duplicate same-minute runs a week (overlapping cron entries).
+- Snapshot counts and closes are unchanged in simulation.
+
+**Dashboard rebuilds** (`schedule_policy.site_due`, every tier):
+- 2 h when quiet; 45 min in the final 6 h before a priority kickoff;
+- always after closes; never without new odds;
+- monthly self-limit 380 (soft) / 440 (hard).
+
+**Build speed: 69 s → 30 s locally, output byte-identical** (page, data file, ledger wagers):
+- one price lookup per odds state;
+- the population generated once per parameter set;
+- exact score-distribution and fair-line memos.
+
+An intermediate version of the population cache ignored the sensitivity variants and changed the bands. It was caught by the byte comparison and fixed; a test now covers it.
+
+**CI:** skipped for documentation-only pushes.
+
+**Projection (expanded):**
+- ~3,280–3,570 credits a month;
+- ~1,610–1,750 Actions minutes a month;
+- 374–413 Cloudflare deployments a month.
+
+**Cloudflare documentation:** the 500 builds/month limit is described for Git builds; whether direct uploads count isn't stated, so the design assumes they do.
+
+**Tests:** see the commit. Activation remains the owner's decision (`docs_v4/EXPANDED_TIER_PLAN.md` §5).

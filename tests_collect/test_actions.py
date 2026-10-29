@@ -8,6 +8,7 @@ import random
 import re
 import shutil
 import subprocess
+import time
 
 import pytest
 
@@ -178,20 +179,53 @@ def _wf(name):
 
 def test_collect_workflow_crons_match_simulated_plan():
     crons = re.findall(r'- cron: "([^"]+)"', _wf("odds-collect.yml"))
-    assert crons == cron_plan.cron_strings() + cron_plan.expanded_cron_strings()
+    assert sorted(crons) == sorted(cron_plan.cron_strings() + cron_plan.expanded_cron_strings())
+    assert len(crons) == len(set(crons))
 
 
-def test_expanded_only_runs_are_skipped_unless_the_owner_chose_expanded():
+def _minutes_of(entry):
+    """Every (dow, hour, minute) a 5-field workflow cron entry (lists only) matches."""
+    m, h, _, _, d = entry.split()
+    return {(int(dd), int(hh), int(mm)) for dd in d.split(",") for hh in h.split(",") for mm in m.split(",")}
+
+
+def test_no_two_schedule_entries_start_runs_in_the_same_minute():
+    # GitHub starts one run per matching entry: an overlap would bill two minutes for one slot
+    entries = cron_plan.cron_strings() + cron_plan.expanded_cron_strings()
+    seen = {}
+    for e in entries:
+        for x in _minutes_of(e):
+            assert x not in seen, (x, e, seen.get(x))
+            seen[x] = e
+
+
+def test_tier_gated_runs_match_the_simulated_plan():
     job_if = _yaml("odds-collect.yml")["jobs"]["collect"]["if"]
-    assert job_if.startswith("vars.V4_LIVE == 'on' && (vars.V4_TIER == 'expanded' || !contains(fromJSON('")
-    listed = json.loads(re.search(r"fromJSON\('(\[.*?\])'\)", job_if).group(1))
-    assert listed == cron_plan.expanded_cron_strings()
-    assert not set(listed) & set(cron_plan.cron_strings())          # base runs are never gated by tier
-    # no expanded run duplicates a base run minute
+    assert job_if.startswith("vars.V4_LIVE == 'on' && ((vars.V4_TIER == 'expanded' && !contains(fromJSON('")
+    std_listed, exp_listed = [json.loads(x) for x in re.findall(r"fromJSON\('(\[.*?\])'\)", job_if)]
+    assert std_listed == cron_plan.standard_only_cron_strings()
+    assert exp_listed == cron_plan.expanded_cron_strings()
+    assert "(vars.V4_TIER != 'expanded' && !contains(" in job_if
     import calendar
     wk = calendar.timegm((2026, 11, 1, 0, 0, 0))
-    base, exp = set(cron_plan.run_times(wk)), set(cron_plan.run_times(wk, "expanded"))
-    assert base < exp and len(exp) - len(base) == sum(len(h) for _, h, _ in cron_plan.EXPANDED_CRONS)
+
+    def executed(tier):            # what the workflow gate lets run, from the entries themselves
+        skip = exp_listed if tier != "expanded" else std_listed
+        return {x for e in cron_plan.cron_strings() + cron_plan.expanded_cron_strings() if e not in skip
+                for x in _minutes_of(e)}
+
+    def simulated(tier):
+        out = set()
+        for t in cron_plan.run_times(wk, tier):
+            g = time.gmtime(t)
+            out.add(((g.tm_wday + 1) % 7, g.tm_hour, g.tm_min))
+        return out
+    for tier in ("expanded", "balanced", "test"):
+        assert executed(tier) == simulated(tier), tier
+    # standard-only runs never sit in a kickoff-dense evening or weekend
+    for d, hours in cron_plan.EXPANDED_SKIPS_BASE.items():
+        assert d in (1, 2, 3, 4, 5)
+        assert not (d in (4, 5) and set(hours) & {18, 21})
 
 
 @pytest.mark.parametrize("wf", ["odds-collect.yml", "odds-analyze.yml"])
@@ -984,7 +1018,7 @@ def test_expanded_budget_closes_and_snapshots(change_rate):
     sports, fetches, lo, hi = _expanded_week(change_rate)
     all_f = sorted(f for s in fetches for f in fetches[s])
     monthly = 3 * sum(1 for f in all_f if lo <= f < hi) * 4.35
-    assert 2500 <= monthly <= 5000, monthly                    # target 3,000-5,000; proposed cap 5,000
+    assert 2300 <= monthly <= 5000, monthly    # dense enough, under the 5,000 cap (quiet backoff lowers spend)
     peak24 = max(3 * sum(1 for u in all_f if t - 86400 < u <= t) for t in all_f if lo <= t < hi)
     assert peak24 <= 250, peak24                               # proposed V4_DAILY_CAP 250 (rolling 24 h)
     for s, ks in sports.items():
@@ -1001,6 +1035,70 @@ def test_other_tiers_never_run_expanded_only_cron_entries():
     for tier in ("test", "balanced", None):
         assert cron_plan.run_times(wk, tier) == cron_plan.run_times(wk)
 
+
+
+@pytest.mark.parametrize("now_off,last,kicks,reasons,want", [
+    (0, None, [], ["final 72h"], True),                                 # first build
+    (0, -10 * 60, [], [], False),                                       # no new odds: never
+    (0, -119 * 60, [], ["final 7d"], False),                            # quiet: at most every 2 h
+    (0, -120 * 60, [], ["final 7d"], True),
+    (0, -44 * 60, [5 * 3600], ["final 6h"], False),                     # final 6 h: every 45 min
+    (0, -45 * 60, [5 * 3600], ["final 6h"], True),
+    (0, -44 * 60, [7 * 3600], ["final 24h"], False),                    # kickoff 7 h away: quiet rule
+    (0, -60, [20 * 60], ["close (kickoff in 20 min)"], True),           # always right after a close
+])
+def test_site_due_policy(now_off, last, kicks, reasons, want):
+    ok, why = SP.site_due(NOW + now_off, None if last is None else NOW + last,
+                                       [NOW + k for k in kicks], reasons)
+    assert ok == want, why
+
+
+@pytest.mark.parametrize("count,last,reasons,want", [
+    (SP.SITE_MONTH_SOFT - 1, -120 * 60, ["final 7d"], True),
+    (SP.SITE_MONTH_SOFT, -120 * 60, ["final 7d"], False),               # soft limit: every 6 h ...
+    (SP.SITE_MONTH_SOFT, -6 * 3600, ["final 7d"], True),
+    (SP.SITE_MONTH_SOFT, -60, ["close (kickoff in 20 min)"], True),     # ... and still after closes
+    (SP.SITE_MONTH_HARD, -86400, ["close (kickoff in 20 min)"], False),  # hard limit: nothing
+])
+def test_site_due_monthly_limits(count, last, reasons, want):
+    ok, why = SP.site_due(NOW, NOW + last, [NOW + 3 * 3600], reasons, count)
+    assert ok == want, why
+    assert SP.SITE_MONTH_HARD + 20 < 500          # + cfb-rankings and manual builds stay under Cloudflare's 500
+
+
+def test_site_build_count_resets_each_month(tmp_path, monkeypatch):
+    state = tmp_path / "state"
+    state.mkdir()
+    kick = NOW + 3 * 86400
+    json.dump({"_site_at": NOW - 86400, "_site_month": "1999-12", "_site_builds": SP.SITE_MONTH_HARD,
+               "americanfootball_nfl": {"odds_at": NOW - 86400, "kickoffs": [kick], "events": [["n1", kick, "H", "A"]]},
+               "americanfootball_ncaaf": {"odds_at": NOW - 600, "kickoffs": [], "events": []}},
+              open(state / "collector_state.json", "w"))
+    e = env(V4_TIER="expanded")
+    for k, v in e.items():
+        monkeypatch.setenv(k, v)
+    s = AR.run(str(state), str(tmp_path / "out"), env=e, clock=lambda: NOW, opener=Upstream(lambda: NOW))
+    assert len(s["fetches"]) >= 1 and not (tmp_path / "out" / "site_skip").exists()
+    st = json.load(open(tmp_path / "out" / "collector_state.json"))
+    assert st["_site_month"] == time.strftime("%Y-%m", time.gmtime(NOW)) and st["_site_builds"] == 1
+
+
+@pytest.mark.parametrize("tier", ["balanced", "expanded"])
+def test_dashboard_rebuild_policy_applies_to_every_tier(tmp_path, monkeypatch, tier):
+    state = tmp_path / "state"
+    state.mkdir()
+    kick = NOW + 3 * 86400
+    json.dump({"_site_at": NOW - 30 * 60,
+               "americanfootball_nfl": {"odds_at": NOW - 86400, "kickoffs": [kick], "events": [["n1", kick, "H", "A"]]},
+               "americanfootball_ncaaf": {"odds_at": NOW - 600, "kickoffs": [], "events": []}},
+              open(state / "collector_state.json", "w"))
+    e = env(V4_TIER=tier)
+    for k, v in e.items():
+        monkeypatch.setenv(k, v)
+    s = AR.run(str(state), str(tmp_path / "out"), env=e, clock=lambda: NOW, opener=Upstream(lambda: NOW))
+    assert len(s["fetches"]) >= 1
+    assert (tmp_path / "out" / "site_skip").exists() and s["site"].startswith("skipped")
+    assert json.load(open(tmp_path / "out" / "collector_state.json"))["_site_at"] == NOW - 30 * 60
 
 
 @pytest.mark.parametrize("mins_to_kick,skipped", [(180, True), (30, False)])

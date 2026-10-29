@@ -1,10 +1,14 @@
-# ArbitrEdge V4 CI: runs every V4 test suite on each push / pull request.
+# ArbitrEdge V4 CI: runs every V4 test suite on each code push to v4-dev / main and on pull requests.
+# Documentation-only changes skip it (GitHub Free minutes: each run bills ~3 minutes).
 # Real-data tests (nflverse) and the website snapshot tests SKIP when their
 # data is absent, so CI needs no secrets, no API keys and no network beyond PyPI.
 name: v4-ci
 on:
   push:
+    branches: [v4-dev, main]
+    paths-ignore: ["**.md", "docs_v4/**"]
   pull_request:
+    paths-ignore: ["**.md", "docs_v4/**"]
 permissions:
   contents: read
 jobs:

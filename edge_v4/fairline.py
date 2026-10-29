@@ -23,13 +23,24 @@ def _solve_mu(prob_at, target, lo=-40.0, hi=40.0, iters=60):
     return (lo + hi) / 2
 
 
+_SOLVED = {}      # pure memo: the same model, sigma, consensus line and fair probability give the same mu
+
+
+def _solved(kind, kn_model, sigma, line, fair, solve):
+    key = (kind, kn_model, id(kn_model.w), sigma, line, fair)
+    if key not in _SOLVED:
+        mu = solve()
+        _SOLVED[key] = (mu, kn_model.pmf(mu, sigma), kn_model.w)      # keeps w alive, so its id stays unique
+    return _SOLVED[key][:2]
+
+
 class SpreadFair:
     def __init__(self, kn_model, sigma, consensus_home_line, fair_home_cover):
         def p(mu):
             c, _, f = D.margin_probs(kn_model.pmf(mu, sigma), consensus_home_line)
             return c / (c + f)
-        self.mu = _solve_mu(p, fair_home_cover)
-        self.pmf = kn_model.pmf(self.mu, sigma)
+        self.mu, self.pmf = _solved("spread", kn_model, sigma, consensus_home_line, fair_home_cover,
+                                    lambda: _solve_mu(p, fair_home_cover))
 
     def side_probs(self, side, line):
         """(p_win, p_push) for `side` at its own line (home -2.5 => side='home', line=-2.5)."""
@@ -47,8 +58,8 @@ class TotalFair:
         def p(mu):
             o, _, u = D.total_probs(kn_model.pmf(mu, sigma), consensus_total)
             return o / (o + u)
-        self.mu = _solve_mu(p, fair_over, 10.0, 90.0)
-        self.pmf = kn_model.pmf(self.mu, sigma)
+        self.mu, self.pmf = _solved("total", kn_model, sigma, consensus_total, fair_over,
+                                    lambda: _solve_mu(p, fair_over, 10.0, 90.0))
 
     def side_probs(self, side, line):
         o, pu, u = D.total_probs(self.pmf, line)

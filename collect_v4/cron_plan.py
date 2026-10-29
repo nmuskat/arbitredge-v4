@@ -31,8 +31,18 @@ def _dense_hours():
 
 
 QUIET_HOURS_UTC = range(7, 12)      # 2-7 am ET: US books rarely move; the base 3-hourly runs still cover it
-EXPANDED_CRONS = [((52,), tuple(h for h in range(24) if h not in _dense_hours()[d] and h not in QUIET_HOURS_UTC),
-                   (d,)) for d in range(7)]
+# Tuesday and Wednesday before 18:00 UTC: no NFL kickoff within 24 h, so the cadence gap is >= 2 h and an hourly
+# run between the 3-hourly ones almost never fetches (simulated on the real schedule: ~3 of 26 a week), but still
+# costs an Actions minute. The evenings stay hourly (Wednesday is the first NFL injury-report evening).
+SPARSE_EARLY_WEEK = {2: range(0, 18), 3: range(0, 18)}
+EXPANDED_CRONS = [((52,), tuple(h for h in range(24) if h not in _dense_hours()[d] and h not in QUIET_HOURS_UTC
+                                and h not in SPARSE_EARLY_WEEK.get(d, ())), (d,)) for d in range(7)]
+
+
+# 3-hourly runs the EXPANDED tier does not need: each sits 25 min after an hourly :52 run and 35 min before the
+# next, and no priority kickoff's final 6 h falls there in a normal week (Thursday and Friday evenings, Saturday
+# and Sunday keep them). Under expanded they are skipped (0 minutes); every other tier runs them as before.
+EXPANDED_SKIPS_BASE = {1: (3, 6, 15, 18, 21), 2: (21,), 3: (21,), 4: (0, 3, 6, 15), 5: (3, 6, 15)}
 
 
 def _fmt(crons):
@@ -43,10 +53,33 @@ def expanded_cron_strings():
     return _fmt(EXPANDED_CRONS)
 
 
-def cron_strings():
+def _base_entries(standard_only):
+    """The 3-hourly entry, per day, without the hours a 15-minute window covers (two entries matching the same
+    minute would start two runs, two billed minutes, for one slot); split into the hours every tier runs and
+    the hours only non-expanded tiers run (EXPANDED_SKIPS_BASE)."""
+    dense = _dense_hours()
     out = []
     for mins, hours, days in CRONS:
-        out.append(f"{','.join(map(str, mins))} {','.join(map(str, hours))} * * {','.join(map(str, days))}")
+        if len(mins) == 1:
+            by_hours = {}
+            for d in days:
+                skip = set(EXPANDED_SKIPS_BASE.get(d, ()))
+                hs = tuple(h for h in hours if h not in dense[d] and ((h in skip) == standard_only))
+                by_hours.setdefault(hs, []).append(d)
+            out += [f"{mins[0]} {','.join(map(str, h))} * * {','.join(map(str, ds))}" for h, ds in by_hours.items() if h]
+    return out
+
+
+def standard_only_cron_strings():
+    return _base_entries(True)
+
+
+def cron_strings():
+    """Every workflow entry except the expanded-only ones."""
+    out = _base_entries(False) + _base_entries(True)
+    for mins, hours, days in CRONS:
+        if len(mins) > 1:
+            out.append(f"{','.join(map(str, mins))} {','.join(map(str, hours))} * * {','.join(map(str, days))}")
     return out
 
 
@@ -60,6 +93,8 @@ def run_times(week_start_epoch, tier=None):
         for mins, hours, days in crons:
             if dow in days:
                 for h in hours:
+                    if tier == "expanded" and len(mins) == 1 and mins != (52,) and h in EXPANDED_SKIPS_BASE.get(dow, ()):
+                        continue
                     for m in mins:
                         times.add(week_start_epoch + day * 86400 + h * 3600 + m * 60)
     return sorted(times)

@@ -62,9 +62,11 @@ def expected(state, snaps, tier, start, days, delay_s, known_events=None, change
                     ride, r = SP.piggyback(t, ks, sports[sport]["last"], tier)
                     if ride:
                         dec[sport] = (ks, True, r)
+        upcoming = sorted(k for d in dec.values() for k in d[0] if k > t)[:1]
         for sport, (_ks, ok, why) in dec.items():
             if ok:
-                out.append({"sport": sport, "at": _iso(t), "reason": why, "credits": CREDITS})
+                out.append({"sport": sport, "at": _iso(t), "reason": why, "credits": CREDITS,
+                            "next_priority_kick": upcoming[0] if upcoming else None})
                 v = sports[sport]
                 v["last"] = t
                 if v["events"] is None and known_events and sport in known_events:
@@ -95,21 +97,41 @@ def snapshots_per_game(exp, state, snaps, known_events, start, days):
     return out
 
 
+CI_RUNS_PER_MONTH = 50       # code pushes (documentation-only pushes skip CI); measured 3 billed minutes each
+CI_MIN = 3
+SITE_MIN = 1.25              # a dashboard build bills 1 minute, occasionally 2 late in a busy week
+
+
+def site_builds(exp):
+    """Dashboard rebuilds the collector would trigger (schedule_policy.site_due) for these fetches."""
+    by_run = collections.OrderedDict()
+    for f in exp:
+        by_run.setdefault(f["at"], []).append(f)
+    builds, last = [], None
+    for at, fs in by_run.items():
+        t = calendar.timegm(time.strptime(at, "%Y-%m-%dT%H:%M:%SZ"))
+        kicks = [f["next_priority_kick"] for f in fs if f.get("next_priority_kick")]
+        ok, _why = SP.site_due(t, last, kicks, [f["reason"] for f in fs])      # unthrottled: the monthly limit
+                                                                                # only matters if this exceeds it
+        if ok:
+            builds.append(at)
+            last = t
+    return builds
+
+
 def actions_minutes(tier, exp, start, days):
-    """Billed GitHub Actions minutes per month (each job rounds up to 1 minute)."""
+    """Billed GitHub Actions minutes per month, every workflow (each job rounds up to whole minutes)."""
     wk = calendar.timegm(time.gmtime(start)[:3] + (0, 0, 0))
     runs_week = len(cron_plan.run_times(wk, tier))
-    fetch_runs = sorted({f["at"] for f in exp})
-    builds, last = 0, None
-    for at in fetch_runs:
-        t = calendar.timegm(time.strptime(at, "%Y-%m-%dT%H:%M:%SZ"))
-        closes = any(f["at"] == at and f["reason"].startswith("close") for f in exp)
-        if tier != "expanded" or closes or last is None or t - last >= 60 * 60:
-            builds, last = builds + 1, t
     scale = 4.35 / (days / 7)
-    m = {"collect": round(runs_week * 4.35), "site_builds": round(builds * scale),
-         "analysis_rankings": 31 + 9, "ci_estimate": 300}
-    m["total"] = sum(m.values())
+    builds = round(len(site_builds(exp)) * scale)
+    m = {"collect": round(runs_week * 4.35),
+         "site_builds": builds, "site_build_minutes": round(builds * SITE_MIN),
+         "analysis": 31,                          # odds-analyze: daily, 1 minute
+         "rankings": 9 + 9,                       # cfb-rankings: 2 scheduled runs a week + its dashboard rebuild
+         "ci": CI_RUNS_PER_MONTH * CI_MIN}
+    m["total"] = m["collect"] + m["site_build_minutes"] + m["analysis"] + m["rankings"] + m["ci"]
+    m["cloudflare_deployments"] = builds + 9     # one per dashboard build (collector + rankings)
     return m
 
 

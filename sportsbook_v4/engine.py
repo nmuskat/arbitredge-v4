@@ -201,9 +201,11 @@ class _MarketView:
     def __init__(self, market):
         self.market = market
         self._offers, self._quotes = {}, {}
+        # a source that can tell when its quotes change lets every arrival between two changes share one lookup
+        self._key = getattr(market, "state_key", None) or (lambda gid, t: (gid, t))
 
     def quotes(self, gid, t):
-        key = (gid, t)
+        key = self._key(gid, t)
         if key not in self._quotes:
             self._quotes[key] = self.market.latest_quotes(gid, t)
         return self._quotes[key]
@@ -212,7 +214,7 @@ class _MarketView:
         return self.offers(gid, t, books)["spread"]
 
     def offers(self, gid, t, books=None):
-        key = (gid, t, tuple(books or ()))
+        key = (self._key(gid, t), tuple(books or ()))
         if key not in self._offers:
             q = self.quotes(gid, t)
             self._offers[key] = {"spread": representative_offer(q, books=books),

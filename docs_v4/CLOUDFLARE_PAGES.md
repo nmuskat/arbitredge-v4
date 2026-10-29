@@ -11,7 +11,7 @@
 The Odds API and CollegeFootballData keys never enter the build or deploy steps. Callers pass only the two Cloudflare secrets, never `secrets: inherit`.
 
 ## Cost
-- **Cloudflare:** Pages free plan, and Access free for up to 50 users. Deploys happen only after new data, roughly 80–120 a month at the current budget, below the free plan's 500 builds a month even if uploads counted.
+- **Cloudflare:** Pages free plan, and Access free for up to 50 users. Deploys happen only after new data, paced by `schedule_policy.site_due`. That's about 210 a month on the balanced tier and 374–413 on expanded. The collector limits itself to 440 a month, so even counting direct uploads as builds (the documentation doesn't say), the total stays under the free plan's 500. See `docs_v4/EXPANDED_TIER_PLAN.md` §3.3.
 - **GitHub Actions:** about 1 extra minute per build.
 
 ## Owner setup (one time)

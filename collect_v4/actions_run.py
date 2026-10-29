@@ -63,9 +63,6 @@ class InProcessClient:
         return self.gw.status()
 
 
-SITE_MIN_GAP_S = 60 * 60
-
-
 def quote_fingerprints(conn, sport):
     """{short key: short value} for every quote of the sport in this fetch (change detection only)."""
     import hashlib
@@ -211,14 +208,21 @@ def run(state_in, out, env=os.environ, clock=time.time, opener=None, tier=None, 
             # persist the spend IMMEDIATELY: if anything later in this run fails, the
             # workflow's always-run save step still uploads a ledger containing this request
             _persist(gw, state, out)
-        if summary["fetches"] and tier == "expanded":
-            # Actions minutes: rebuild the dashboard at most every SITE_MIN_GAP_S, but always after a close
-            closes = any(f["reason"].startswith("close") for f in summary["fetches"])
-            if closes or clock() - state.get("_site_at", 0) >= SITE_MIN_GAP_S:
+        if summary["fetches"]:
+            # Actions minutes and Cloudflare deployments: rebuild per schedule_policy.site_due
+            kicks = [k for d in decisions.values() for k in d[0]]
+            month = time.strftime("%Y-%m", time.gmtime(clock()))
+            if state.get("_site_month") != month:
+                state["_site_month"], state["_site_builds"] = month, 0
+            ok, why = schedule_policy.site_due(clock(), state.get("_site_at"), kicks,
+                                               [f["reason"] for f in summary["fetches"]], state["_site_builds"])
+            if ok:
                 state["_site_at"] = clock()
+                state["_site_builds"] += 1
+                summary["site"] = f"rebuild: {why} (build {state['_site_builds']} this month)"
             else:
-                open(os.path.join(out, "site_skip"), "w").write("dashboard rebuilt less than 60 min ago\n")
-                summary["site"] = "skipped (throttled)"
+                open(os.path.join(out, "site_skip"), "w").write(why + "\n")
+                summary["site"] = f"skipped: {why}"
         if summary["fetches"]:
             shard = os.path.join(out, f"quotes_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(clock()))}.jsonl.gz")
             summary["shard"] = os.path.basename(shard)

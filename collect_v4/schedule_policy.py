@@ -116,6 +116,38 @@ def due(now, kickoffs, last_fetch, tier="test", sport=None, change_rate=None):
     return False, "not due"
 
 
+# Dashboard rebuilds (every tier). A rebuild is one GitHub Actions job (>= 1 billed minute) and one
+# Cloudflare Pages deployment, so it happens only after a run that saved new odds, and then:
+SITE_QUIET_GAP_S = 2 * 3600        # at most every 2 h in quiet periods
+SITE_NEAR_GAP_S = 45 * 60          # every 45 min within SITE_NEAR_S of a priority (NFL / Top-25 CFB) kickoff
+SITE_NEAR_S = 6 * 3600
+# ... and always right after a closing-line fetch.
+# Monthly self-limit (GitHub Free minutes, Cloudflare Free 500 builds/month, which may count direct uploads):
+SITE_MONTH_SOFT = 380              # from here: only after closes, and at most every 6 h otherwise
+SITE_MONTH_HARD = 440              # from here: no rebuilds until next month (the page shows its odds as stale)
+SITE_SOFT_GAP_S = 6 * 3600
+
+
+def site_due(now, last_site, priority_kickoffs, fetch_reasons, builds_this_month=0):
+    """(rebuild?, reason) for a run that saved new odds (fetch_reasons: the reasons of its fetches)."""
+    if not fetch_reasons:
+        return False, "no new odds"
+    if builds_this_month >= SITE_MONTH_HARD:
+        return False, f"monthly dashboard limit reached ({builds_this_month} builds)"
+    if any(r.startswith("close") for r in fetch_reasons):
+        return True, "closing-line fetch"
+    if builds_this_month >= SITE_MONTH_SOFT:
+        if last_site is None or now - last_site >= SITE_SOFT_GAP_S:
+            return True, f"monthly soft limit ({builds_this_month} builds): every 6 h"
+        return False, f"monthly soft limit ({builds_this_month} builds): only after closes or every 6 h"
+    near = any(0 < k - now <= SITE_NEAR_S for k in priority_kickoffs)
+    gap = SITE_NEAR_GAP_S if near else SITE_QUIET_GAP_S
+    if last_site is None or now - last_site >= gap:
+        return True, ("final 6 h before a priority kickoff" if near else "quiet period") + f" (every {gap // 60} min)"
+    return False, f"dashboard rebuilt {int((now - last_site) // 60)} min ago (every {gap // 60} min " + \
+        ("in the final 6 h)" if near else "in quiet periods)")
+
+
 WEEKDAY = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
