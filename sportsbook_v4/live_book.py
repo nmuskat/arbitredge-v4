@@ -556,7 +556,8 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
             for name, kw in (variants or {}).items():
                 mem, rid = replay(book_conn, live_conn, run_id, wm, _iso(D), variant=(name, kw))
                 for gid, ws_ in _by_game(fetch_wagers(mem, rid, market=None)).items():
-                    var_splits.setdefault(gid, {})[name] = splits(ws_)
+                    var_splits.setdefault(gid, {})[name] = dict(
+                        splits(ws_), _need=need_tracker.need_of([w for w in ws_ if w["market"] == "spread"])["side"])
                 mem.close()
         block["sensitivity_cache"] = {"run_id": run_id, "variants": sorted(variants or {}), "computed_at": bands_at,
                                       "variant_splits": var_splits, "replay_verified_at": verified_at}
@@ -595,8 +596,19 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                 "reference": {"home_spread": ref_spread, "total": ref_total, "as_of": _iso(ref_at),
                               "basis": "observed consensus at last collection"},
                 "splits": sp, "bands": _bands(sp, var_splits.get(gid, {})),
+                "need_stability": _need_stability(ws_, var_splits.get(gid, {})),
                 "need": _need_summary(need) if need else None, "label": LABEL})
     return out
+
+
+def _need_stability(wagers, variants):
+    """How often the spread Need side under each alternative customer assumption matches the baseline."""
+    base = need_tracker.need_of([w for w in wagers if w["market"] == "spread"])["side"] if wagers else None
+    sides = [v.get("_need") for v in variants.values()]
+    if base is None or not sides:
+        return {"baseline": base, "variants": len(sides), "agree": None}
+    return {"baseline": base, "variants": len(sides), "agree": sum(x == base for x in sides),
+            "share": round(sum(x == base for x in sides) / len(sides), 2)}
 
 
 def _bands(base, variants):
