@@ -541,7 +541,7 @@ case "$1" in
     case "$*" in
       *releases/tags/v4-book*) [[ -n "${FAKE_BOOK:-}" ]] || exit 1; echo "${FAKE_BOOK%%:*}"; exit 0 ;;
       *releases/tags/v4-need-decisions*) [[ -n "${FAKE_DEC:-}" ]] || exit 1; echo "${FAKE_DEC%%:*}"; exit 0 ;;
-      *releases/tags/v4-need-*|*releases/tags/v4-results*) exit 1 ;;
+      *releases/tags/v4-need-*|*releases/tags/v4-results*|*releases/tags/v4-settlement*) exit 1 ;;
       *) printf '%s\n' $FAKE_TAGS; exit 0 ;;
     esac ;;
   release)
@@ -1161,12 +1161,13 @@ def test_site_inputs_need_tracker_decisions(tmp_path, dec, ok, n):
 def test_need_tracker_records_saved_before_publishing_never_overwritten_and_no_secrets():
     steps = _yaml("site-build.yml")["jobs"]["build"]["steps"]
     names = [s.get("name") for s in steps]
-    save = names.index("Save Need-tracker records (new files only, never overwritten)")
+    save = names.index("Save Need-tracker and settlement records (new files only, never overwritten)")
     assert names.index("Build site") < save < names.index("Publish")
     run = steps[save]["run"]
     assert "--clobber" not in run and "gh release upload" in run
     assert set(steps[save]["env"]) == {"GH_TOKEN"}
     assert "--need-dir need --results-dir results --need-out need_new" in steps[names.index("Build site")]["run"]
+    assert "--settle-dir settle" in steps[names.index("Build site")]["run"]
     analyze = _wf("odds-analyze.yml")
     assert "secrets." not in analyze
     nfl = [s for s in _yaml("odds-analyze.yml")["jobs"]["analyze"]["steps"] if "data_v4.results" in s.get("run", "")]

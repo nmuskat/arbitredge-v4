@@ -159,6 +159,49 @@ def tracker_step(snap, snaps, now, need_dir=None, results_dir=None, need_out=Non
         "report": rep}
 
 
+def settlement_step(snap, bconn, conn, snaps, now, results_dir=None, settle_dir=None, settle_out=None):
+    """Settle every accepted simulated wager whose game has a final score; derive bankrolls; reconcile."""
+    from data_v4 import results as R
+    from sportsbook_v4 import ENGINE_VERSION, bettor_settlement as BS, need_tracker as NT, params as P
+    from sportsbook_v4.util import to_epoch
+    try:
+        existing = NT.load(settle_dir, "settle_*.json.gz")
+        docs = R.load(results_dir)
+    except (NT.TrackerIntegrityError, ValueError) as e:
+        snap["settlement"] = {"status": "INTEGRITY_FAILED", "reason": str(e), "label": "MODELED"}
+        return
+    cols = ("wager_id", "run_id", "population_id", "bettor_index", "archetype", "canonical_game_id", "sport",
+            "market", "side", "accepted_line", "accepted_price", "stake")
+    wagers = [dict(zip(cols, r)) for r in bconn.execute(f"SELECT {', '.join(cols)} FROM v4_wager")]
+    active = {r[0] for r in bconn.execute("SELECT run_id FROM v4_run WHERE engine_version=? AND params_hash=?",
+                                          (ENGINE_VERSION, P.params_hash()))}
+    games, kicks = {}, {}
+    for rid, sport, gj in bconn.execute("SELECT run_id, sport, games_json FROM v4_run"):
+        for g in json.loads(gj):
+            home, away = live_book._names(conn, g["canonical_game_id"])
+            games[(sport, g["canonical_game_id"])] = {"sport": sport, "event_id": g["canonical_game_id"], "home": home,
+                                                      "away": away, "kickoff": g["commence_time"]}
+            kicks[(sport, g["canonical_game_id"])] = to_epoch(g["commence_time"])
+    latest_snap = max((x for x in snaps if x.get("teams")), key=lambda x: x["fetched_at"], default=None)
+    matcher = rankings.TeamMatcher(latest_snap["teams"]) if latest_snap else None
+    res = R.match([g for g in games.values() if g["home"]], docs, matcher)
+    res = {k: v for k, v in res.items() if kicks.get(k, now) < now}          # never before kickoff
+    new = BS.new_settlements(wagers, res, existing, _iso(now))
+    if new and settle_out:
+        NT.write(os.path.join(settle_out, "v4-settlement"), f"settle_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(now))}.json.gz", new)
+    allset = existing + new
+    problems = BS.verify(allset, {w["wager_id"]: w for w in wagers})
+    bettors = [dict(zip(("population_id", "bettor_index", "archetype", "bankroll"), r))
+               for r in bconn.execute("SELECT population_id, bettor_index, archetype, bankroll FROM v4_bettor")]
+    rows, overdue = BS.bankrolls(bettors, wagers, allset, active, now, kicks)
+    rec = BS.reconcile(wagers, allset, active, rows)
+    snap["settlement"] = {"status": "OK" if not problems and rec["ok"] else "CHECK_FAILED", "label": "MODELED",
+                          "rules_version": BS.RULES_VERSION, "settlement_rows": len(allset),
+                          "new_this_build": len(new), "corrections": sum(1 for s in allset if s["supersedes"]),
+                          "open_overdue_48h": overdue, "problems": problems[:20], "reconciliation": rec,
+                          "summary": BS.summary(rows, wagers, allset, active)}
+
+
 def rebuild_store(shards_dir, db_path=":memory:"):
     from analysis_v4.actions_analyze import rebuild
     paths = sorted(glob.glob(os.path.join(shards_dir, "**", "quotes_*.jsonl.gz"), recursive=True))
@@ -428,7 +471,19 @@ R.performance=()=>{const out=[];for(const[k,s]of Object.entries(D.sports)){const
   brk(h.by_book,"By book"),brk(h.by_market,"By market"),brk(h.by_hours_to_kickoff,"By hours to kickoff")))}
  out.push(card(el("h3",{},"Realized results"),el("p",{class:"mute"},"Graded results appear once final scores are ingested (NFL: nflverse). No strategy has passed the evidence gate.")));
  return[card(el("h2",{},"Performance center"),el("p",{class:"small"},"Proof standard: positive closing EV with a confidence interval above zero over enough independent games, then walk-forward and multiple-testing checks. Until then every strategy stays WATCH/PAPER.")),...out]};
-R.health=()=>{const c=D.collection;return[card(el("h2",{},"Collection health"),
+function settleCard(){const X=D.settlement;if(!X)return null;
+ if(X.status==="INTEGRITY_FAILED")return card(badge("INTEGRITY FAILED","UNAVAILABLE")," Settlement records failed verification: "+(X.reason||""));
+ const sm=(X.summary||{})[st.sport]||{};const c=x=>x==null?"–":money(x/100);const rc=X.reconciliation||{};
+ return card(el("h3",{},badge("MODELED"),"Settled simulated wagers and bankrolls"),
+  el("p",{class:"small"},"Every accepted simulated wager is settled at its own line and price once its game has a final score (NFL: nflverse; CFB: CollegeFootballData). No score means the wager stays open; nothing is guessed. Corrections are added as new records; history is never overwritten. Bankrolls = opening bankroll + settled P&L − open stakes, in cents."),
+  el("div",{class:"grid"},el("div",{class:"kpi"},el("b",{},(sm.settled_wagers||0).toLocaleString()),"settled wagers ("+(sm.open_wagers||0).toLocaleString()+" open)"),
+   el("div",{class:"kpi"},el("b",{},c(sm.book_realized_pnl_cents)),"book realized P&L"+(sm.book_hold_pct!=null?" (hold "+sm.book_hold_pct+"%)":"")),
+   el("div",{class:"kpi"},el("b",{},sm.results?sm.results.win+"-"+sm.results.loss+"-"+sm.results.push:"–"),"bettor W-L-P"),
+   el("div",{class:"kpi"},el("b",{},X.status==="OK"?"exact":"CHECK"),"reconciliation ("+(rc.game_mismatch_cents||0)+"¢ / "+(rc.bettor_mismatch_cents||0)+"¢ off)")),
+  el("table",{class:"small"},el("tbody",{},Object.entries(sm.by_archetype||{}).map(([a,v])=>el("tr",{},el("td",{},a),el("td",{class:"num"},v.bettors+" bettors"),
+   el("td",{class:"num"},v.up+" up · "+v.down+" down · "+v.even+" even"),el("td",{class:"num"},c(v.pnl_cents)))))),
+  el("p",{class:"small mute"},X.settlement_rows+" settlement records ("+X.corrections+" corrections); "+X.open_overdue_48h+" open wagers more than 48 h past kickoff; "+(sm.bettors_below_min_stake||0)+" bettors below the minimum stake. Simulated customers: not a betting result."))}
+R.health=()=>{const c=D.collection;return[settleCard(),card(el("h2",{},"Collection health"),
  el("table",{},el("tbody",{},el("tr",{},el("td",{},"V4 credits this month"),el("td",{class:"num"},c.v4_credits_this_month)),
   el("tr",{},el("td",{},"Requests this month"),el("td",{class:"num"},c.requests_this_month)),
   el("tr",{},el("td",{},"Provider credits remaining (shared with V3)"),el("td",{class:"num"},c.provider_remaining==null?"–":c.provider_remaining.toLocaleString())),
@@ -490,6 +545,7 @@ def main(argv=None):
     ap.add_argument("--need-dir", default=None, help="saved Need-tracker snapshots and decisions (v4-need*)")
     ap.add_argument("--results-dir", default=None, help="saved final scores (release v4-results)")
     ap.add_argument("--need-out", default=None, help="where to write Need-tracker files created by this build")
+    ap.add_argument("--settle-dir", default=None, help="saved wager settlements (release v4-settlement)")
     a = ap.parse_args(argv)
     now = _epoch(a.now) if a.now else time.time()
     if a.live_db:
@@ -508,6 +564,7 @@ def main(argv=None):
                           commit=(os.environ.get("GITHUB_SHA") or "")[:7] or None)
     snap["shards"] = n_shards
     tracker_step(snap, load_rankings(a.rankings_dir), now, a.need_dir, a.results_dir, a.need_out, conn)
+    settlement_step(snap, bconn, conn, load_rankings(a.rankings_dir), now, a.results_dir, a.settle_dir, a.need_out)
     snap = _clean(snap)
     bconn.close()
     with open(os.path.join(a.out, "site_snapshot.json"), "w") as fh:

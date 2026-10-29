@@ -39,4 +39,6 @@ for wk in "$(date -u +%G-W%V)" "$(date -u -d '7 days ago' +%G-W%V)"; do
 done
 fetch_all v4-need-decisions 'decisions_*.json.gz' need '^decisions_'
 fetch_all v4-results 'results_*.json.gz' results '^results_'
+mkdir -p settle
+fetch_all v4-settlement 'settle_*.json.gz' settle '^settle_'
 echo "shards: $(find shards -name 'quotes_*.jsonl.gz' | wc -l), rankings snapshots: $(find rankings -name 'rankings_*.json' | wc -l), ledger files: $(find book -name 'book_*.json.gz' | wc -l), need files: $(find need -name '*.json.gz' | wc -l), results files: $(find results -name 'results_*' | wc -l)"
