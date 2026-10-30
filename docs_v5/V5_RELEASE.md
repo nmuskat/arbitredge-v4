@@ -8,7 +8,7 @@
 
 ## 1. What V5 r1 is
 
-**Same infrastructure, same website, same 20,000 persistent customers.** Engine `sportsbook_v5.r1` replaces `sportsbook_v4.m4` as the active engine of the existing pipeline:
+**Same infrastructure, same website, same 20,000 persistent customers.** Engine `sportsbook_v5.r2` (r1 plus the §9 recalibration) replaces `sportsbook_v4.m4` as the active engine of the existing pipeline:
 - collection (Expanded) is unchanged;
 - the ledger (`v4-book`), settlement (`v4-settlement`) and Need Tracker (`v4-need*`) are reused;
 - the dashboard is the existing Cloudflare Pages site;
