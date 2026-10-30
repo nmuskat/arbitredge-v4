@@ -122,7 +122,7 @@ def tracker_step(snap, snaps, now, need_dir=None, results_dir=None, need_out=Non
     from sportsbook_v4 import need_tracker as NT
     try:
         raw = NT.load(need_dir, "need_*.json.gz")
-        decisions = NT.load(need_dir, "decisions_*.json.gz")
+        decisions = NT.unique_decisions(NT.load(need_dir, "decisions_*.json.gz"))
         docs = R.load(results_dir)
     except (NT.TrackerIntegrityError, ValueError) as e:
         snap["need_tracker"] = {"status": "INTEGRITY_FAILED", "reason": str(e), "label": NT.LABEL}

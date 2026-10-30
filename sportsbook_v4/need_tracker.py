@@ -40,6 +40,8 @@ TRACKER_VERSION = "need_tracker_v1"
 LABEL = "MODELED / RESEARCH ONLY"
 SNAPSHOT_HORIZON_S = 24 * 3600
 EARLY_DECISION_S = 3 * 3600          # a decision taken more than 3 h before kickoff is flagged EARLY
+SEAL_GRACE_S = 20 * 60               # seal only once kickoff is this far past: a dashboard build that started
+                                     # before kickoff has uploaded its final snapshot by then
 TRACKER_START = "2026-10-29T00:00:00Z"   # games kicking off before this were never snapshotted
 MIN_SAMPLE_FOR_CLAIMS = 300
 
@@ -253,9 +255,9 @@ def seal(games, snapshots, decisions, now):
     done = {}
     for d in decisions:
         k = (d["sport"], d["event_id"])
-        if k in done and done[k]["record_hash"] != d["record_hash"]:
+        if k in done and decision_identity(done[k]) != decision_identity(d):
             raise TrackerIntegrityError(f"two different decisions sealed for {k}")
-        done[k] = d
+        done.setdefault(k, d)
     by_game = {}
     for s in snapshots:
         by_game.setdefault((s["sport"], s["event_id"]), []).append(s)
@@ -263,7 +265,7 @@ def seal(games, snapshots, decisions, now):
     for g in sorted(games, key=lambda x: (x["kickoff"], x["sport"], x["event_id"])):
         k = (g["sport"], g["event_id"])
         kick = to_epoch(g["kickoff"])
-        if k in done or kick > now or kick < to_epoch(TRACKER_START):
+        if k in done or kick + SEAL_GRACE_S > now or kick < to_epoch(TRACKER_START):
             continue
         pre = [s for s in by_game.get(k, []) if to_epoch(s["taken_at"]) < kick and to_epoch(s["built_at"]) < kick]
         last = max(pre, key=lambda s: (s["taken_at"], s["built_at"]), default=None)
@@ -277,6 +279,23 @@ def seal(games, snapshots, decisions, now):
         new.append(rec)
         done[k] = rec
     return new
+
+
+def decision_identity(d):
+    """What a decision IS: its status and the exact pre-kickoff snapshot it froze. Two seals of one game (e.g. by
+    the collection job and by a dashboard build) are the same decision iff these match; sealed_at may differ."""
+    return (d["status"], (d.get("snapshot") or {}).get("record_hash"))
+
+
+def unique_decisions(decisions):
+    """One decision per game (the earliest sealed); raises if two seals of a game differ."""
+    out = {}
+    for d in sorted(decisions, key=lambda x: x["sealed_at"]):
+        k = (d["sport"], d["event_id"])
+        if k in out and decision_identity(out[k]) != decision_identity(d):
+            raise TrackerIntegrityError(f"two different decisions sealed for {k}")
+        out.setdefault(k, d)
+    return list(out.values())
 
 
 # ------------------------------------------------------------------ grading

@@ -74,6 +74,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/state_save.sh
+      - name: Seal Need-tracker decisions at kickoff (no secrets; usually a no-op)
+        if: always()
+        continue-on-error: true     # sealing never blocks collection; the next dashboard build seals too
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/seal_step.sh
   site:
     # Rebuild the site only when this run saved new odds (a skipped job costs no minutes).
     # Only the two Cloudflare deploy secrets are passed to it.

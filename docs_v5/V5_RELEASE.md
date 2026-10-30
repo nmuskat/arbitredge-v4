@@ -149,6 +149,21 @@ This is a consequence of an **unsupported assumption**: m4's arrival rates were 
 
 **Option for the owner (not applied):** define the weekly arrival rate as each customer's long-run average, so an active week's rate = rate ÷ the customer's own P(active). Total volume per customer then matches m4 and only *when* customers bet changes. This would not force any sharp percentage; the share would remain an output.
 
+## 3e. Kickoff sealing independent of builds (owner request, Oct 29 night)
+
+**Safety of the existing mechanism (m4, live):**
+- A decision is the last snapshot whose data time **and** build time are before kickoff.
+- No build after kickoff can create such a snapshot, and the engine never accepts a wager at or after kickoff.
+- So a late seal produces exactly the decision an immediate seal would have: delay affects *when* the record appears, never its content.
+
+**V5 improvement (built on `v5-dev`, ships with V5):**
+- **Where it runs:** a no-secrets step at the end of every odds-collect job (`sportsbook_v4/seal_run.py`, `.github/scripts/seal_step.sh`).
+- **When it acts:** once a priority game's kickoff is at least 20 minutes past, it seals that game from the immutable snapshots, without waiting for a dashboard build or a Cloudflare deploy. The grace period covers a dashboard build that started before kickoff and is still uploading its final snapshot.
+- **Most runs do nothing:** it checks the collector state first, with no downloads.
+- **Same rule everywhere:** it uses the same sealing rule as the dashboard build. If both seal a game, the two records must freeze the same snapshot (tested); a mismatch is an integrity error. The earliest seal is kept.
+- **Left to the dashboard build:** games with no snapshot at all, since only the build knows the book's full game list.
+- **Cost:** no extra jobs, no extra deploys. It adds a few seconds to some collect jobs, which stay within one billed minute.
+
 ## 4. Rollback to the last known-good V4
 
 1. Set `ENGINE_VERSION` back to `"sportsbook_v4.m4"` (one line), or revert `v4-dev` to the pre-V5 commit `31c2ef3`. Push normally; no force-push.

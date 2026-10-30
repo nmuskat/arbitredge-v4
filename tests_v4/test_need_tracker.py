@@ -111,7 +111,7 @@ def test_disagreement_is_flagged_never_forced():
     assert s["qualification"]["qualified"] and s["qualification"]["public_side"] == "home"
     assert s["need"]["side"] == "home" and s["alignment"] == "DISAGREE"
     assert s["research_pick"] is None
-    rep = NT.report(NT.seal([g()], [s], [], K + 60), {("nfl", "g1"): {"home_score": 30, "away_score": 0}})
+    rep = NT.report(NT.seal([g()], [s], [], K + NT.SEAL_GRACE_S + 60), {("nfl", "g1"): {"home_score": 30, "away_score": 0}})
     assert rep["research_subset"]["games"] == 0 and rep["qualified_disagreements"]["games"] == 1
 
 
@@ -154,31 +154,31 @@ def test_seal_uses_the_last_snapshot_before_kickoff():
     a, b = snap(public_home(), taken=K - 7200, built=K - 7100), snap(public_home(130), taken=K - 1800, built=K - 1700)
     late = dict(b, built_at="2026-11-01T18:00:05Z")               # built after kickoff: never used
     assert NT.seal([g()], [a, b, late], [], K - 1) == []           # not kicked off yet
-    [d] = NT.seal([g()], [a, b, late], [], K + 60)
+    [d] = NT.seal([g()], [a, b, late], [], K + NT.SEAL_GRACE_S + 60)
     assert d["status"] == "OK" and d["snapshot"] == b
     assert NT.seal([g()], [a, b], [d], K + 3600) == []             # sealed once
 
 
 def test_seal_records_missing_and_early_decisions():
-    [d] = NT.seal([g()], [], [], K + 60)
+    [d] = NT.seal([g()], [], [], K + NT.SEAL_GRACE_S + 60)
     assert d["status"] == "NO_PRE_KICKOFF_SNAPSHOT" and d["snapshot"] is None
-    [e] = NT.seal([g()], [snap(public_home(), taken=K - 5 * 3600, built=K - 5 * 3600)], [], K + 60)
+    [e] = NT.seal([g()], [snap(public_home(), taken=K - 5 * 3600, built=K - 5 * 3600)], [], K + NT.SEAL_GRACE_S + 60)
     assert e["status"] == "EARLY"
     assert NT.seal([g(kickoff="2026-10-20T17:00:00Z")], [], [], K) == []     # before the tracker existed
 
 
 def test_two_different_decisions_for_one_game_is_an_integrity_error():
-    [d] = NT.seal([g()], [snap(public_home())], [], K + 60)
+    [d] = NT.seal([g()], [snap(public_home())], [], K + NT.SEAL_GRACE_S + 60)
     other = dict(d, status="EARLY")
     other["record_hash"] = "x"
     with pytest.raises(NT.TrackerIntegrityError):
-        NT.seal([g()], [], [d, other], K + 60)
+        NT.seal([g()], [], [d, other], K + NT.SEAL_GRACE_S + 60)
 
 
 # ------------------------------------------------------------------ grading
 
 def sealed(ws, **kw):
-    return NT.seal([g()], [snap(ws, **kw)], [], K + 60)[0]
+    return NT.seal([g()], [snap(ws, **kw)], [], K + NT.SEAL_GRACE_S + 60)[0]
 
 
 @pytest.mark.parametrize("home,away,ats,units", [(20, 21, "W", 100 / 108), (24, 20, "L", -1.0), (23, 20, "P", 0.0)])
@@ -191,7 +191,7 @@ def test_grade_without_price_or_result_is_never_filled_in():
     d = sealed(public_home(), offer=None)
     assert NT.grade(d, {"home_score": 1, "away_score": 0})["status"] == "NO_PRICE"
     assert NT.grade(sealed(public_home()), None)["status"] == "AWAITING_RESULT"
-    assert NT.grade(NT.seal([g()], [], [], K + 60)[0], {"home_score": 1, "away_score": 0})["status"] == "NO_DECISION"
+    assert NT.grade(NT.seal([g()], [], [], K + NT.SEAL_GRACE_S + 60)[0], {"home_score": 1, "away_score": 0})["status"] == "NO_DECISION"
 
 
 def test_report_separates_all_need_from_the_research_subset():
@@ -394,7 +394,7 @@ def test_c4_needs_two_sharp_bettors_and_ten_percent_sharp_money():
 
 def test_cohort_grading_uses_the_recorded_offer_for_the_picked_side_and_clv():
     ws = public_home(120, 0.8, stake=10.0) + [w(900 + i, "away", 225.0, "SHARP") for i in range(4)]
-    d = NT.seal([g()], [snap(ws, handles={"g1": 99999.0, "g2": 1.0, "g3": 1.0, "g4": 1.0})], [], K + 60)[0]
+    d = NT.seal([g()], [snap(ws, handles={"g1": 99999.0, "g2": 1.0, "g3": 1.0, "g4": 1.0})], [], K + NT.SEAL_GRACE_S + 60)[0]
     res = {"home_score": 20, "away_score": 21}
     close = {"line": -2.5, "fair": {"home": 0.5, "away": 0.5}}
     c4 = NT.grade_cohort(d, "C4_rec_vs_sharp_disagreement", res, close)
@@ -408,7 +408,7 @@ def test_cohort_grading_uses_the_recorded_offer_for_the_picked_side_and_clv():
 
 
 def test_selections_are_read_from_the_stored_snapshot_never_recomputed(monkeypatch):
-    d = NT.seal([g()], [snap(public_home())], [], K + 60)[0]
+    d = NT.seal([g()], [snap(public_home())], [], K + NT.SEAL_GRACE_S + 60)[0]
     monkeypatch.setattr(CO, "evaluate", lambda *_: (_ for _ in ()).throw(AssertionError("re-evaluated")))
     rep = NT.cohort_report([d], {("nfl", "g1"): {"home_score": 20, "away_score": 21}}, {})
     assert rep["cohorts"]["C1_selective_need"]["summary"]["record"] == "1-0-0"
@@ -418,3 +418,53 @@ def test_holm_adjustment():
     adj = NT.holm({"a": 0.01, "b": 0.04, "c": 0.03, "d": None})
     assert adj == {"a": 0.03, "b": 0.06, "c": 0.06, "d": None}
     assert NT._p_edge([{"status": "GRADED", "ats": "W", "price": -110}] * 3) == pytest.approx((110 / 210) ** 3)
+
+
+# ------------------------------------------------------------------ sealing at kickoff, independent of builds
+
+def test_seal_waits_for_the_grace_period_after_kickoff():
+    s = snap(public_home())
+    assert NT.seal([g()], [s], [], K + NT.SEAL_GRACE_S - 1) == []
+    assert NT.seal([g()], [s], [], K + NT.SEAL_GRACE_S)[0]["snapshot"] == s
+
+
+def test_two_seals_of_one_game_are_tolerated_only_when_identical():
+    s = snap(public_home())
+    a = NT.seal([g()], [s], [], K + NT.SEAL_GRACE_S + 5)[0]          # e.g. the collection job
+    b = NT.seal([g()], [s], [], K + 3600)[0]                         # e.g. a later dashboard build
+    assert a["sealed_at"] != b["sealed_at"] and NT.decision_identity(a) == NT.decision_identity(b)
+    assert NT.unique_decisions([b, a]) == [a]                        # the earliest seal is kept
+    other = NT.seal([g()], [snap(public_home(130), taken=K - 900, built=K - 800)], [], K + 3600)[0]
+    with pytest.raises(NT.TrackerIntegrityError):
+        NT.unique_decisions([a, other])
+
+
+def test_collection_job_seal_matches_the_dashboard_seal(tmp_path):
+    from sportsbook_v4 import seal_run
+    s_early, s_last = snap(public_home(), taken=K - 7200, built=K - 7100), snap(public_home(130), taken=K - 1800, built=K - 1700)
+    need = tmp_path / "need"
+    NT.write(str(need / "v4-need-2026-W44"), "need_nfl_a.json.gz", [s_early, s_last])
+    state = {"americanfootball_nfl": {"events": [["g1", K, "Home Team", "Away Team"]]}, "americanfootball_ncaaf": {"events": []}}
+    assert seal_run.candidates(state, K + 60) == []                   # inside the grace period: nothing yet
+    now = K + NT.SEAL_GRACE_S + 120
+    new, path = seal_run.seal(state, str(need), str(tmp_path / "out"), now)
+    assert [d["snapshot"]["record_hash"] for d in new] == [s_last["record_hash"]] and path
+    dash = NT.seal([g()], [s_early, s_last], [], now + 3600)[0]        # what a later dashboard build would seal
+    assert NT.decision_identity(dash) == NT.decision_identity(new[0])
+    assert seal_run.candidates(state, K + seal_run.SEAL_WINDOW_S + NT.SEAL_GRACE_S + 1) == []   # old kickoffs: no work
+    # a game with no snapshot is left to the dashboard build (it knows the book's full game list)
+    state["americanfootball_nfl"]["events"].append(["g9", K, "X", "Y"])
+    new2, _ = seal_run.seal(state, str(need), str(tmp_path / "out2"), now)
+    assert [d["event_id"] for d in new2] == ["g1"]
+
+
+def test_seal_step_in_the_collection_job_has_no_secrets():
+    import yaml
+    steps = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "..", ".github", "workflows",
+                                             "odds-collect.yml")))["jobs"]["collect"]["steps"]
+    names = [s.get("name") for s in steps]
+    seal = steps[names.index("Seal Need-tracker decisions at kickoff (no secrets; usually a no-op)")]
+    assert set(seal["env"]) == {"GH_TOKEN"} and seal.get("continue-on-error") is True
+    assert names.index("Save data shard, ledger and state") < names.index(seal["name"])
+    script = open(os.path.join(os.path.dirname(__file__), "..", ".github", "scripts", "seal_step.sh")).read()
+    assert "--clobber" not in script and "ODDS" not in script
