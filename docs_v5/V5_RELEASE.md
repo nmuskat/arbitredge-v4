@@ -227,7 +227,7 @@ breaker and free preflight unchanged; V5 adds no Odds API calls.
 2. CI runs the suite on `v4-dev` (about 4 billed minutes).
 3. Start one `site-build` (workflow_dispatch) so V5 opens now rather than at the next odds save. It opens the V5 weekly runs,
    reconstructs Tuesday-Friday from the stored observed odds, verifies replay, deploys behind Cloudflare Access.
-4. Verify: page header "ArbitrEdge V5"; audit `engine_version sportsbook_v5.r1`, `replay_verified: this build`; V4 runs listed as
+4. Verify: page header "ArbitrEdge V5"; audit `engine_version sportsbook_v5.r2`, `replay_verified: this build`; V4 runs listed as
    superseded with unchanged counts; settlement status OK; Need Tracker shows V4 and V5 sections separately; Access still required.
 5. If any check fails, roll back (section 4).
 
