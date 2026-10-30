@@ -129,13 +129,15 @@ def due(now, kickoffs, last_fetch, tier="test", sport=None, change_rate=None):
 
 # Dashboard rebuilds (every tier). A rebuild is one GitHub Actions job (>= 1 billed minute) and one
 # Cloudflare Pages deployment, so it happens only after a run that saved new odds, and then:
-SITE_QUIET_GAP_S = 2 * 3600        # at most every 2 h in quiet periods
+SITE_QUIET_GAP_S = 3 * 3600        # at most every 3 h in quiet periods
 SITE_NEAR_GAP_S = 45 * 60          # every 45 min within SITE_NEAR_S of a priority (NFL / Top-25 CFB) kickoff
 SITE_NEAR_S = 6 * 3600
 # ... and always right after a closing-line fetch.
 # Monthly self-limit (GitHub Free minutes, Cloudflare Free 500 builds/month, which may count direct uploads):
-SITE_MONTH_SOFT = 380              # from here: only after closes, and at most every 6 h otherwise
-SITE_MONTH_HARD = 440              # from here: no rebuilds until next month (the page shows its odds as stale)
+# Measured Oct 30: a build job takes 70-100 s on GitHub (cold or warm cache), so each bills 2 minutes; 300 builds
+# = 600 minutes keeps the month's worst case (every scheduled collect run + heavy CI) under ~1,900 of the 2,000.
+SITE_MONTH_SOFT = 280              # from here: only after closes, and at most every 6 h otherwise
+SITE_MONTH_HARD = 300              # from here: no rebuilds until next month (the page shows its odds as stale)
 SITE_SOFT_GAP_S = 6 * 3600
 
 

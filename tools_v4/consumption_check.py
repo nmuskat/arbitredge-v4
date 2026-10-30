@@ -97,9 +97,9 @@ def snapshots_per_game(exp, state, snaps, known_events, start, days):
     return out
 
 
-CI_RUNS_PER_MONTH = 50       # code pushes (documentation-only pushes skip CI); measured 3 billed minutes each
-CI_MIN = 3
-SITE_MIN = 1.25              # a dashboard build bills 1 minute, occasionally 2 late in a busy week
+CI_RUNS_PER_MONTH = 40       # code pushes to v4-dev (documentation-only pushes skip CI); 3-5 billed minutes each
+CI_MIN = 4
+SITE_MIN = 2                 # measured Oct 30: a dashboard build job takes 70-100 s, billed 2 minutes
 
 
 def site_builds(exp):
@@ -124,11 +124,11 @@ def actions_minutes(tier, exp, start, days):
     wk = calendar.timegm(time.gmtime(start)[:3] + (0, 0, 0))
     runs_week = len(cron_plan.run_times(wk, tier))
     scale = 4.35 / (days / 7)
-    builds = round(len(site_builds(exp)) * scale)
+    builds = min(SP.SITE_MONTH_HARD, round(len(site_builds(exp)) * scale))
     m = {"collect": round(runs_week * 4.35),
          "site_builds": builds, "site_build_minutes": round(builds * SITE_MIN),
          "analysis": 31,                          # odds-analyze: daily, 1 minute
-         "rankings": 9 + 9,                       # cfb-rankings: 2 scheduled runs a week + its dashboard rebuild
+         "rankings": 9 + 18,                      # cfb-rankings: 2 scheduled runs a week + its 2-minute rebuild
          "ci": CI_RUNS_PER_MONTH * CI_MIN}
     m["total"] = m["collect"] + m["site_build_minutes"] + m["analysis"] + m["rankings"] + m["ci"]
     m["cloudflare_deployments"] = builds + 9     # one per dashboard build (collector + rankings)

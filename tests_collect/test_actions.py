@@ -1047,8 +1047,8 @@ def test_other_tiers_never_run_expanded_only_cron_entries():
 @pytest.mark.parametrize("now_off,last,kicks,reasons,want", [
     (0, None, [], ["final 72h"], True),                                 # first build
     (0, -10 * 60, [], [], False),                                       # no new odds: never
-    (0, -119 * 60, [], ["final 7d"], False),                            # quiet: at most every 2 h
-    (0, -120 * 60, [], ["final 7d"], True),
+    (0, -179 * 60, [], ["final 7d"], False),                            # quiet: at most every 3 h
+    (0, -180 * 60, [], ["final 7d"], True),
     (0, -44 * 60, [5 * 3600], ["final 6h"], False),                     # final 6 h: every 45 min
     (0, -45 * 60, [5 * 3600], ["final 6h"], True),
     (0, -44 * 60, [7 * 3600], ["final 24h"], False),                    # kickoff 7 h away: quiet rule
@@ -1061,7 +1061,7 @@ def test_site_due_policy(now_off, last, kicks, reasons, want):
 
 
 @pytest.mark.parametrize("count,last,reasons,want", [
-    (SP.SITE_MONTH_SOFT - 1, -120 * 60, ["final 7d"], True),
+    (SP.SITE_MONTH_SOFT - 1, -180 * 60, ["final 7d"], True),
     (SP.SITE_MONTH_SOFT, -120 * 60, ["final 7d"], False),               # soft limit: every 6 h ...
     (SP.SITE_MONTH_SOFT, -6 * 3600, ["final 7d"], True),
     (SP.SITE_MONTH_SOFT, -60, ["close (kickoff in 20 min)"], True),     # ... and still after closes
@@ -1071,6 +1071,16 @@ def test_site_due_monthly_limits(count, last, reasons, want):
     ok, why = SP.site_due(NOW, NOW + last, [NOW + 3 * 3600], reasons, count)
     assert ok == want, why
     assert SP.SITE_MONTH_HARD + 20 < 500          # + cfb-rankings and manual builds stay under Cloudflare's 500
+
+
+def test_worst_case_actions_minutes_stay_under_the_free_2000():
+    # every scheduled expanded collect run (1 min) + every allowed build at 2 billed minutes + daily analysis +
+    # rankings (9 runs + 9 rebuilds at 2 min) + 40 CI pushes at 4 min + 10 manual minutes
+    import calendar
+    from collect_v4 import cron_plan
+    collect = round(len(cron_plan.run_times(calendar.timegm((2026, 11, 2, 0, 0, 0)), "expanded")) * 4.35)
+    worst = collect + SP.SITE_MONTH_HARD * 2 + 31 + 27 + 40 * 4 + 10
+    assert worst <= 1900, worst
 
 
 def test_site_build_count_resets_each_month(tmp_path, monkeypatch):

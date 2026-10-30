@@ -30,7 +30,7 @@ The owner (nmuskat) has no coding background. You do the engineering, testing an
 | Odds data | release assets `odds-data-YYYY-Www/quotes_*.jsonl.gz` (one per run, never modified) |
 | Credit ledger and state | release `v4-state`: `ledger.jsonl`, `collector_state.json` |
 | Daily analysis | `.github/workflows/odds-analyze.yml` → `analysis_v4/actions_analyze.py` → `v4-state/line_shop_latest.json` |
-| Dashboard | `.github/workflows/site-build.yml` (after runs that saved new odds, paced by `schedule_policy.site_due`: 2 h quiet, 45 min in the final 6 h, always after closes, monthly limit 440) → release `v4-site` + owner-only Cloudflare Pages |
+| Dashboard | `.github/workflows/site-build.yml` (after runs that saved new odds, paced by `schedule_policy.site_due`: 3 h quiet, 45 min in the final 6 h, always after closes, monthly limit 300 (each build bills 2 min)) → release `v4-site` + owner-only Cloudflare Pages |
 | Book Need Tracker (MODELED, research only) | `sportsbook_v4/need_tracker.py`, run by site-build: pre-kickoff snapshots `v4-need-YYYY-Www/need_*.json.gz`, sealed decisions `v4-need-decisions/decisions_*.json.gz`, final scores `v4-results/results_*.json.gz` (NFL from `odds-analyze`, CFB from `cfb-rankings`). All immutable; never delete or overwrite |
 | Synthetic-book ledger (MODELED) | release `v4-book`: `book_<sport>_<week>_<run>_<seq>.json.gz`, one immutable file per advance of a weekly run; never delete or overwrite (`sportsbook_v4/persist.py`) |
 
