@@ -22,5 +22,5 @@ ISOLATION (milestone 1)
 # The ACTIVE engine. Runs created under any other engine version are kept, immutable, and reported as
 # superseded; only runs of the active engine are advanced. Rollback to m4 = set this back to
 # "sportsbook_v4.m4" (m4 runs then resume, catching up deterministically).
-ENGINE_VERSION = "sportsbook_v5.r1"   # V5 r1: individual customers, weekly participation, bankroll-driven stakes
+ENGINE_VERSION = "sportsbook_v5.r2"   # V5 r2: r1 + participation-neutral volume + quarter-Kelly sharp staking (r1 kept for replay)
 M4_ENGINE_VERSION = "sportsbook_v4.m4"   # m4: coherent side-neutral offer; book moves on respected action

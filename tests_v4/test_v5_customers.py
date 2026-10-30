@@ -14,10 +14,32 @@ TEAMS = [f"nfl_t{i}" for i in range(32)]
 POP = [generate_bettor("nfl", i, TEAMS) for i in range(3000)]
 
 
-def test_active_engine_is_v5_and_its_parameters_are_pinned():
-    assert ENGINE_VERSION == "sportsbook_v5.r1"
-    # changing any V5 behaviour parameter requires a new engine release (r2, ...), never an edit of r1
-    assert C.V5_PARAMS_HASH == "e5e5280907a705f98b98508ceb9d8c7bee1a618953d4c7de6747448e99a47e5d"
+def test_active_engine_is_v5_r2_and_every_release_is_pinned():
+    from sportsbook_v4.util import json_hash
+    assert ENGINE_VERSION == "sportsbook_v5.r2"
+    # changing any V5 behaviour parameter requires a new engine release, never an edit of an existing one
+    assert json_hash(C.V5_PARAMS_R1) == "e5e5280907a705f98b98508ceb9d8c7bee1a618953d4c7de6747448e99a47e5d"
+    assert json_hash(C.V5_PARAMS_R2) == "012457c737686eb0f9b9793d93263eaae91bb97e6aefa3c249ac4a992e6ef46f"
+    assert C.V5_PARAMS_HASH == json_hash(C.V5_PARAMS_R2)
+    assert {k: v for k, v in C.V5_PARAMS_R2.items() if k in C.V5_PARAMS_R1} == C.V5_PARAMS_R1   # r2 = r1 + two rules
+
+
+def test_r2_participation_neutral_volume_and_quarter_kelly_sharp_units():
+    for b in POP[:400]:
+        eff, arch, _active, ind = C.effective(b, b["bankroll"], 0)
+        # long-run weekly arrivals unchanged: active weeks carry rate / P(active)
+        assert eff["traits"]["arrivals_per_week"] * ind["p_active"] == pytest.approx(b["traits"]["arrivals_per_week"])
+        scale = 0.4 if arch["is_sharp"] else 1.0
+        assert eff["traits"]["unit_fraction"] == pytest.approx(b["traits"]["unit_fraction"] * scale)
+        assert b["traits"] is not eff["traits"]                          # the stored customer is never modified
+
+
+def test_wealthy_recreational_customers_are_not_sharps():
+    from sportsbook_v4.params import ARCHETYPES as A
+    assert not A["HIGH_STAKES_REC"]["is_sharp"] and A["HIGH_STAKES_REC"]["bankroll_median"] >= 40000
+    hs = [b for b in POP if b["archetype"] == "HIGH_STAKES_REC"]
+    assert hs and all(C.effective(b, b["bankroll"], 0)[0]["traits"]["unit_fraction"] == b["traits"]["unit_fraction"]
+                      for b in hs)
 
 
 def test_customers_keep_m4_identities_and_get_persistent_individual_traits():
@@ -81,7 +103,7 @@ def test_v5_run_stores_its_snapshot_and_reloads_with_identity_check(tmp_path):
     from tests_v4.test_live_book import new_book
     live, book, d, out = _week(tmp_path)
     rid = out["nfl"]["audit"]["run_id"]
-    assert out["nfl"]["audit"]["engine_version"] == "sportsbook_v5.r1"
+    assert out["nfl"]["audit"]["engine_version"] == "sportsbook_v5.r2"
     snap = persist.snapshot_rows(book, rid)
     assert len(snap) == 500 and all(b >= 0 for _i, b in snap)
     fresh = new_book()

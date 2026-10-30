@@ -1,0 +1,192 @@
+{
+ "nfl": {
+  "engine_version": "sportsbook_v5.r1",
+  "customers": 10000,
+  "participation": {
+   "active_this_week": 5103,
+   "sitting_out": 4897,
+   "busted": 0,
+   "active_share_by_group": {
+    "HIGH_STAKES_REC": 0.57,
+    "NARRATIVE_CHASER": 0.608,
+    "REC_CASUAL": 0.435,
+    "SELECTIVE_PRICE_SENSITIVE": 0.606,
+    "SHARP": 0.786,
+    "TEAM_LOYAL": 0.581,
+    "UNDERDOG_CONTRARIAN": 0.481
+   }
+  },
+  "wagers": 1746,
+  "customers_with_wagers": 1394,
+  "wagers_per_betting_customer": {
+   "median": 1,
+   "p90": 2,
+   "max": 5
+  },
+  "stake_by_group": {
+   "HIGH_STAKES_REC": {
+    "n": 62,
+    "median": 1596.0,
+    "p90": 5544.0,
+    "max": 7921.0
+   },
+   "NARRATIVE_CHASER": {
+    "n": 386,
+    "median": 25.0,
+    "p90": 102.0,
+    "max": 518.0
+   },
+   "REC_CASUAL": {
+    "n": 910,
+    "median": 21.0,
+    "p90": 74.0,
+    "max": 543.0
+   },
+   "SELECTIVE_PRICE_SENSITIVE": {
+    "n": 3,
+    "median": 181.0,
+    "p90": 315.0,
+    "max": 315.0
+   },
+   "SHARP": {
+    "n": 55,
+    "median": 1407.0,
+    "p90": 3000.0,
+    "max": 3000.0
+   },
+   "TEAM_LOYAL": {
+    "n": 228,
+    "median": 23.0,
+    "p90": 74.0,
+    "max": 587.0
+   },
+   "UNDERDOG_CONTRARIAN": {
+    "n": 102,
+    "median": 26.0,
+    "p90": 88.0,
+    "max": 211.0
+   }
+  },
+  "handle": 280340.0,
+  "concentration": {
+   "top_1pct_customers_share": 0.314,
+   "top_10pct_customers_share": 0.827
+  },
+  "weekly_turnover_of_bankroll": {
+   "median": 0.06,
+   "p90": 0.16
+  },
+  "market_mix": {
+   "spread": 0.517,
+   "total": 0.298,
+   "moneyline": 0.184
+  },
+  "arrivals": 4185,
+  "did_not_bet": {
+   "budget_or_minimum": 211,
+   "low_conviction": 123,
+   "no_edge": 377,
+   "no_open_market": 1663,
+   "price_too_expensive": 43,
+   "shopped_elsewhere": 22
+  },
+  "price_sensitivity_pass_share": 0.01,
+  "label": "MODELED: descriptive behaviour of simulated customers (not observed data, not a target)",
+  "active_engine": "sportsbook_v5.r1"
+ },
+ "cfb": {
+  "engine_version": "sportsbook_v5.r1",
+  "customers": 10000,
+  "participation": {
+   "active_this_week": 5181,
+   "sitting_out": 4819,
+   "busted": 0,
+   "active_share_by_group": {
+    "HIGH_STAKES_REC": 0.571,
+    "NARRATIVE_CHASER": 0.617,
+    "REC_CASUAL": 0.442,
+    "SELECTIVE_PRICE_SENSITIVE": 0.64,
+    "SHARP": 0.793,
+    "TEAM_LOYAL": 0.593,
+    "UNDERDOG_CONTRARIAN": 0.489
+   }
+  },
+  "wagers": 2094,
+  "customers_with_wagers": 1604,
+  "wagers_per_betting_customer": {
+   "median": 1,
+   "p90": 2,
+   "max": 5
+  },
+  "stake_by_group": {
+   "HIGH_STAKES_REC": {
+    "n": 90,
+    "median": 1215.0,
+    "p90": 3632.0,
+    "max": 8573.0
+   },
+   "NARRATIVE_CHASER": {
+    "n": 428,
+    "median": 26.0,
+    "p90": 82.0,
+    "max": 506.0
+   },
+   "REC_CASUAL": {
+    "n": 1077,
+    "median": 21.0,
+    "p90": 74.0,
+    "max": 478.0
+   },
+   "SELECTIVE_PRICE_SENSITIVE": {
+    "n": 14,
+    "median": 46.0,
+    "p90": 116.0,
+    "max": 128.0
+   },
+   "SHARP": {
+    "n": 126,
+    "median": 1286.0,
+    "p90": 3000.0,
+    "max": 3000.0
+   },
+   "TEAM_LOYAL": {
+    "n": 213,
+    "median": 20.0,
+    "p90": 70.0,
+    "max": 283.0
+   },
+   "UNDERDOG_CONTRARIAN": {
+    "n": 146,
+    "median": 25.0,
+    "p90": 103.0,
+    "max": 357.0
+   }
+  },
+  "handle": 430375.0,
+  "concentration": {
+   "top_1pct_customers_share": 0.239,
+   "top_10pct_customers_share": 0.836
+  },
+  "weekly_turnover_of_bankroll": {
+   "median": 0.06,
+   "p90": 0.16
+  },
+  "market_mix": {
+   "spread": 0.557,
+   "total": 0.306,
+   "moneyline": 0.137
+  },
+  "arrivals": 4199,
+  "did_not_bet": {
+   "budget_or_minimum": 222,
+   "low_conviction": 151,
+   "no_edge": 480,
+   "no_open_market": 1064,
+   "price_too_expensive": 162,
+   "shopped_elsewhere": 26
+  },
+  "price_sensitivity_pass_share": 0.039,
+  "label": "MODELED: descriptive behaviour of simulated customers (not observed data, not a target)",
+  "active_engine": "sportsbook_v5.r1"
+ }
+}

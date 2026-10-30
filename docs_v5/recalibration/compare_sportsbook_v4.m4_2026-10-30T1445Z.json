@@ -1,0 +1,880 @@
+{
+ "engine": "sportsbook_v4.m4",
+ "as_of": "2026-10-30T14:45:00Z",
+ "label": "MODELED; est_at_kickoff is an estimate",
+ "sports": {
+  "cfb": {
+   "watermark": "2026-10-30T13:08:15.000000Z",
+   "handle": 554477.0,
+   "wagers": 3557,
+   "sharp_share_pct": 35.2,
+   "est_at_kickoff_sharp_share_pct": 28.1,
+   "per_game": {
+    "min": 2.3,
+    "p25": 17.2,
+    "median": 36.9,
+    "p75": 49.0,
+    "max": 63.3,
+    "games": 18,
+    "games_8_to_18": 3
+   },
+   "per_game_est_at_kickoff": {
+    "min": 1.7,
+    "p25": 14.0,
+    "median": 30.5,
+    "p75": 39.2,
+    "max": 57.5,
+    "games": 18,
+    "games_8_to_18": 3
+   },
+   "games": [
+    {
+     "event_id": "09f66e3676ec3112e24cd6b9e97feb41",
+     "game": "Virginia Cavaliers @ Wake Forest Demon Deacons",
+     "kickoff": "2026-10-31T19:45:00.000000Z",
+     "complete": false,
+     "handle": 56207.0,
+     "wagers": 193,
+     "sharp_share_pct": 53.9,
+     "sharp_share_by_market_pct": {
+      "spread": 42.5,
+      "total": 88.4,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 45.5,
+     "need_side": "away",
+     "liability": -20048.02,
+     "worst_case_pnl": -20048.02,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": true,
+      "C3_broad_rec_pressure_need": true,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {
+      "C2_high_handle_need": "away",
+      "C3_broad_rec_pressure_need": "away"
+     }
+    },
+    {
+     "event_id": "1e591733bae48534963359a9cff13701",
+     "game": "Minnesota Golden Gophers @ Indiana Hoosiers",
+     "kickoff": "2026-10-31T19:30:00.000000Z",
+     "complete": false,
+     "handle": 34266.0,
+     "wagers": 199,
+     "sharp_share_pct": 53.4,
+     "sharp_share_by_market_pct": {
+      "spread": 48.8,
+      "total": 58.4,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 45.2,
+     "need_side": "home",
+     "liability": -6984.96,
+     "worst_case_pnl": -6984.96,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "2d5a76d917c23b2f5036eb774608d1c9",
+     "game": "Arizona Wildcats @ Texas Tech Red Raiders",
+     "kickoff": "2026-10-31T16:00:00.000000Z",
+     "complete": false,
+     "handle": 25038.0,
+     "wagers": 243,
+     "sharp_share_pct": 17.2,
+     "sharp_share_by_market_pct": {
+      "spread": 19.8,
+      "total": 12.0,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 14.0,
+     "need_side": "away",
+     "liability": -1415.87,
+     "worst_case_pnl": -1415.87,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "2f219378e527cf1f695b814a0a4ad63c",
+     "game": "SMU Mustangs @ Syracuse Orange",
+     "kickoff": "2026-10-31T16:00:00.000000Z",
+     "complete": false,
+     "handle": 54750.0,
+     "wagers": 246,
+     "sharp_share_pct": 34.3,
+     "sharp_share_by_market_pct": {
+      "spread": 43.6,
+      "total": 1.5,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 28.8,
+     "need_side": "away",
+     "liability": -10476.63,
+     "worst_case_pnl": -11242.15,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": true,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": true
+     },
+     "cohort_picks": {
+      "C2_high_handle_need": "away",
+      "C4_rec_vs_sharp_disagreement": "home"
+     }
+    },
+    {
+     "event_id": "3f36c41ee29e9339f71fada56d832914",
+     "game": "Auburn Tigers @ Ole Miss Rebels",
+     "kickoff": "2026-10-31T16:45:00.000000Z",
+     "complete": false,
+     "handle": 29560.0,
+     "wagers": 172,
+     "sharp_share_pct": 36.9,
+     "sharp_share_by_market_pct": {
+      "spread": 44.8,
+      "total": 0.0,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 31.1,
+     "need_side": "away",
+     "liability": -8413.92,
+     "worst_case_pnl": -9835.16,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": true,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {
+      "C2_high_handle_need": "away"
+     }
+    },
+    {
+     "event_id": "581c12d11a86412432fe89645cbe80b2",
+     "game": "Florida Gators @ Georgia Bulldogs",
+     "kickoff": "2026-10-31T19:30:00.000000Z",
+     "complete": false,
+     "handle": 25921.0,
+     "wagers": 191,
+     "sharp_share_pct": 52.9,
+     "sharp_share_by_market_pct": {
+      "spread": 29.7,
+      "total": 84.7,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 44.6,
+     "need_side": "away",
+     "liability": -2235.21,
+     "worst_case_pnl": -2235.21,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": true,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {
+      "C3_broad_rec_pressure_need": "away"
+     }
+    },
+    {
+     "event_id": "630ed6c8993fda8943e528a465e55518",
+     "game": "Nevada Wolf Pack @ UCLA Bruins",
+     "kickoff": "2026-10-31T20:15:00.000000Z",
+     "complete": false,
+     "handle": 34024.0,
+     "wagers": 202,
+     "sharp_share_pct": 43.2,
+     "sharp_share_by_market_pct": {
+      "spread": 43.7,
+      "total": 43.9,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 34.8,
+     "need_side": "home",
+     "liability": -16446.27,
+     "worst_case_pnl": -16446.27,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": true,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {
+      "C2_high_handle_need": "home"
+     }
+    },
+    {
+     "event_id": "7bac3aae16527dd33a224a2f81792033",
+     "game": "Northwestern Wildcats @ Oregon Ducks",
+     "kickoff": "2026-10-31T19:30:00.000000Z",
+     "complete": false,
+     "handle": 26195.0,
+     "wagers": 203,
+     "sharp_share_pct": 2.3,
+     "sharp_share_by_market_pct": {
+      "spread": 3.5,
+      "total": 0.0,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 1.7,
+     "need_side": "away",
+     "liability": -1881.63,
+     "worst_case_pnl": -1881.63,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "8480c989381049fc30c8d714be95db35",
+     "game": "Utah Utes @ Cincinnati Bearcats",
+     "kickoff": "2026-10-31T19:45:00.000000Z",
+     "complete": false,
+     "handle": 29246.0,
+     "wagers": 208,
+     "sharp_share_pct": 25.8,
+     "sharp_share_by_market_pct": {
+      "spread": 5.2,
+      "total": 53.5,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 19.9,
+     "need_side": "away",
+     "liability": -1596.78,
+     "worst_case_pnl": -1596.78,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "85b5947ccfe102a2fa2179d54c83ae31",
+     "game": "Miami Hurricanes @ North Carolina Tar Heels",
+     "kickoff": "2026-10-31T23:30:00.000000Z",
+     "complete": false,
+     "handle": 28499.0,
+     "wagers": 180,
+     "sharp_share_pct": 35.6,
+     "sharp_share_by_market_pct": {
+      "spread": 29.8,
+      "total": 58.1,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 26.8,
+     "need_side": "home",
+     "liability": -7616.86,
+     "worst_case_pnl": -7616.86,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "929937ced936976088a9562342ba0b90",
+     "game": "Wisconsin Badgers @ Iowa Hawkeyes",
+     "kickoff": "2026-10-31T16:00:00.000000Z",
+     "complete": false,
+     "handle": 25614.0,
+     "wagers": 230,
+     "sharp_share_pct": 63.3,
+     "sharp_share_by_market_pct": {
+      "spread": 60.9,
+      "total": 0.0,
+      "moneyline": 83.2
+     },
+     "est_at_kickoff_sharp_share_pct": 57.5,
+     "need_side": "home",
+     "liability": -748.2,
+     "worst_case_pnl": -7822.98,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "b02a5444929be961896a4db9742a01fa",
+     "game": "Texas State Bobcats @ Boise State Broncos",
+     "kickoff": "2026-11-01T02:00:00.000000Z",
+     "complete": false,
+     "handle": 24167.0,
+     "wagers": 188,
+     "sharp_share_pct": 13.5,
+     "sharp_share_by_market_pct": {
+      "spread": 17.0,
+      "total": 20.4,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 9.1,
+     "need_side": "home",
+     "liability": 568.9,
+     "worst_case_pnl": 568.9,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "b0f68c9265402a825cbbf7954b726339",
+     "game": "Arizona State Sun Devils @ BYU Cougars",
+     "kickoff": "2026-10-31T19:30:00.000000Z",
+     "complete": false,
+     "handle": 28035.0,
+     "wagers": 173,
+     "sharp_share_pct": 16.2,
+     "sharp_share_by_market_pct": {
+      "spread": 0.0,
+      "total": 69.7,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 12.1,
+     "need_side": "home",
+     "liability": -6132.0,
+     "worst_case_pnl": -6132.0,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "bd73558e7eb5bee08962bfb1f5ef6c9a",
+     "game": "Ohio State Buckeyes @ USC Trojans",
+     "kickoff": "2026-10-31T23:30:00.000000Z",
+     "complete": false,
+     "handle": 29495.0,
+     "wagers": 191,
+     "sharp_share_pct": 28.3,
+     "sharp_share_by_market_pct": {
+      "spread": 35.1,
+      "total": 0.0,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 20.8,
+     "need_side": "home",
+     "liability": -19163.43,
+     "worst_case_pnl": -19247.15,
+     "cohorts": {
+      "C1_selective_need": true,
+      "C2_high_handle_need": true,
+      "C3_broad_rec_pressure_need": true,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {
+      "C1_selective_need": "home",
+      "C2_high_handle_need": "home",
+      "C3_broad_rec_pressure_need": "home"
+     }
+    },
+    {
+     "event_id": "c6533cfcdfb0860d723a5fd9b9381098",
+     "game": "Missouri Tigers @ Arkansas Razorbacks",
+     "kickoff": "2026-10-31T23:45:00.000000Z",
+     "complete": false,
+     "handle": 20192.0,
+     "wagers": 181,
+     "sharp_share_pct": 45.5,
+     "sharp_share_by_market_pct": {
+      "spread": 0.0,
+      "total": 77.5,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 36.0,
+     "need_side": "home",
+     "liability": -343.54,
+     "worst_case_pnl": -343.54,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "e2ffa742b36678caf388ca70fdd4878c",
+     "game": "Mississippi State Bulldogs @ Texas Longhorns",
+     "kickoff": "2026-10-31T23:30:00.000000Z",
+     "complete": false,
+     "handle": 29528.0,
+     "wagers": 183,
+     "sharp_share_pct": 49.0,
+     "sharp_share_by_market_pct": {
+      "spread": 56.7,
+      "total": 65.7,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 39.2,
+     "need_side": "home",
+     "liability": -1312.95,
+     "worst_case_pnl": -1858.59,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "e4e95ca26b62e1c3ced6261cbb5c5f3a",
+     "game": "Oklahoma State Cowboys @ Iowa State Cyclones",
+     "kickoff": "2026-10-31T23:00:00.000000Z",
+     "complete": false,
+     "handle": 21147.0,
+     "wagers": 184,
+     "sharp_share_pct": 39.3,
+     "sharp_share_by_market_pct": {
+      "spread": 6.9,
+      "total": 83.1,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 30.5,
+     "need_side": "home",
+     "liability": 302.55,
+     "worst_case_pnl": -339.2,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "e916f49c82de2ce0b1844ee9f6deccfa",
+     "game": "Notre Dame Fighting Irish @ Navy Midshipmen",
+     "kickoff": "2026-10-31T16:00:00.000000Z",
+     "complete": false,
+     "handle": 32593.0,
+     "wagers": 190,
+     "sharp_share_pct": 5.0,
+     "sharp_share_by_market_pct": {
+      "spread": 7.0,
+      "total": 0.0,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 3.9,
+     "need_side": "home",
+     "liability": -3899.27,
+     "worst_case_pnl": -3899.27,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    }
+   ]
+  },
+  "nfl": {
+   "watermark": "2026-10-30T13:08:14.000000Z",
+   "handle": 446526.0,
+   "wagers": 3205,
+   "sharp_share_pct": 17.3,
+   "est_at_kickoff_sharp_share_pct": 14.2,
+   "per_game": {
+    "min": 0.0,
+    "p25": 0.0,
+    "median": 14.0,
+    "p75": 41.1,
+    "max": 58.4,
+    "games": 14,
+    "games_8_to_18": 2
+   },
+   "per_game_est_at_kickoff": {
+    "min": 0.0,
+    "p25": 0.0,
+    "median": 9.2,
+    "p75": 31.2,
+    "max": 47.6,
+    "games": 14,
+    "games_8_to_18": 3
+   },
+   "games": [
+    {
+     "event_id": "05405af79752f5e742cdf50b61f6745e",
+     "game": "New England Patriots @ Miami Dolphins",
+     "kickoff": "2026-11-01T21:25:00.000000Z",
+     "complete": false,
+     "handle": 33306.0,
+     "wagers": 158,
+     "sharp_share_pct": 22.0,
+     "sharp_share_by_market_pct": {
+      "spread": 0.0,
+      "total": 36.2,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 15.0,
+     "need_side": "home",
+     "liability": -7578.49,
+     "worst_case_pnl": -7578.49,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "159dbf0253dd2038eda2212f84387f0c",
+     "game": "Indianapolis Colts @ Jacksonville Jaguars",
+     "kickoff": "2026-11-01T18:00:00.000000Z",
+     "complete": false,
+     "handle": 23471.0,
+     "wagers": 154,
+     "sharp_share_pct": 0.0,
+     "sharp_share_by_market_pct": {
+      "spread": 0.0,
+      "total": 0.0,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 0.0,
+     "need_side": "away",
+     "liability": -3000.61,
+     "worst_case_pnl": -3000.61,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "2ff84d3f6053d083c8c0a5bebf7cdd4c",
+     "game": "Los Angeles Chargers @ Los Angeles Rams",
+     "kickoff": "2026-11-01T21:05:00.000000Z",
+     "complete": false,
+     "handle": 20912.0,
+     "wagers": 146,
+     "sharp_share_pct": 22.9,
+     "sharp_share_by_market_pct": {
+      "spread": 18.6,
+      "total": 52.9,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 15.8,
+     "need_side": "home",
+     "liability": -3650.17,
+     "worst_case_pnl": -3650.17,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "52e7ee9c42525e6deec02da32dc2fad8",
+     "game": "Minnesota Vikings @ Detroit Lions",
+     "kickoff": "2026-11-01T18:00:00.000000Z",
+     "complete": false,
+     "handle": 8093.0,
+     "wagers": 153,
+     "sharp_share_pct": 0.0,
+     "sharp_share_by_market_pct": {
+      "spread": 0.0,
+      "total": 0.0,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 0.0,
+     "need_side": "away",
+     "liability": -1794.93,
+     "worst_case_pnl": -1794.93,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "7d664fbcd39350e559d83c0068ba7169",
+     "game": "Chicago Bears @ Seattle Seahawks",
+     "kickoff": "2026-11-03T01:20:00.000000Z",
+     "complete": false,
+     "handle": 26804.0,
+     "wagers": 143,
+     "sharp_share_pct": 0.0,
+     "sharp_share_by_market_pct": {
+      "spread": 0.0,
+      "total": 0.0,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 0.0,
+     "need_side": "away",
+     "liability": -5732.59,
+     "worst_case_pnl": -5732.59,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "921859689f5f8b3b8b1caf4248bdb1ec",
+     "game": "Atlanta Falcons @ Tampa Bay Buccaneers",
+     "kickoff": "2026-11-01T18:00:00.000000Z",
+     "complete": false,
+     "handle": 33990.0,
+     "wagers": 175,
+     "sharp_share_pct": 58.4,
+     "sharp_share_by_market_pct": {
+      "spread": 14.3,
+      "total": 91.6,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 47.6,
+     "need_side": "home",
+     "liability": -9404.86,
+     "worst_case_pnl": -9404.86,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "9255ca8f32aea590d00aa57de79f6bb6",
+     "game": "Arizona Cardinals @ Dallas Cowboys",
+     "kickoff": "2026-11-01T18:00:00.000000Z",
+     "complete": false,
+     "handle": 8204.0,
+     "wagers": 173,
+     "sharp_share_pct": 0.0,
+     "sharp_share_by_market_pct": {
+      "spread": 0.0,
+      "total": 0.0,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 0.0,
+     "need_side": "home",
+     "liability": -238.31,
+     "worst_case_pnl": -238.31,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "98f1b121b793977434c046e76c707145",
+     "game": "Las Vegas Raiders @ New York Jets",
+     "kickoff": "2026-11-01T18:00:00.000000Z",
+     "complete": false,
+     "handle": 27929.0,
+     "wagers": 178,
+     "sharp_share_pct": 41.1,
+     "sharp_share_by_market_pct": {
+      "spread": 26.8,
+      "total": 72.3,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 31.2,
+     "need_side": "home",
+     "liability": -2233.47,
+     "worst_case_pnl": -3803.66,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "9c5d8f57e0ba0fbd9ef436c1f0898f99",
+     "game": "Tennessee Titans @ Cincinnati Bengals",
+     "kickoff": "2026-11-01T18:00:00.000000Z",
+     "complete": false,
+     "handle": 21708.0,
+     "wagers": 130,
+     "sharp_share_pct": 44.0,
+     "sharp_share_by_market_pct": {
+      "spread": 46.9,
+      "total": 36.7,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 34.0,
+     "need_side": "home",
+     "liability": -5381.53,
+     "worst_case_pnl": -5381.53,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "ab2865e9f2d4b012de8bc6fb6de11a7c",
+     "game": "Carolina Panthers @ Green Bay Packers",
+     "kickoff": "2026-10-30T00:15:00.000000Z",
+     "complete": true,
+     "handle": 134688.0,
+     "wagers": 1110,
+     "sharp_share_pct": 1.6,
+     "sharp_share_by_market_pct": {
+      "spread": 1.3,
+      "total": 3.1,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 1.6,
+     "need_side": "away",
+     "liability": -14936.22,
+     "worst_case_pnl": -14936.22,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": true,
+      "C3_broad_rec_pressure_need": true,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {
+      "C2_high_handle_need": "away",
+      "C3_broad_rec_pressure_need": "away"
+     }
+    },
+    {
+     "event_id": "ab5ab731ab655bd6308bc7a922275518",
+     "game": "Cleveland Browns @ Pittsburgh Steelers",
+     "kickoff": "2026-11-01T18:00:00.000000Z",
+     "complete": false,
+     "handle": 16455.0,
+     "wagers": 150,
+     "sharp_share_pct": 8.8,
+     "sharp_share_by_market_pct": {
+      "spread": 12.4,
+      "total": 0.0,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 5.9,
+     "need_side": "home",
+     "liability": -6321.03,
+     "worst_case_pnl": -6321.03,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "b9c60db63b1a19ad319f24b33c0defe8",
+     "game": "Philadelphia Eagles @ Washington Commanders",
+     "kickoff": "2026-11-02T01:20:00.000000Z",
+     "complete": false,
+     "handle": 33125.0,
+     "wagers": 225,
+     "sharp_share_pct": 50.3,
+     "sharp_share_by_market_pct": {
+      "spread": 35.9,
+      "total": 77.5,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 38.1,
+     "need_side": "away",
+     "liability": -5129.32,
+     "worst_case_pnl": -5129.32,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "c93c421e5fa46031a43162d111d981d0",
+     "game": "Baltimore Ravens @ Buffalo Bills",
+     "kickoff": "2026-11-01T18:00:00.000000Z",
+     "complete": false,
+     "handle": 35439.0,
+     "wagers": 168,
+     "sharp_share_pct": 2.6,
+     "sharp_share_by_market_pct": {
+      "spread": 0.0,
+      "total": 29.7,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 1.7,
+     "need_side": "away",
+     "liability": -15779.88,
+     "worst_case_pnl": -15779.88,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    },
+    {
+     "event_id": "f2a036d5edf483a277880014861e78ad",
+     "game": "Kansas City Chiefs @ Denver Broncos",
+     "kickoff": "2026-11-01T21:25:00.000000Z",
+     "complete": false,
+     "handle": 22402.0,
+     "wagers": 142,
+     "sharp_share_pct": 14.0,
+     "sharp_share_by_market_pct": {
+      "spread": 25.8,
+      "total": 0.0,
+      "moneyline": 0.0
+     },
+     "est_at_kickoff_sharp_share_pct": 9.2,
+     "need_side": "away",
+     "liability": 98.5,
+     "worst_case_pnl": -2830.63,
+     "cohorts": {
+      "C1_selective_need": false,
+      "C2_high_handle_need": false,
+      "C3_broad_rec_pressure_need": false,
+      "C4_rec_vs_sharp_disagreement": false
+     },
+     "cohort_picks": {}
+    }
+   ]
+  }
+ }
+}

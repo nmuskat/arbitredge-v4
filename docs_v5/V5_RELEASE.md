@@ -251,3 +251,55 @@ CFB 9 / 5 / 7 / 33 (early in the week most markets have few sharp wagers). Cavea
 (about 40-44% of handle, section 3c), so sharp shares are higher than a real book's; that recalibration remains an owner decision.
 
 Tests after this change: 513 passed, 22 skipped; release checks all 9 pass (official results file `results_nfl_20261030T141604Z`).
+
+## 9. Recalibration: V5 r2 (owner request, Oct 30; supersedes r1 before deployment)
+
+**Audit of r1** (same real data, as of 2026-10-30 14:45Z; `docs_v5/recalibration/`):
+
+| Group (NFL, r1) | Customers | Active | Median bankroll | Median stake | Handle |
+|---|---|---|---|---|---|
+| Sharp | 309 | 79% | $57,209 | $1,407 (p90 $3,000 = limit) | 31.0% |
+| High-stakes recreational | 370 | 57% | $43,574 | $1,554 | 47.0% |
+| Casual recreational | 5,098 | 44% | $403 | $21 | 11.1% |
+
+Two causes: (1) r1 made weekly participation unequal (sharps 79%, casual 44%) without lowering anyone's volume when
+active, multiplying the sharp share (m4 17.3% -> r1 31.0% NFL); (2) sharp stakes averaged 2% of bankroll per bet, about
+0.6 Kelly at the sharps' own minimum edge, which is aggressive for disciplined bettors.
+
+**r2 = r1 + two behavioural rules** (`customers_v5.V5_PARAMS_R2`, hash pinned; r1 kept and replayable):
+- participation-neutral volume: active-week arrivals = the customer's long-run weekly rate / P(active), for every group;
+- quarter-Kelly sharp staking: sharp unit x 0.4 (about 0.8% of bankroll), still scaled by edge.
+Not changed: the 20,000 identities, opening bankrolls, group traits, individual traits (same seeds), sharp selection
+(edge against the market makers only, independent of the public), the $3,000 sharp limit, the recreational groups'
+staking (high-stakes recreational customers remain recreational and still carry 48-58% of handle), Need (P&L only),
+cohorts and the sharp-vs-public view and thresholds. The two rules were fixed before measuring; nothing targets a share.
+
+**Sharp share of total handle** (observed ledger at 14:45Z; estimate at kickoff = each group's handle scaled by its
+remaining timing-profile mass; conservative):
+
+| | m4 (live V4) | r1 | r2 |
+|---|---|---|---|
+| NFL observed / est. at kickoff | 17.3% / 14.2% | 31.0% / 25.5% | **12.0% / 10.0%** |
+| CFB observed / est. at kickoff | 35.2% / 28.1% | 47.8% / 40.1% | **21.7% / 16.7%** |
+| NFL per game (est.) min / median / p75 / max | 0 / 9.2 / 31.2 / 47.6 | 0 / 23.4 / 38.8 / 53.4 | 0 / 7.2 / 9.8 / 34.8 |
+| CFB per game (est.) min / median / p75 / max | 1.7 / 30.5 / 39.2 / 57.5 | 2.3 / 47.9 / 55.5 / 68.3 | 1.1 / 15.8 / 26.0 / 44.2 |
+
+TNF (complete, real odds to kickoff): sharp share m4 1.6%, r1 8.0%, r2 0.8%. CFB stays above NFL (more lines where the
+book lags the market makers); single games still range widely, as real games do.
+
+**Effects** (same 14 NFL / 18 CFB games, ledger as of 14:45Z):
+- Need side unchanged r1 -> r2 on 9/14 NFL and 11/18 CFB games; m4 -> r1 churn was similar (10/14, 12/18), so most
+  changes reflect thin Friday ledgers (see Need stability), not a systematic shift.
+- Spread liability (sum over games): NFL m4 $81,083 / r1 $51,841 / r2 $74,147; CFB $107,844 / $81,889 / $67,281.
+- Cohort eligibility on a snapshot of today's ledger (prospective cohorts are only ever evaluated at real pre-kickoff
+  snapshots): NFL r1 C2 x1 -> r2 C1 x2, C2 x4, C3 x2; CFB r1 none -> r2 C2 x3, C4 x3 (more recreational tickets meet the
+  frozen sample rules). Sealed decisions are never re-evaluated.
+- Sharp vs public on r2 (14:45Z): NFL 2 SHARP VS PUBLIC, 2 aligned, 1 mixed, 37 insufficient; CFB 7 / 10 / 4 / 33.
+- Behaviour r2: about 51% of customers active; wagers per betting customer median 1, p90 3; top 1% of customers 28-36%
+  of handle; weekly turnover median 7% of bankroll.
+
+**Verification on r2**: full suite 515 passed, 22 skipped; release checks all 9 pass (15,759 unique wagers; replay
+byte-identical; liability exact on 32 games; 7,610 V5 wagers, 0 information violations; 12 Sunday games, 0 late wagers;
+rollback ok). TNF settlement r2: 1,195 wagers, $126,578 handle, book -$18,372.15, independent re-grade 0 differences,
+reconciliation 0 cents. Build time: about 68 s locally (r1 62 s), still 2 billed minutes per build; the Actions
+worst case (1,853 minutes) is unchanged.

@@ -1,5 +1,5 @@
 """
-sportsbook_v4/customers_v5.py -- V5 individual customers (engine sportsbook_v5.r1).
+sportsbook_v4/customers_v5.py -- V5 individual customers (engine releases sportsbook_v5.r1, sportsbook_v5.r2).
 
 The same 20,000 persistent customers as m4 (same identities, opening bankrolls and base traits, same
 population ids). V5 adds, per customer, persistent INDIVIDUAL traits drawn from a seed of the customer's own
@@ -10,17 +10,23 @@ customer's CURRENT bankroll (frozen at the week's open from settled results); a 
 below the minimum stake is out until it recovers.
 
 Nothing here targets a ticket share, handle share or Need. Every number in V5_PARAMS is an UNVALIDATED
-assumption (docs_v5/V5_RELEASE.md lists them); a change requires a new engine release (V5_PARAMS_HASH is
-pinned by a test).
+assumption (docs_v5/V5_RELEASE.md lists them); a change requires a new engine release (each release's parameter
+hash is pinned by a test). Releases are kept side by side so an older release replays exactly:
+  r1  individual traits, weekly participation, bankroll-driven stakes
+  r2  r1 + participation-neutral volume (being active changes WHICH weeks a customer bets, not how much over a
+      season: when active, arrivals = the customer's long-run weekly rate / P(active)) + disciplined sharp staking
+      (quarter-Kelly: at the sharps' own minimum edge, 1.5% at -110, full Kelly is about 3.2% of bankroll; a
+      quarter is about 0.8%, i.e. 0.4 x the 2% average unit; stakes still scale with the edge)
 """
 
 import math
 import random
 
+import sportsbook_v4 as _pkg
 from sportsbook_v4.params import ARCHETYPES, BOOK, TIMING_PROFILES
 from sportsbook_v4.util import json_hash, seed_int
 
-V5_PARAMS = {
+V5_PARAMS_R1 = {
     # weekly engagement ~ Beta(a, b) per group; P(active in a week) = floor + span x engagement
     "engagement_beta": {"REC_CASUAL": [2.0, 3.0], "TEAM_LOYAL": [2.5, 2.0], "UNDERDOG_CONTRARIAN": [2.0, 2.5],
                         "NARRATIVE_CHASER": [3.0, 2.0], "HIGH_STAKES_REC": [3.0, 2.5],
@@ -35,6 +41,12 @@ V5_PARAMS = {
     "risk_bounds": [0.05, 0.90],
     "bust_multiple_of_min_wager": 2.0,      # below this bankroll a customer cannot bet
 }
+V5_PARAMS_R2 = dict(V5_PARAMS_R1, **{
+    "volume": "participation_neutral",      # active-week arrivals = long-run weekly rate / P(active)
+    "sharp_unit_scale": 0.4,                # quarter-Kelly unit for sharps (see module docstring)
+})
+V5_RELEASES = {"sportsbook_v5.r1": V5_PARAMS_R1, "sportsbook_v5.r2": V5_PARAMS_R2}
+V5_PARAMS = V5_RELEASES.get(_pkg.ENGINE_VERSION, V5_PARAMS_R2)      # the active release's parameters
 V5_PARAMS_HASH = json_hash(V5_PARAMS)
 MARKETS = ("spread", "total", "moneyline")
 
@@ -89,7 +101,12 @@ def effective(customer, bankroll, week_start_epoch):
     arch["timing_key"] = (arch["timing"], ind["steady_blend"])
     busted = bankroll < BOOK["min_wager"] * V5_PARAMS["bust_multiple_of_min_wager"]
     active = (not busted) and active_this_week(customer, ind, week_start_epoch)
-    return dict(customer, bankroll=bankroll), arch, active, {"busted": busted, **ind}
+    traits = dict(customer["traits"])
+    if V5_PARAMS.get("volume") == "participation_neutral":
+        traits["arrivals_per_week"] = traits["arrivals_per_week"] / ind["p_active"]
+    if arch["is_sharp"] and "sharp_unit_scale" in V5_PARAMS:
+        traits["unit_fraction"] = traits["unit_fraction"] * V5_PARAMS["sharp_unit_scale"]
+    return dict(customer, bankroll=bankroll, traits=traits), arch, active, {"busted": busted, **ind}
 
 
 def blended_profile(name, steady_share):

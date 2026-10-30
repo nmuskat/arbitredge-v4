@@ -6,7 +6,7 @@
  },
  "no_duplicate_wagers": {
   "ok": true,
-  "wagers": 11997
+  "wagers": 15759
  },
  "deterministic_replay": {
   "ok": true,
@@ -23,8 +23,8 @@
   "ok": true,
   "reconciliation": {
    "games_settled": 1,
-   "book_realized_cents": -1202001,
-   "bettor_settled_pnl_cents": 1202001,
+   "book_realized_cents": -1837215,
+   "bettor_settled_pnl_cents": 1837215,
    "game_mismatch_cents": 0,
    "bettor_mismatch_cents": 0,
    "ok": true
@@ -36,7 +36,7 @@
  },
  "information_at_placement": {
   "ok": true,
-  "wagers_checked": 3848,
+  "wagers_checked": 7610,
   "violations": 0,
   "also": "engine runs with NoFacts (no scores); week-open bankrolls use only settlements of earlier weeks (tested)"
  },
