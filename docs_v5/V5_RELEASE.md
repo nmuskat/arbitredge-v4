@@ -230,3 +230,24 @@ breaker and free preflight unchanged; V5 adds no Odds API calls.
 4. Verify: page header "ArbitrEdge V5"; audit `engine_version sportsbook_v5.r1`, `replay_verified: this build`; V4 runs listed as
    superseded with unchanged counts; settlement status OK; Need Tracker shows V4 and V5 sections separately; Access still required.
 5. If any check fails, roll back (section 4).
+
+## 8. Sharp vs public (owner request, Oct 30; dashboard only)
+
+`sportsbook_v4/sharp_public.py`, shown on the Sharp Money tab (one row per game-market) and on every game page (full table).
+"Public" = this book's simulated recreational customers, never external splits. From accepted ledger wagers, per game and per
+market (spread, total, moneyline), each percentage over its own denominator: rec handle % and rec ticket % within recreational
+wagers; sharp handle % and sharp ticket % within sharp wagers; sharp handle as % of the game-market's total handle; dollars and
+tickets for both groups.
+
+- **SHARP VS PUBLIC**: both groups hold at least 55% of their own handle on a side, on opposite sides.
+- **SHARP + PUBLIC ALIGNED**: both majorities on the same side.
+- **MIXED / INSUFFICIENT DATA**: a group has no 55% majority, or the sample fails a minimum: at least 3 sharp wagers, from at
+  least 2 sharp customers, no one sharp customer above 70% of sharp handle, sharp handle at least 5% of the market, at least 20
+  recreational wagers. The reasons are shown. A single sharp wager, or one customer splitting a bet, can never produce a signal (tested).
+
+Book Need is unchanged and computed from modeled P&L; the module takes no Need, settlement or P&L input (tested). It writes nothing
+to the ledger, Need snapshots or cohorts. Real-data rehearsal (14:45Z): NFL 3 SHARP VS PUBLIC, 1 aligned, 3 mixed, 35 insufficient;
+CFB 9 / 5 / 7 / 33 (early in the week most markets have few sharp wagers). Caveat: V5's sharp customers are over-represented
+(about 40-44% of handle, section 3c), so sharp shares are higher than a real book's; that recalibration remains an owner decision.
+
+Tests after this change: 513 passed, 22 skipped; release checks all 9 pass (official results file `results_nfl_20261030T141604Z`).

@@ -46,6 +46,7 @@ from sportsbook_v4.engine import GameSpec, RunMismatch, SlateSpec, advance, crea
 from sportsbook_v4.facts import NoFacts
 from sportsbook_v4.ledger_read import fetch_wagers
 from sportsbook_v4 import need_tracker
+from sportsbook_v4 import sharp_public
 from sportsbook_v4.market import MarketV4Source, profit_on_win, representative_offer
 from sportsbook_v4.population import ensure_population
 from sportsbook_v4.schema import ensure_schema
@@ -608,7 +609,7 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                 "event_id": gid, "home": home, "away": away, "kickoff": _iso(to_epoch(g.commence_time)), "rankings": rk,
                 "reference": {"home_spread": ref_spread, "total": ref_total, "as_of": _iso(ref_at),
                               "basis": "observed consensus at last collection"},
-                "splits": sp, "bands": _bands(sp, var_splits.get(gid, {})),
+                "splits": sp, "sharp_public": sharp_public.game(ws_), "bands": _bands(sp, var_splits.get(gid, {})),
                 "need_stability": _need_stability(ws_, var_splits.get(gid, {})),
                 "reconstructed_wagers": sum(1 for w in ws_ if to_epoch(w["accepted_at"]) < opened_t),
                 "need": _need_summary(need) if need else None, "label": LABEL})

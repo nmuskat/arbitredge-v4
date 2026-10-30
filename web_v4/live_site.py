@@ -464,9 +464,34 @@ R.tracker=()=>{const T=D.need_tracker;const head=card(el("h2",{},badge("MODELED"
    el("p",{class:"small mute"},"Snapshots are saved immutably before kickoff; after kickoff the last one is sealed as the game's decision. "+T.snapshots_this_build+" snapshot(s) this build, "+T.decisions_total+" decisions sealed so far (all engines). Results: "+T.results_matched+" matched final scores from "+T.results_files+" file(s)"+(T.corrections?", "+T.corrections+" corrected":"")+"."),
    rows.length?el("div",{},rows):el("p",{class:"mute"},"No games within 24 h of kickoff.")),
   ...(engines.length?engines.flatMap(section):[card(el("p",{class:"mute"},"No sealed decisions yet."))])]};
+const SPC={SHARP_VS_PUBLIC:"WATCH",ALIGNED:"OK",MIXED:"INFO",INSUFFICIENT:"INFO"};
+const spSide=(g,bm,sd)=>bm==="total"?sd:(sd==="home"?g.home:g.away);
+const spPct=x=>x==null?"–":x.toFixed(1)+"%";
+function spBadge(x){return x&&x.status==="OK"?badge(x.display,SPC[x.classification]):badge("NO WAGERS","INFO")}
+function spTable(g,bm,x){const sides=bm==="total"?["over","under"]:["away","home"];const R_=x.recreational,S_=x.sharp;
+ const row=(lbl,f)=>el("tr",{},el("td",{class:"small"},lbl),...sides.map(sd=>el("td",{class:"num small"},f(sd))));
+ return el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},""),...sides.map(sd=>el("th",{class:"num"},spSide(g,bm,sd))))),
+  el("tbody",{},row("Rec handle % (of rec handle)",sd=>spPct(R_.sides[sd].handle_pct)),row("Sharp handle % (of sharp handle)",sd=>spPct(S_.sides[sd].handle_pct)),
+   row("Rec ticket %",sd=>spPct(R_.sides[sd].ticket_pct)),row("Sharp ticket %",sd=>spPct(S_.sides[sd].ticket_pct)),
+   row("Rec $ / tickets",sd=>money(R_.sides[sd].handle)+" / "+R_.sides[sd].tickets),row("Sharp $ / tickets",sd=>money(S_.sides[sd].handle)+" / "+S_.sides[sd].tickets))))}
+function spDetail(g,bm,x){if(!x||x.status!=="OK")return el("div",{},el("b",{},MK[BMK[bm]]," "),spBadge(x));
+ return el("div",{},el("p",{},el("b",{},MK[BMK[bm]]," "),spBadge(x)," ",el("span",{class:"small"},"Sharp handle "+spPct(x.sharp_share_of_handle_pct)+" of total "+money(x.total_handle)+" ("+x.total_tickets+" tickets; "+x.sharp.bettors+" sharp, "+x.recreational.bettors+" recreational customers)")),
+  x.reasons.length?el("p",{class:"small mute"},x.reasons.join("; ")):null,spTable(g,bm,x))}
+const SP_NOTE="Public = this book's SIMULATED recreational customers, not real sportsbook betting splits. From accepted wagers in the immutable ledger; each percentage uses its own group's handle or tickets in that game and market. SHARP VS PUBLIC needs at least 3 sharp wagers from 2+ sharp customers, no single sharp customer above 70% of sharp handle, sharp handle at least 5% of the market, 20+ recreational wagers, and a 55%+ handle majority in each group. The Need is computed from the book's modeled P&L and is independent of this label.";
+function sharpPublicCard(){const gs=bookGames().filter(g=>g.sharp_public);const f=st.f;const ms=f.market?[Object.keys(BMK).find(k=>BMK[k]===f.market)]:["spread","total","moneyline"];
+ const rows=[];for(const g of gs)for(const bm of ms){const x=g.sharp_public[bm];if(!x)continue;
+  const sides=bm==="total"?["over","under"]:["away","home"];const ok=x.status==="OK";
+  const maj=gr=>ok&&x[gr].majority_side?spSide(g,bm,x[gr].majority_side)+" "+spPct(x[gr].sides[x[gr].majority_side].handle_pct):"–";
+  rows.push(el("tr",{class:"game",on:{click:()=>openGame(g.event_id)}},el("td",{},g.away+" @ "+g.home),el("td",{},MK[BMK[bm]]),el("td",{},spBadge(x)),
+   el("td",{class:"small"},maj("recreational")),el("td",{class:"small"},maj("sharp")),el("td",{class:"num small"},ok?spPct(x.sharp_share_of_handle_pct):"–"),
+   el("td",{class:"num small hide-s"},ok?money(x.sharp.handle)+" / "+x.sharp.tickets:"–"),el("td",{class:"num small hide-s"},ok?money(x.recreational.handle)+" / "+x.recreational.tickets:"–")))}
+ const vs=rows.length?gs.reduce((n,g)=>n+ms.filter(bm=>(g.sharp_public[bm]||{}).classification==="SHARP_VS_PUBLIC").length,0):0;
+ return card(el("h2",{},badge("MODELED"),"Sharp vs public (simulated customers)"),el("p",{class:"small"},SP_NOTE),
+  el("p",{},el("b",{},vs)," of "+rows.length+" game-markets: SHARP VS PUBLIC. Click a game for every side's percentages, dollars and tickets."),
+  rows.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Market"),el("th",{},"Signal"),el("th",{},"Rec majority (of rec handle)"),el("th",{},"Sharp majority (of sharp handle)"),el("th",{class:"num"},"Sharp % of handle"),el("th",{class:"num hide-s"},"Sharp $ / tickets"),el("th",{class:"num hide-s"},"Rec $ / tickets"))),el("tbody",{},rows))):el("p",{class:"mute"},"No modeled wagers on upcoming games."))}
 R.sharp=()=>{const f=st.f;const rows=(S().sharp||[]).filter(r=>cfbGate(r.top25)&&(!f.market||r.market===f.market)&&upcoming(r)&&gameMatch(r));
  const ev=rows.filter(r=>r.status!=="INSUFFICIENT EVIDENCE");
- return[freshBanner(),cfbBanner(),card(el("h2",{},badge("EXPERIMENTAL"),"Sharp money"),
+ return[freshBanner(),cfbBanner(),sharpPublicCard(),card(el("h2",{},badge("EXPERIMENTAL"),"Sharp money (price movement)"),
   el("p",{class:"small"},"Evidence from real price movement at market-making books versus retail books. Reverse line movement and ticket/handle divergence need real betting splits and are UNAVAILABLE. The score is uncalibrated; when the quote history is too thin the page says INSUFFICIENT EVIDENCE instead of guessing."),
   filters({market:1}),el("p",{},el("b",{},ev.length)," of "+rows.length+" game-markets show evidence."),
   el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Market"),el("th",{},"Status"),el("th",{class:"hide-s"},"Detail"))),
@@ -545,6 +570,7 @@ R.game=(id)=>{const g=gameById(id);if(!g)return[card(el("p",{},"Game not found (
  if(bkg){const rows=Object.entries(bkg.splits).filter(([m,r])=>r.status==="OK");out.push(card(el("h3",{},badge("MODELED"),"Synthetic book on this game"),
   rows.length?rows.map(([bm,r])=>el("div",{},el("b",{},MK[BMK[bm]]," ",r.sample==="LOW"?badge("LOW SAMPLE","LOW"):null),...Object.entries(r.sides).map(([sd,v])=>el("div",{},el("span",{class:"small"},sd),splitBar(v,(bkg.bands[bm]||{})[sd]))))):el("p",{class:"mute"},"No modeled wagers yet."),
   bkg.need&&bkg.need.spread?el("p",{class:"small"},"Spread Need (liability): "+(bkg.need.spread.financial_need_side||"balanced")):null))}
+ if(bkg&&bkg.sharp_public)out.push(card(el("h3",{},badge("MODELED"),"Sharp vs public (simulated customers)"),el("p",{class:"small mute"},SP_NOTE),...["spread","total","moneyline"].map(bm=>spDetail(g,bm,bkg.sharp_public[bm]))));
  return out};
 function render(){const h=location.hash.slice(1);let sec=h||"overview",gid=null;if(h.startsWith("game/")){gid=h.slice(5);sec="game"}
  if(sec!=="game"&&!R[sec])sec="overview";if(sec!=="game")st.prev=sec;st.sec=sec;

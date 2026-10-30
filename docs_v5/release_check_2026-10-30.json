@@ -6,7 +6,7 @@
  },
  "no_duplicate_wagers": {
   "ok": true,
-  "wagers": 11930
+  "wagers": 11997
  },
  "deterministic_replay": {
   "ok": true,
@@ -36,7 +36,7 @@
  },
  "information_at_placement": {
   "ok": true,
-  "wagers_checked": 3781,
+  "wagers_checked": 3848,
   "violations": 0,
   "also": "engine runs with NoFacts (no scores); week-open bankrolls use only settlements of earlier weeks (tested)"
  },
