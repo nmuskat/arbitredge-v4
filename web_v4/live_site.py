@@ -281,7 +281,7 @@ const D=JSON.parse(document.getElementById("data").textContent);
 {const ev=((((D.sports||{}).nfl||{}).book||{}).audit||{}).engine_version||"";
  document.getElementById("brand").textContent="ArbitrEdge "+(ev.startsWith("sportsbook_v5")?"V5":"V4")}
 const SECTIONS=[["overview","Overview"],["odds","Odds Board"],["splits","Betting Splits"],["need","ArbitrEdge Need"],
-["tracker","Need Tracker"],["sharp","Sharp Money"],["ev","EV Scanner"],["sims","SIMS"],["performance","Performance"],["health","Health"]];
+["tracker","Need Tracker"],["sharp","Sharp Money"],["ev","EV Scanner"],["sims","NFL SIMS"],["performance","Performance"],["health","Health"]];
 const MK={spreads:"Spread",totals:"Total",h2h:"Moneyline"};const BMK={spread:"spreads",total:"totals",moneyline:"h2h"};
 const st={sport:"nfl",sec:"overview",game:null,f:{q:"",market:"",book:"",date:"",strength:"0",fresh:"all",unfiltered:false}};
 try{const s=localStorage.getItem("v4sport");if(s==="nfl"||s==="cfb")st.sport=s}catch(e){}
@@ -509,7 +509,67 @@ R.ev=()=>{const f=st.f;const rows=(S().scanner||[]).filter(r=>cfbGate(r.top25)&&
     el("td",{},MK[r.market]+" "+r.selection+(r.line!=null?" "+ln(r.line):"")),el("td",{},r.book),el("td",{class:"num"},am(r.american)),
     el("td",{class:"num"},pct(r.ev_per_unit),el("div",{class:"mute small"},r.ev_interval?pct(r.ev_interval[0])+"–"+pct(r.ev_interval[1]):""))))))),
   rows.length?null:el("p",{class:"mute"},"No candidates match."))]};
-R.sims=()=>[card(el("h2",{},"SIMS"),el("p",{},badge(D.sims.status,"UNAVAILABLE")," "+D.sims.detail))];
+const SXL={pass_yds:"Pass yds",pass_att:"Pass att",pass_cmp:"Completions",pass_td:"Pass TD",int:"INT",rush_yds:"Rush yds",rush_att:"Rush att",rush_td:"Rush TD",targets:"Targets",rec:"Receptions",rec_yds:"Rec yds",rec_td:"Rec TD"};
+const sAge=iso=>iso?(Date.now()-new Date(iso).getTime())/60000:Infinity;
+const nf=(x,d)=>x==null?"–":Number(x).toFixed(d==null?1:d);
+const roiF=x=>x==null?"–":(x>0?"+":"")+Number(x).toFixed(1)+"%";
+function sxState(r,stale){if(r.kickoff_utc&&new Date(r.kickoff_utc)<=new Date())return el("span",{},badge("STARTED","UNAVAILABLE")," game started: no longer actionable");
+ const a=sAge(r.odds_at);if(!(a<Infinity))return el("span",{},badge("NO ODDS TIME","UNAVAILABLE"));
+ if(a>stale)return el("span",{},badge("ODDS STALE","STALE")," as of "+local(r.odds_at)+" ("+fmtAge(a)+" old): prices may have moved");
+ return el("span",{class:"small"},"odds as of "+local(r.odds_at)+" ("+fmtAge(a)+" ago)")}
+function sxSpark(d){if(!d)return null;const v=d.counts;if(!v||!v.length)return null;
+ const m=Math.max(...v)||1,W=90,H=18,bw=W/v.length;const ns="http://www.w3.org/2000/svg";const svg=document.createElementNS(ns,"svg");svg.setAttribute("width",W);svg.setAttribute("height",H);svg.setAttribute("viewBox","0 0 "+W+" "+H);svg.setAttribute("aria-label","simulated distribution");
+ v.forEach((c,i)=>{const r=document.createElementNS(ns,"rect");const h=Math.max(c?1:0,H*c/m);r.setAttribute("x",i*bw);r.setAttribute("y",H-h);r.setAttribute("width",Math.max(1,bw-1));r.setAttribute("height",h);r.setAttribute("fill","currentColor");svg.appendChild(r)});const sp=el("span",{class:"mute"});sp.appendChild(svg);return sp}
+function sxPick(r,stale){const side=String(r.side||"").toUpperCase();
+ const row=(k,v,n)=>el("tr",{},el("td",{class:"small"},k),el("td",{class:"num"},v),el("td",{class:"small mute"},n||""));
+ return card(el("h3",{},"#"+r.rank+" "+r.player_name+" ",el("span",{class:"mute small"},(r.team||"–")+" vs "+(r.opponent||"–"))),
+  el("p",{},el("b",{},(r.market_label||"")+" "+side+" "+nf(r.line,1))," at "+(r.book_title||"–")+" "+am(r.price)),el("p",{},sxState(r,stale)),
+  el("table",{},el("tbody",{},row("Simulated hit probability (raw)",pct(r.p_win_decided!=null?r.p_win_decided:r.p_win),"share of simulations, pushes excluded"),
+   row("Calibrated probability",r.p_cal==null?"not calibrated":pct(r.p_cal),"after SIMS's calibration adjustment"),row("Break-even at this price",pct(r.break_even)),
+   row("Projected ROI (raw)",roiF(r.roi_pct),"model expectation"),row("Calibrated ROI",r.cal_roi_pct==null?"not available":roiF(r.cal_roi_pct),"model expectation, not a realized return"),
+   row("Conservative ROI",r.cons_roi_pct==null?"not available":roiF(r.cons_roi_pct),"one standard error below"),row("Books' no-vig probability",pct(r.market_no_vig)),
+   row("Simulated mean / median",nf(r.mean,1)+" / "+nf(r.median,1)),row("Simulated 10–90% range",nf(r.p10,1)+" – "+nf(r.p90,1)))),
+  el("p",{class:"small mute"},"Model "+(r.model_version||"–")+" · forecast "+local(r.forecast_at)+" · kickoff "+local(r.kickoff_utc)))}
+function sxRows(O){if(!O||!O.cols)return[];const c=O.cols,d=O.dict||{};return O.rows.map(r=>{const o={};c.forEach((k,i)=>{const v=r[i];o[k]=k==="flags"?(v||[]).map(j=>d.flags[j]):(d[k]&&Number.isInteger(v)?d[k][v]:v)});return o})}
+function sxOffers(E,stale){const offers=sxRows(E.offers);const box=el("div",{});let mode="valid";
+ const draw=()=>{const rows=offers.filter(r=>mode==="all"||r.quality==="valid").slice().sort((a,b)=>(b.cal_roi_pct==null?-1e9:b.cal_roi_pct)-(a.cal_roi_pct==null?-1e9:a.cal_roi_pct));
+  box.replaceChildren(el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},...["Player","Market","Side","Line","Book","Odds","Raw %","Cal. %","Break-even","Raw ROI","Cal. ROI","Cons. ROI","Status"].map(h=>el("th",{},h)))),
+   el("tbody",{},rows.map(r=>el("tr",{},el("td",{},r.player_name,el("div",{class:"mute small"},(r.team||"")+" vs "+(r.opponent||""))),el("td",{class:"small"},r.market_label||""),el("td",{},String(r.side||"").toUpperCase()),
+    el("td",{class:"num"},nf(r.line,1)),el("td",{class:"small"},r.book_title||""),el("td",{class:"num"},am(r.price)),el("td",{class:"num"},pct(r.p_win_decided!=null?r.p_win_decided:r.p_win)),el("td",{class:"num"},r.p_cal==null?"–":pct(r.p_cal)),
+    el("td",{class:"num"},pct(r.break_even)),el("td",{class:"num"},roiF(r.roi_pct)),el("td",{class:"num"},roiF(r.cal_roi_pct)),el("td",{class:"num"},roiF(r.cons_roi_pct)),
+    el("td",{class:"small"},r.quality==="valid"?sxState(r,stale):el("span",{class:"mute"},(r.flags||[]).join("; ")||r.quality))))))))};
+ const sel=el("select",{on:{change:e=>{mode=e.target.value;draw()}}},el("option",{value:"valid"},"Passed every SIMS check ("+offers.filter(r=>r.quality==="valid").length+")"),el("option",{value:"all"},"All analysed offers ("+offers.length+")"));
+ const det=el("details",{on:{toggle:()=>{if(det.open&&!box.firstChild)draw()}}},el("summary",{},"All analysed NFL prop offers ("+offers.length+")"),el("p",{class:"small"},"Show: ",sel),
+  el("p",{class:"small mute"},"Excluded by SIMS's data-quality rules: "+(Object.entries(E.excluded_reasons||{}).map(([k,v])=>k+" "+v).join(" · ")||"none")),box);return det}
+function sxGame(g){if(g.forecast_status!=="official")return el("p",{class:"small mute"},g.away+" @ "+g.home+" · "+local(g.kickoff_utc)+" · "+(g.forecast_status==="no_official_forecast"?"no official SIMS forecast":"forecast failed its integrity check: not shown"));
+ const G=g.game||{},wp=G.win_prob||{},ms=G.mean_score||{},md=G.median_score||{},R=g.representative||{},h=g.home,a=g.away;
+ const pl=(g.players||[]).slice().sort((x,y)=>(x.team===y.team?0:x.team===a?-1:1)||((y.play_prob||0)-(x.play_prob||0)));
+ const rows=[];for(const p of pl)for(const[st,d]of Object.entries(p.stats||{}))if(["pass_yds","rush_yds","rec_yds","rec","pass_td"].includes(st))rows.push(el("tr",{},el("td",{},p.name,el("div",{class:"mute small"},p.team+" "+p.pos)),el("td",{class:"small"},SXL[st]||st),
+  el("td",{class:"num"},nf(d.mean,1)),el("td",{class:"num"},nf(d.median,1)),el("td",{class:"num"},nf(d.p10,0)+" – "+nf(d.p90,0)),el("td",{},sxSpark(d.dist)),el("td",{class:"num"},pct(p.play_prob)),el("td",{class:"num"},pct(p.anytime_td))));
+ return card(el("h3",{},a+" @ "+h),el("p",{class:"small mute"},local(g.kickoff_utc)+" · model "+g.model_version+" · "+(g.n_sims||0).toLocaleString()+" simulations · forecast "+local(g.forecast_created_at)+" (revision "+g.revision+")"),
+  el("div",{class:"grid"},el("div",{class:"kpi"},el("b",{},pct(wp[a])+" / "+pct(wp[h])),"win probability "+a+" / "+h),el("div",{class:"kpi"},el("b",{},nf(ms[a],1)+" – "+nf(ms[h],1)),"mean score"),
+   el("div",{class:"kpi"},el("b",{},nf(md[a],0)+" – "+nf(md[h],0)),"median score"),el("div",{class:"kpi"},el("b",{},R.score?nf(R.score[a],0)+" – "+nf(R.score[h],0):"–"),"representative game")),
+  el("p",{class:"small"},"Total points: mean "+nf((G.total||{}).mean,1)+", 10–90% "+nf((G.total||{}).p10,0)+"–"+nf((G.total||{}).p90,0)+" · "+h+" margin: mean "+nf((G.margin_home||{}).mean,1)+", 10–90% "+nf((G.margin_home||{}).p10,0)+" to "+nf((G.margin_home||{}).p90,0)),
+  R.basis?el("p",{class:"small mute"},"Representative game: one actual simulated game, replayed from its seed. "+R.basis):null,
+  el("details",{},el("summary",{},"Player projections ("+pl.length+" players; if they play)"),el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},...["Player","Stat","Mean","Median","10–90%","Distribution","Plays","Anytime TD"].map(x=>el("th",{},x)))),el("tbody",{},rows)))))}
+R.sims=()=>{const X=D.sims||{};const out=[];
+ if(st.sport==="cfb")out.push(card(el("p",{},badge("NFL ONLY","INFO")," SIMS on this site covers NFL only. College player props are not shown.")));
+ if(X.fixture)out.push(card(el("h2",{},badge("TEST FIXTURE","STALE")," Not real data"),el("p",{},X.fixture)));
+ if(!X.edges&&!X.projections&&!X.history){out.push(card(el("h2",{},"NFL SIMS"),el("p",{},badge(X.status||"UNAVAILABLE","UNAVAILABLE")," "+(X.detail||""))));}
+ else{const E=X.edges,stale=X.odds_stale_min||90;out.push(card(el("h2",{},badge("MODELED"),"NFL SIMS · Sunday Top 5 Prop Edges"),el("p",{class:"small"},X.label)));
+  if(E){const m=E.meta||{};const H=(X.history||{}).top5||{},o=H.overall||{};
+   out.push(card(el("p",{class:"small"},"Slate "+m.slate_date+" · report "+m.kind+" v"+m.version+" ("+m.status+") · built "+local(m.built_at||m.created_at)+" · "+(m.offers_analyzed||0)+" offers analysed, "+(m.offers_valid||0)+" passed every check, "+(m.picks||0)+" picks · odds "+local(m.oldest_odds)+" to "+local(m.newest_odds)),
+    (m.warnings||[]).length?el("p",{class:"small"},badge("WARNING","WATCH")," "+m.warnings.join("; ")):null,
+    el("p",{class:"small mute"},"Forward record of published Top 5 picks: "+(o.n?o.n+" graded, "+o.wins+"-"+o.losses+"-"+o.pushes+", realized ROI "+roiF(o.realized_roi_pct)+" vs average projected "+roiF(o.avg_projected_roi_pct):"no graded picks yet")+". "+(H.warning||"Hypothetical flat $100 stakes; no real wagers."))));
+   out.push(...(E.top.length?E.top.map(r=>sxPick(r,stale)):[card(el("p",{},badge("NO PICKS","INFO")," No offer met SIMS's rules for this slate."))]));
+   out.push(card(sxOffers(E,stale),el("p",{class:"small mute"},m.disclaimer||"")))}
+  else out.push(card(el("p",{},badge("NO REPORT","UNAVAILABLE")," No Sunday report has been imported for this week.")));
+  const P=X.projections;out.push(card(el("h2",{},badge("MODELED"),"NFL SIMS · Game forecasts"+(P?" (week "+P.week+")":"")),P?el("p",{class:"small mute"},"Exported "+local(P.exported_at)+" · official SIMS forecasts only; a game without one is listed, never estimated."):el("p",{},badge("NO PROJECTIONS","UNAVAILABLE")," No projections have been imported.")));
+  if(P){const off=P.games.filter(g=>g.forecast_status!=="official");out.push(...P.games.filter(g=>g.forecast_status==="official").map(sxGame));
+   if(off.length)out.push(card(el("h3",{},"No official SIMS forecast ("+off.length+")"),...off.map(sxGame)))}}
+ const prov=["edges","projections","history"].filter(k=>X[k]).map(k=>k+": "+X[k].file+" (exported "+local(X[k].exported_at)+", SIMS "+X[k].sims_model_version+", sha256 "+String(X[k].payload_sha256||"").slice(0,12)+"…)");
+ out.push(card(el("h3",{},"Provenance"),el("p",{class:"small mute",style:"overflow-wrap:anywhere"},prov.join(" · ")||"No SIMS files."),(X.rejected||[]).length?el("p",{class:"small",style:"overflow-wrap:anywhere"},badge("REJECTED","UNAVAILABLE")," "+X.rejected.map(r=>r.file+": "+r.reasons.join(", ")).join(" · ")):null));
+ return out};
 R.performance=()=>{const out=[];for(const[k,s]of Object.entries(D.sports)){const h=s.performance;if(!h){out.push(card(el("h3",{},s.label),el("p",{class:"mute"},"No analysis yet.")));continue}
  const brk=(o,t)=>Object.keys(o||{}).length?el("div",{},el("h3",{},t),el("table",{},el("tbody",{},Object.entries(o).map(([kk,v])=>el("tr",{},el("td",{},kk),el("td",{class:"num"},v?v.n+" opp / "+v.games+" games":"–"),el("td",{class:"num"},v?pct(v.mean)+" ("+pct(v.lo)+" to "+pct(v.hi)+")":"–")))))):null;
  out.push(card(el("h3",{},s.label),perfLine(h),el("p",{class:"small mute"},"Closing EV = the price taken, evaluated at the observed closing consensus. Opportunities are counted once, at first sighting; a game whose close was not observed is excluded, never filled in. Confidence intervals are clustered by game."),
@@ -607,6 +667,8 @@ def main(argv=None):
     ap.add_argument("--need-out", default=None, help="where to write Need-tracker files created by this build")
     ap.add_argument("--settle-dir", default=None, help="saved wager settlements (release v4-settlement)")
     ap.add_argument("--sensitivity-cache", default=None, help="previous build's variant splits (v4-site, optional)")
+    ap.add_argument("--sims-dir", default=None, help="validated SIMS web exports (release sims-import, optional)")
+    ap.add_argument("--sims-allow-fixture", action="store_true", help="preview/test builds only: show TEST FIXTURE files")
     a = ap.parse_args(argv)
     now = _epoch(a.now) if a.now else time.time()
     if a.live_db:
@@ -637,6 +699,9 @@ def main(argv=None):
     snap["shards"] = n_shards
     tracker_step(snap, load_rankings(a.rankings_dir), now, a.need_dir, a.results_dir, a.need_out, conn)
     settlement_step(snap, bconn, conn, load_rankings(a.rankings_dir), now, a.results_dir, a.settle_dir, a.need_out)
+    if a.sims_dir is not None:             # separate system, read-only; can never stop the build
+        from web_v4 import sims_section
+        snap["sims"] = sims_section.block(a.sims_dir, now, allow_fixture=a.sims_allow_fixture)
     with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
         json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))
     snap = _clean(snap)

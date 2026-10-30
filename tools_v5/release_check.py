@@ -14,6 +14,8 @@ Checks (each PASS / FAIL with detail):
                            book) equals the sum of per-wager settlements at each outcome, to the cent
   5 settlement_reconciles  settlement_step reconciliation: 0 cents off per game and per customer
   6 v5_snapshot_bound      every V5 run carries a bankroll snapshot whose hash is part of its run id
+  7-9 information at placement, slate completeness and timestamps, rollback to m4 (see below)
+  10 sims_isolated         a build that also reads a SIMS export is identical outside the SIMS section
 """
 
 import argparse
@@ -32,6 +34,38 @@ from sportsbook_v4 import ENGINE_VERSION, persist  # noqa: E402
 from sportsbook_v4.schema import ensure_schema  # noqa: E402
 
 
+SIMS_FIXTURES = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests_web", "fixtures", "sims")
+VOLATILE = ()          # top-level snapshot keys that legitimately differ between two builds from identical inputs
+WALL_CLOCK = ("opened_at", "run_opened_at", "built_at", "record_hash")   # wall-clock times of a build (and hashes
+                                                                         # covering them); every other field is compared
+
+
+def _norm(x):
+    if isinstance(x, dict):
+        return {k: (None if k in WALL_CLOCK else _norm(v)) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_norm(v) for v in x]
+    return x
+
+
+def _diff(x, y, skip=(), path="", out=None):
+    """Paths (up to 20) where two snapshots differ."""
+    out = [] if out is None else out
+    if len(out) >= 20:
+        return out
+    if isinstance(x, dict) and isinstance(y, dict):
+        for k in sorted(set(x) | set(y)):
+            if not path and k in skip:
+                continue
+            _diff(x.get(k), y.get(k), skip, f"{path}.{k}", out)
+    elif isinstance(x, list) and isinstance(y, list) and len(x) == len(y):
+        for i, (u, v) in enumerate(zip(x, y)):
+            _diff(u, v, skip, f"{path}[{i}]", out)
+    elif x != y:
+        out.append(path)
+    return out
+
+
 def _load(book_dir):
     c = sqlite3.connect(":memory:")
     ensure_schema(c)
@@ -39,10 +73,10 @@ def _load(book_dir):
     return c
 
 
-def _build(args, book_dir, out_dir):
+def _build(args, book_dir, out_dir, extra=()):
     cmd = [sys.executable, "-m", "web_v4.live_site", "--shards", args.shards, "--rankings-dir", args.rankings_dir,
            "--out", out_dir, "--book-dir", book_dir, "--book-out", book_dir, "--now", args.now,
-           "--results-dir", args.results_dir, "--settle-dir", args.settle_dir]
+           "--results-dir", args.results_dir, "--settle-dir", args.settle_dir, *extra]
     r = subprocess.run(cmd, capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if r.returncode != 0:
         raise RuntimeError(r.stderr[-2000:])
@@ -63,7 +97,7 @@ def main(argv=None):
         shutil.copytree(a.book_dir, b1)
         shutil.copytree(a.book_dir, b2)
         s1 = _build(a, b1, os.path.join(work, "out1"))
-        _build(a, b2, os.path.join(work, "out2"))
+        s2 = _build(a, b2, os.path.join(work, "out2"), extra=("--sims-dir", SIMS_FIXTURES, "--sims-allow-fixture"))
         after = _load(b1)
         kept = all(persist.wager_set(after, rid) == ws for rid, ws in runs_before.items())
         res["v4_history_intact"] = {"ok": kept, "runs_checked": len(runs_before),
@@ -143,6 +177,14 @@ def main(argv=None):
         res["slate_complete_and_timestamped"] = {"ok": bad_t == 0 and need_ok, "games_with_wagers": games_ok,
                                                  "sunday_games": sunday, "wagers_at_or_after_kickoff": bad_t,
                                                  "need_computed_for_every_game_with_wagers": need_ok}
+
+        # 10 SIMS isolated: the second build also read a SIMS export (test fixture); everything outside its own
+        #    "sims" block (sportsbook, Need, sharp vs public, tracker, settlement, ledger) is byte-identical
+        strip = lambda x: json.dumps(_norm({k: v for k, v in x.items() if k not in ("sims",) + VOLATILE}), sort_keys=True)
+        res["sims_isolated"] = {"ok": strip(s1) == strip(s2) and same_files and (s2.get("sims") or {}).get("status") == "OK",
+                                "sims_block_status": (s2.get("sims") or {}).get("status"),
+                                "differs": _diff(_norm(s1), _norm(s2), ("sims",) + VOLATILE),
+                                "detail": "site built with and without a SIMS export: identical outside the SIMS section"}
 
         # 9 rollback: an m4 build on the V5 ledger keeps every V5 record and resumes m4
         rb = os.path.join(work, "rollback")

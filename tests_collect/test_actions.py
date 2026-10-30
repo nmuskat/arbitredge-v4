@@ -489,7 +489,17 @@ def _yaml(name):
 
 def test_site_build_workflow_has_only_cloudflare_secrets_and_is_pinned():
     text = _wf("site-build.yml")
-    assert set(re.findall(r"secrets\.(\w+)", text)) == {"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}
+    assert set(re.findall(r"secrets\.(\w+)", text)) == {"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "SIMS_EXPORT_READ_TOKEN"}
+    steps = _yaml("site-build.yml")["jobs"]["build"]["steps"]
+    sims = [s for s in steps if "SIMS_EXPORT_READ_TOKEN" in str(s)]
+    assert len(sims) == 1 and sims[0]["run"] == "bash .github/scripts/sims_import.sh" and sims[0]["continue-on-error"] is True
+    assert set(sims[0]["env"]) == {"GH_TOKEN", "SIMS_TOKEN"} and sims[0]["env"]["GH_TOKEN"] == "${{ github.token }}"
+    deploy = [s for s in steps if "CLOUDFLARE_API_TOKEN" in str(s.get("env"))]
+    assert deploy and all("SIMS" not in str(s) for s in deploy)                      # deploy never sees the SIMS token
+    script = open(os.path.join(REPO, ".github", "scripts", "sims_import.sh")).read()
+    uses = [ln for ln in script.splitlines() if "SIMS_TOKEN" in ln and not ln.lstrip().startswith("#")]
+    assert uses and all("arbitredge-sims" in ln or "-z" in ln for ln in uses)        # only for the SIMS repository
+    assert "echo $SIMS_TOKEN" not in script and "set -x" not in script and "${SIMS_TOKEN}" not in script.replace('"${SIMS_TOKEN:-}"', "")
     assert "ODDS_API_KEY" not in text and "CFBD_API_KEY" not in text
     assert "pull_request" not in text
     for ref in re.findall(r"uses: ([^\s]+)", text):
@@ -510,7 +520,8 @@ def test_site_job_runs_only_after_new_data_and_gets_no_secrets(wf, need, output)
     assert site["uses"] == "./.github/workflows/site-build.yml"
     assert site["needs"] == need and site["if"] == f"needs.{need}.outputs.{output} == 'true'"
     assert site["secrets"] == {"CLOUDFLARE_API_TOKEN": "${{ secrets.CLOUDFLARE_API_TOKEN }}",
-                               "CLOUDFLARE_ACCOUNT_ID": "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"}   # never 'inherit'
+                               "CLOUDFLARE_ACCOUNT_ID": "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}",
+                               "SIMS_EXPORT_READ_TOKEN": "${{ secrets.SIMS_EXPORT_READ_TOKEN }}"}   # never 'inherit'
     assert not re.search(r"secrets:\s*inherit", _wf(wf))
     assert site["permissions"] == {"contents": "write"}
 
@@ -597,9 +608,12 @@ def test_cloudflare_deploy_steps_are_gated_and_the_check_holds_no_secret():
     names = [st.get("name") for st in steps]
     assert names.index("Check owner-only protection (no secrets)") < names.index("Deploy to Cloudflare Pages")
     assert names[-2:] == ["Deploy to Cloudflare Pages", "Publish deploy report (no secrets)"]
-    assert not any("secrets." in json.dumps(st) for st in steps if st is not dep)
+    sims = by["Import SIMS exports (read-only; never blocks the build)"]
+    assert not any("secrets." in json.dumps(st) for st in steps if st is not dep and st is not sims)
+    assert json.dumps(sims).count("secrets.") == 1 and "SIMS_EXPORT_READ_TOKEN" in json.dumps(sims)
+    assert names.index(sims["name"]) < names.index("Build site")                     # before the build, far from deploy
     secrets = _yaml("site-build.yml")[True]["workflow_call"]["secrets"]
-    assert set(secrets) == {"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}
+    assert set(secrets) == {"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "SIMS_EXPORT_READ_TOKEN"}
 
 
 def test_wrangler_is_pinned_by_lockfile():

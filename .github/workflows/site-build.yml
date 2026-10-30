@@ -1,7 +1,8 @@
 # ArbitrEdge V4 -- rebuild the private site from already-collected data, then (when the owner
 # has switched it on) deploy it to the owner-only Cloudflare Pages project.
 # No Odds API calls. Called by odds-collect only after a run that saved a new odds shard, by
-# cfb-rankings after a new poll, or started by hand. Callers pass ONLY the two Cloudflare secrets.
+# cfb-rankings after a new poll, or started by hand. Callers pass ONLY the two Cloudflare secrets and the
+# read-only SIMS export token (used by the SIMS import step only).
 # Output: release v4-site (index.html, site_snapshot.json); release v4-book (synthetic-book ledger files);
 # Cloudflare Pages production deployment.
 # Deploy is OFF unless repository variable CF_PAGES_DEPLOY = on, and refused unless both
@@ -13,6 +14,8 @@ on:
       CLOUDFLARE_API_TOKEN:
         required: false
       CLOUDFLARE_ACCOUNT_ID:
+        required: false
+      SIMS_EXPORT_READ_TOKEN:   # fine-grained, Contents: Read-only on nmuskat/arbitredge-sims only
         required: false
   workflow_dispatch:
 permissions:
@@ -34,6 +37,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/site_inputs.sh
+      - name: Import SIMS exports (read-only; never blocks the build)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SIMS_TOKEN: ${{ secrets.SIMS_EXPORT_READ_TOKEN }}
+        run: bash .github/scripts/sims_import.sh
       - name: Cache pip and npm downloads (integrity-checked on install)
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809   # v4.2.4
         with:
@@ -46,7 +55,7 @@ jobs:
           python3 -m pip install --quiet "$(grep -i '^numpy==' requirements-v4.txt)"
           python3 -m web_v4.live_site --shards shards --ledger state/ledger.jsonl --rankings-dir rankings --out site \
             --book-dir book --book-out book_new --need-dir need --results-dir results --need-out need_new \
-            --settle-dir settle --sensitivity-cache prev/sensitivity_cache.json
+            --settle-dir settle --sensitivity-cache prev/sensitivity_cache.json --sims-dir sims
       - name: Save synthetic-book ledger (new files only, never overwritten)
         env:
           GH_TOKEN: ${{ github.token }}

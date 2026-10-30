@@ -143,7 +143,9 @@ def test_rankings_workflow_is_gated_pinned_and_only_place_with_cfbd_key():
     runs = {s.get("name"): s.get("run", "") for s in steps}
     assert runs["Fetch AP poll"].strip() == "python3 -m data_v4.rankings_run --out rankings"
     assert "python3 -m data_v4.results --sport cfb" in runs["CFB final scores (saved only when they changed)"]
-    assert set(re.findall(r"secrets\.(\w+)", text)) == {"CFBD_API_KEY", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"}
+    assert set(re.findall(r"secrets\.(\w+)", text)) == {"CFBD_API_KEY", "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID",
+                                                         "SIMS_EXPORT_READ_TOKEN"}
+    assert "SIMS_EXPORT_READ_TOKEN" not in str(steps)                                  # only forwarded to the site build
     for f in os.listdir(wf_dir):
         if f != "cfb-rankings.yml":
             assert "CFBD_API_KEY" not in open(os.path.join(wf_dir, f)).read()
