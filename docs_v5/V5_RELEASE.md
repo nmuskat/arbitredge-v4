@@ -166,7 +166,7 @@ This is a consequence of an **unsupported assumption**: m4's arrival rates were 
 
 ## 4. Rollback to the last known-good V4
 
-1. Set `ENGINE_VERSION` back to `"sportsbook_v4.m4"` (one line), or revert `v4-dev` to the pre-V5 commit `31c2ef3`. Push normally; no force-push.
+1. Set `ENGINE_VERSION` back to `"sportsbook_v4.m4"` in `sportsbook_v4/__init__.py` (one line; this exact change is the `rollback_to_m4` release check). Commit and push normally to `v4-dev`; no force-push, no history rewrite. The build pacing and kickoff-sealing changes stay in place.
 2. The next build re-activates m4. Its weekly runs resume from their watermark and catch up deterministically.
 3. V5 runs become superseded: kept, immutable, shown under Health. Their Need snapshots remain on record with their engine tag.
 4. **Nothing is deleted.** V4's ledger, settlements, snapshots, decisions and cohorts are untouched throughout.
@@ -175,3 +175,58 @@ This is a consequence of an **unsupported assumption**: m4's arrival rates were 
 ## 5. Approval needed
 
 After the Friday checks pass, explicit approval to **replace m4 with V5 r1** on the live site (fast-forward `v4-dev` to the release commit), with the transition in §2.
+
+## 6. Final verification (Fri 2026-10-30, 10:10 am ET)
+
+**Real game.** Panthers @ Packers, final 27-19 (nflverse `2026_08_CAR_GB`, `final: true`). The scheduled `odds-analyze` run had not yet
+started, so the score was ingested locally with the production code (`python -m data_v4.results --sport nfl`), unpublished; the official
+file follows from that run and goes through the same hash checks.
+
+| | V4 m4 (live) | V5 r1 |
+|---|---|---|
+| Wagers on the game / settled | 1,110 / 1,110 | 643 / 643 |
+| Handle | $134,688.00 | $59,818.00 |
+| Win / loss / push | 614 / 496 / 0 | 332 / 311 / 0 |
+| Book P&L | -$13,136.37 | -$12,020.01 |
+| Customer P&L (sum) | +$13,136.37 (1,020 customers) | +$12,020.01 (585 customers) |
+| Independent re-grade, cent differences | 0 / 0 | 0 / 0 |
+| Accepted at or after kickoff | 0 | 0 |
+
+No line was on a push number (spreads 3.5/4, totals 47/47.5; margin 8, total 46); pushes, moneyline ties, corrections, missing scores
+and tampering are covered by `tests_v4/test_bettor_settlement.py`. Settlement records every wager, superseded runs included; bankrolls
+and reconciliation count the active engine's runs (game and customer mismatch: 0 cents).
+
+**Sealed decision.** Unchanged: snapshot taken 23:33:01Z / built 23:33:23Z, `record_hash 05c40a8e178919a5...`; C2 eligible, pick
+Carolina +3.5 -110 (fanatics); C1, C3, C4 not eligible. Graded: ATS loss, -1.00 unit.
+
+**Release checks** (`docs_v5/release_check_2026-10-30.json`): all 9 pass. 4 pre-V5 runs / 8,149 wagers intact; 11,930 wager ids unique;
+two independent V5 builds byte-identical and a from-scratch replay equal; liability exact for 32 games; 3,781 V5 wagers, 0 information
+violations; 32 games with wagers, 12 Sunday NFL games, 0 wagers at/after kickoff, Need computed for every game with wagers; m4 rollback
+keeps every V5 record.
+
+**Tests.** Full suite on `v5-dev`: 502 passed, 22 skipped.
+
+**Reconstructed vs prospective.** Every V5 wager accepted before the run's `opened_at` (the first V5 build after deployment) is labelled
+RECONSTRUCTED from historical observed odds; later ones are PROSPECTIVE. In the 14:10Z rehearsal: NFL 1,690 reconstructed / 56
+prospective, CFB 2,041 / 53 (prospective counts there are an artifact of rehearsing several builds; in production everything before
+tonight's deployment build is reconstructed).
+
+**GitHub Actions (private repo, GitHub Free 2,000 min/month shared across the account).** Measured job durations: collect 7-17 s
+(1 min), dashboard build 55-91 s (2 min; V5 equals V4: build step about 62 s cold / 35 s warm locally), analysis 23 s (1), rankings
+11 s (1), CI 133-289 s (3-5). Worst-case month after the pacing change (3 h quiet, cap 280/300): collect 1,035 (every scheduled run
+starting, which GitHub never achieves) + builds 600 + CI 160 (40 pushes x 4) + analysis 31 + rankings 27 = 1,853, tested <= 1,900.
+Not in that figure: manual reruns and `workflow_dispatch` builds (2 min each), CI above 40 pushes, and other private repositories
+on the account (for example the SIMS backup, if it runs Actions). Realistic month: about 1,550-1,700. October to date: about 200.
+
+**Cloudflare / Odds API.** At most ~309 deployments a month (Free plan 500). Credit gate, caps (5,000 / 250), V3 floor 2,000,
+breaker and free preflight unchanged; V5 adds no Odds API calls.
+
+## 7. Deployment procedure (after explicit owner approval only)
+
+1. `git push origin v5-dev:v4-dev` (a fast-forward: `v5-dev` contains every `v4-dev` commit; no force).
+2. CI runs the suite on `v4-dev` (about 4 billed minutes).
+3. Start one `site-build` (workflow_dispatch) so V5 opens now rather than at the next odds save. It opens the V5 weekly runs,
+   reconstructs Tuesday-Friday from the stored observed odds, verifies replay, deploys behind Cloudflare Access.
+4. Verify: page header "ArbitrEdge V5"; audit `engine_version sportsbook_v5.r1`, `replay_verified: this build`; V4 runs listed as
+   superseded with unchanged counts; settlement status OK; Need Tracker shows V4 and V5 sections separately; Access still required.
+5. If any check fails, roll back (section 4).

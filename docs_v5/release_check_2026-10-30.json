@@ -1,0 +1,55 @@
+{
+ "v4_history_intact": {
+  "ok": true,
+  "runs_checked": 4,
+  "wagers_checked": 8149
+ },
+ "no_duplicate_wagers": {
+  "ok": true,
+  "wagers": 11930
+ },
+ "deterministic_replay": {
+  "ok": true,
+  "v5_runs": 2,
+  "independent_builds_identical": true
+ },
+ "liability_exact": {
+  "ok": true,
+  "games_checked": 32,
+  "mismatches": 0,
+  "note": "book P&L from the exposure engine vs the sum of per-wager settlements, within per-wager cent rounding"
+ },
+ "settlement_reconciles": {
+  "ok": true,
+  "reconciliation": {
+   "games_settled": 1,
+   "book_realized_cents": -1202001,
+   "bettor_settled_pnl_cents": 1202001,
+   "game_mismatch_cents": 0,
+   "bettor_mismatch_cents": 0,
+   "ok": true
+  }
+ },
+ "v5_snapshot_bound": {
+  "ok": true,
+  "v5_runs": 2
+ },
+ "information_at_placement": {
+  "ok": true,
+  "wagers_checked": 3781,
+  "violations": 0,
+  "also": "engine runs with NoFacts (no scores); week-open bankrolls use only settlements of earlier weeks (tested)"
+ },
+ "slate_complete_and_timestamped": {
+  "ok": true,
+  "games_with_wagers": 32,
+  "sunday_games": 12,
+  "wagers_at_or_after_kickoff": 0,
+  "need_computed_for_every_game_with_wagers": true
+ },
+ "rollback_to_m4": {
+  "ok": true,
+  "detail": "m4 active again, V5 runs kept unchanged and shown as superseded"
+ },
+ "all_pass": true
+}
