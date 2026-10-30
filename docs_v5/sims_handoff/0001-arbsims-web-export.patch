@@ -1,0 +1,375 @@
+From ade001e8b195600c66fda93ed8bc51c8b25a7c6c Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Fri, 30 Oct 2026 21:50:59 +0000
+Subject: [PATCH] Read-only web export for the ArbitrEdge V5 website (arbsims
+ web-export projections|edges|history): opens the database read-only, NFL
+ only, whitelisted stored values copied unchanged, payload sha256, never
+ overwrites; runbook adds it as the last step of the existing Saturday, Sunday
+ and Tuesday sections (0 credits)
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_016GA7v6iMKG52wL2eX3wFmm
+---
+ arbsims/cli.py              |  17 ++++
+ arbsims/export_web.py       | 164 ++++++++++++++++++++++++++++++++++++
+ docs/EDGE_SUNDAY_RUNBOOK.md |  14 +++
+ tests/test_export_web.py    | 100 ++++++++++++++++++++++
+ 4 files changed, 295 insertions(+)
+ create mode 100644 arbsims/export_web.py
+ create mode 100644 tests/test_export_web.py
+
+diff --git a/arbsims/cli.py b/arbsims/cli.py
+index b1c8dcb..467d346 100644
+--- a/arbsims/cli.py
++++ b/arbsims/cli.py
+@@ -98,12 +98,29 @@ def main(argv=None):
+     sub.add_parser("prop-validation", help="out-of-sample validation and calibration of prop probabilities (NFL)")
+     cl = sub.add_parser("clv", help="closing-line value of pregame forecasts (paper tracking; no bets)")
+     cl.add_argument("--league")
++    wx = sub.add_parser("web-export", help="read-only versioned export of stored NFL outputs for the V5 website")
++    wx.add_argument("kind", choices=["projections", "edges", "history"])
++    wx.add_argument("--week", type=int)
++    wx.add_argument("--slate", help="Sunday date YYYY-MM-DD (edges; default: latest stored report)")
++    wx.add_argument("--season", type=int)
++    wx.add_argument("--out", required=True)
++    wx.add_argument("--db", help="database path (default: the configured database), opened read-only")
+     v = sub.add_parser("serve", help="run the web app")
+     v.add_argument("--host", default="0.0.0.0")
+     v.add_argument("--port", type=int, default=8000)
+     a = ap.parse_args(argv)
+ 
+     from . import config, db
++    if a.cmd == "web-export":            # read-only: never opens the database for writing (no migrations, no writes)
++        from . import export_web as WX
++        ro = WX.connect_ro(a.db)
++        res = WX.build(a.kind, ro, season=a.season or config.CURRENT_SEASON, week=a.week, slate=a.slate)
++        if res is None:
++            print(json.dumps({"exported": None, "reason": "no stored report"}))
++            return
++        path = WX.write(*res, a.out)
++        print(json.dumps({"exported": str(path), "payload_sha256": res[0]["payload_sha256"]}))
++        return
+     con = db.connect()
+     season = getattr(a, "season", None) or config.CURRENT_SEASON
+     out = None
+diff --git a/arbsims/export_web.py b/arbsims/export_web.py
+new file mode 100644
+index 0000000..9dc75c9
+--- /dev/null
++++ b/arbsims/export_web.py
+@@ -0,0 +1,164 @@
++"""Read-only, versioned web export of existing SIMS outputs (NFL only) for the ArbitrEdge V5 website.
++
++    arbsims web-export projections --week 9 --out DIR     official forecasts of the week's NFL games
++    arbsims web-export edges [--slate YYYY-MM-DD] --out DIR  the latest stored Sunday Top 5 report (published/revision)
++    arbsims web-export history --out DIR                  graded Top 5 history and the forecast accuracy summary
++
++The database is opened read-only (SQLite ``mode=ro``): nothing is simulated, graded, collected or written. Values are
++copied from what SIMS already stored (official forecasts, immutable edge reports, grades); nothing is recomputed or
++filled in, and a missing value stays ``null``. College games and college props are never exported. Each file is
++``sims_nfl_<kind>_<tag>_<UTC>.json.gz`` with ``payload_sha256`` over the canonical JSON of ``body``; files are never
++overwritten.
++"""
++from __future__ import annotations
++
++import gzip
++import hashlib
++import json
++import os
++import sqlite3
++from datetime import datetime, timezone
++from pathlib import Path
++
++FORMAT = "arbsims-web-export"
++SCHEMA_VERSION = 1
++KINDS = ("projections", "edges", "history")
++MAX_EXACT_TALLY = 60          # distributions with more distinct values are exported as 30-bin histograms
++
++GAME_KEYS = ("game_id", "season", "week", "home", "away", "kickoff_utc", "venue", "win_prob", "favorite", "mean_score",
++             "median_score", "margin_home", "total", "rep_score", "n_sims")
++PLAYER_STAT_KEYS = ("mean", "sd", "p10", "p25", "p50", "p75", "p90")
++OFFER_EXTRA_KEYS = ("p_loss", "p_push", "valid_count", "forecast_id", "model_version", "player_id", "slate_game", "ev_per_100")
++
++
++def connect_ro(path: str | os.PathLike | None = None) -> sqlite3.Connection:
++    from . import config
++    p = Path(path or config.DB_PATH)
++    if not p.exists():
++        raise FileNotFoundError(f"SIMS database not found: {p}")
++    con = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
++    con.row_factory = sqlite3.Row
++    return con
++
++
++def _canon(body) -> str:
++    return json.dumps(body, sort_keys=True, separators=(",", ":"), default=str)
++
++
++def _compact(counts: list) -> dict:
++    """The stored value -> count tally, exact when small, otherwise a 30-bin histogram (counts only, no smoothing)."""
++    n = sum(c for _, c in counts)
++    if len(counts) <= MAX_EXACT_TALLY:
++        return {"type": "exact", "n": n, "values": [[v, c] for v, c in counts]}
++    lo, hi = min(v for v, _ in counts), max(v for v, _ in counts)
++    width = (hi - lo) / 30 or 1
++    bins = [0] * 30
++    for v, c in counts:
++        bins[min(29, int((v - lo) / width))] += c
++    return {"type": "hist30", "n": n, "lo": lo, "hi": hi, "counts": bins}
++
++
++def projections(con, season: int, week: int) -> dict:
++    from . import forecast
++    games = []
++    for g in con.execute("SELECT * FROM games WHERE league='NFL' AND season=? AND week=? ORDER BY kickoff_utc, game_id",
++                         (season, week)).fetchall():
++        g = dict(g)
++        o = forecast.official(con, g["game_id"])
++        base = {"game_id": g["game_id"], "home": g["home"], "away": g["away"], "kickoff_utc": g["kickoff_utc"],
++                "status": g.get("status")}
++        if not o:
++            games.append({**base, "forecast_status": "no_official_forecast"})
++            continue
++        fc = forecast.load(con, o["id"])
++        if not fc["integrity_ok"]:
++            games.append({**base, "forecast_status": "integrity_failed", "forecast_id": fc["id"]})
++            continue
++        s, p = fc["summary"], fc["payload"]
++        rep = p.get("representative") or {}
++        players = []
++        for pid, e in p["players"].items():
++            players.append({"player_id": pid, "name": e["name"], "team": e["team"], "pos": e["pos"], "role": e["role"],
++                            "play_prob": e.get("play_prob"), "anytime_td": e.get("anytime_td"),
++                            "stats": {st: {**{k: d.get(k) for k in PLAYER_STAT_KEYS},
++                                           "median": d.get("p50"), "dist": _compact(e["counts"][st])}
++                                      for st, d in e["stats"].items()}})
++        games.append({**base, "forecast_status": "official", "forecast_id": fc["id"], "revision": fc["revision"],
++                      "forecast_created_at": fc["created_at"], "model_version": fc["model_version"],
++                      "model_fingerprint": fc["model_fingerprint"], "n_sims": fc["n_sims"],
++                      "payload_sha256": fc["payload_sha256"],
++                      "game": {k: s.get(k) for k in GAME_KEYS},
++                      "representative": {"score": rep.get("score"), "basis": rep.get("basis"),
++                                         "is_modal_score": rep.get("is_modal_score"),
++                                         "modal_score": (rep.get("score_frequencies") or {}).get("modal_score"),
++                                         "box": rep.get("box")},
++                      "players": players})
++    return {"season": season, "week": week, "games": games}
++
++
++def edges(con, slate: str | None = None) -> dict | None:
++    from .edge import report as R
++    from .edge.page import ROW_KEYS
++    rep = R.latest(con, slate)
++    if rep is None:
++        return None
++    keys = list(ROW_KEYS) + [k for k in OFFER_EXTRA_KEYS if k not in ROW_KEYS]
++    rows = [{k: r.get(k) for k in keys} for r in rep["rows"]]
++    return {"meta": rep["meta"], "rows": rows, "top_row_ids": [r["row_id"] for r in rep["top"]],
++            "row_ids": [r["row_id"] for r in rep["rows"]]}
++
++
++def history(con, season: int) -> dict:
++    from . import grading
++    from .edge import grade as G
++    h = G.history(con)
++    acc = grading.report(con, "NFL", season, None, "pregame", None)
++    return {"top5": {k: v for k, v in h.items() if k != "records"},
++            "top5_records": [{k: r.get(k) for k in ("slate_date", "rank", "player_name", "team", "market_label", "side",
++                                                    "line", "price", "book_title", "p_win", "p_cal", "roi_pct", "cal_roi_pct",
++                                                    "result", "actual", "return_per_100", "clv_pp", "model_version")}
++                             for r in h.get("records", [])],
++            "accuracy_nfl": acc}
++
++
++def build(kind: str, con, *, season: int, week: int | None = None, slate: str | None = None,
++          now: datetime | None = None, fixture: str | None = None) -> tuple[dict, str] | None:
++    """``fixture``: a description of synthetic test inputs; the website shows it as TEST FIXTURE and the V5 importer
++    refuses fixture files in production."""
++    from . import config
++    now = now or datetime.now(timezone.utc)
++    if kind == "projections":
++        if week is None:
++            raise ValueError("projections needs --week")
++        body, tag = projections(con, season, week), f"{season}w{week:02d}"
++    elif kind == "edges":
++        body = edges(con, slate)
++        if body is None:
++            return None
++        m = body["meta"]
++        tag = f"{m['slate_date']}_{m.get('kind', 'report')}{m.get('version', '')}"
++    elif kind == "history":
++        body, tag = history(con, season), f"{season}"
++    else:
++        raise ValueError(kind)
++    doc = {"format": FORMAT, "schema_version": SCHEMA_VERSION, "kind": kind, "league": "NFL",
++           "exported_at": now.isoformat(timespec="seconds"), "sims_model_version": config.MODEL_VERSION,
++           "label": "MODELED: ArbitrEdge SIMS simulation outputs. Probabilities and ROI are model estimates, not "
++                    "guarantees or realized results.",
++           "body": body}
++    if fixture:
++        doc["fixture"] = fixture
++    doc["payload_sha256"] = hashlib.sha256(_canon(body).encode()).hexdigest()
++    return doc, tag
++
++
++def write(doc: dict, tag: str, out_dir: str | os.PathLike) -> Path:
++    out = Path(out_dir)
++    out.mkdir(parents=True, exist_ok=True)
++    stamp = doc["exported_at"].replace("-", "").replace(":", "").replace("+0000", "Z")[:15] + "Z"
++    path = out / f"sims_nfl_{doc['kind']}_{tag}_{stamp}.json.gz"
++    if path.exists():
++        raise FileExistsError(f"{path.name} exists; exports are never overwritten")
++    with gzip.open(path, "wt") as f:
++        json.dump(doc, f, default=str)
++    return path
+diff --git a/docs/EDGE_SUNDAY_RUNBOOK.md b/docs/EDGE_SUNDAY_RUNBOOK.md
+index 9b6cee5..48a78b4 100644
+--- a/docs/EDGE_SUNDAY_RUNBOOK.md
++++ b/docs/EDGE_SUNDAY_RUNBOOK.md
+@@ -10,6 +10,14 @@ stored forecasts, quotes, reports or grades; never rerun a game after kickoff. O
+ `arbsims edge stage --stage publish` (approved budget about 84 per Sunday: EDGE_RUN_CREDITS 100, EDGE_WEEKLY_CREDITS 120).
+ Every other command runs with `env -u ODDS_API_KEY`. No automatic retries of a failed publish stage.
+ 
++**Website export (owner-approved 2026-10-30, Phase 2; read-only, 0 credits).** The last step of each section below
++exports what that section already stored, for the ArbitrEdge V5 website: `arbsims web-export` opens the database
++read-only and writes one new `sims_nfl_*.json.gz` file to `$SCRATCH/web_export`, which is uploaded with
++`gh release upload web-export <file>` (create the release once with `gh release create web-export --prerelease
++--title "SIMS web exports (do not delete)" --notes "Read-only NFL exports for the V5 website"`). It never changes a
++forecast, report, grade or the ledger, and runs only after the section's own steps are complete. If it fails,
++report it in one line and do nothing else (never rerun the section's earlier steps because of it).
++
+ ## Saturday ~18:47 CT: prepare (0 credits)
+ 1. `env -u ODDS_API_KEY .venv/bin/python scripts/free_refresh.py` (free nflverse data).
+ 2. `env -u ODDS_API_KEY .venv/bin/python -m arbsims.cli edge plan` -> tomorrow's Sunday game ids (America/Chicago).
+@@ -22,6 +30,8 @@ Every other command runs with `env -u ODDS_API_KEY`. No automatic retries of a f
+    (`forecast.designate(..., by="owner")`, reason citing the owner's 2026-10-30 approval of the Sunday report system).
+ 4. `env -u ODDS_API_KEY .venv/bin/python -m arbsims.cli edge stage --stage prepare` (records readiness).
+ 5. `arbsims ledger sync`; commit locally; report in a few lines.
++6. Website export: `env -u ODDS_API_KEY .venv/bin/python -m arbsims.cli web-export projections --week <week> --out $SCRATCH/web_export`,
++   then upload the new file (see the top).
+ 
+ ## Sunday 9:15 CT: collect, validate, publish (<= ~84 credits)
+ 1. `.venv/bin/python -m arbsims.cli edge stage --stage publish` (WITH the odds key; this is the only paid call).
+@@ -32,9 +42,13 @@ Every other command runs with `env -u ODDS_API_KEY`. No automatic retries of a f
+ 4. Report: picks (player, side, line, book, calibrated ROI, raw simulated %), credits used and remaining (from the
+    report meta), warnings and excluded games. Must be done before 10:00 CT; say so if it was not.
+ 5. `arbsims ledger sync`; commit locally.
++6. Website export: `env -u ODDS_API_KEY .venv/bin/python -m arbsims.cli web-export edges --out $SCRATCH/web_export` and
++   `... web-export projections --week <week> --out $SCRATCH/web_export`, then upload the new files (see the top).
+ 
+ ## Tuesday ~7:48 CT: grade (0 credits)
+ 1. `env -u ODDS_API_KEY .venv/bin/python scripts/free_refresh.py`.
+ 2. `env -u ODDS_API_KEY .venv/bin/python -m arbsims.cli edge stage --stage grade --slate <last Sunday>`.
+ 3. Re-render and republish the page (history updates); report the week's graded Top 5 and running totals with the
+    sample-size warning. Commit locally.
++4. Website export: `env -u ODDS_API_KEY .venv/bin/python -m arbsims.cli web-export history --out $SCRATCH/web_export`, then upload
++   the new file (see the top).
+diff --git a/tests/test_export_web.py b/tests/test_export_web.py
+new file mode 100644
+index 0000000..5023a55
+--- /dev/null
++++ b/tests/test_export_web.py
+@@ -0,0 +1,100 @@
++"""Read-only web export for the V5 website: NFL only, whitelisted fields, values copied unchanged, hash, never overwritten."""
++import gzip
++import hashlib
++import json
++import sqlite3
++from datetime import datetime, timezone
++
++import pytest
++
++from arbsims import export_web as WX
++from tests.conftest import NEEDS_DATA
++
++
++def _db_path(con):
++    return next(r[2] for r in con.execute("PRAGMA database_list") if r[1] == "main")
++
++
++@pytest.fixture(scope="module")
++def stored(con, tmp_path_factory):
++    """An official 1,000-simulation NFL forecast and a stored Sunday report built from it (fake odds, no provider call)."""
++    from arbsims import config, forecast
++    from arbsims.edge import engine as E, report as R
++    mp = pytest.MonkeyPatch()
++    mp.setattr(config, "DATA_DIR", tmp_path_factory.mktemp("wx"))
++    gid = con.execute("SELECT game_id FROM games WHERE league='NFL' AND season=2026 AND week=9 ORDER BY kickoff_utc LIMIT 1").fetchone()[0]
++    r = forecast.run(con, gid, n_sims=1000, workers=1, kind="pregame", reason="web export test")
++    forecast.designate(con, gid, r["forecast_id"], reason="web export test", by="test")
++    fc = forecast.load(con, r["forecast_id"])
++    p = next(iter(fc["payload"]["players"].values()))
++    st = next(iter(p["stats"]))
++    row = {"player_name": p["name"], "team": p["team"], "opponent": "X", "market_label": "Test", "stat": st, "side": "over",
++           "book_title": "FanDuel", "line": 10.5, "price": -110, "p_win": 0.55, "p_cal": None, "cal_roi_pct": None,
++           "roi_pct": 5.0, "quality": "valid", "flags": [], "forecast_id": fc["id"], "model_version": fc["model_version"],
++           "internal_note": "must not be exported"}
++    rep = {"meta": {**R.build(con, R.sunday_of(datetime.now(timezone.utc)))["meta"], "games_with_odds": 1},
++           "rows": [row], "top": [dict(row, rank=1)]}
++    rep["top"] = [rep["rows"][0]]
++    rep["rows"][0]["rank"] = 1
++    rid = R.store(con, rep, "revision")       # the session database may already hold this Sunday's "published" report
++    yield gid, fc, rid
++    mp.undo()
++
++
++@NEEDS_DATA
++def test_read_only_connection_cannot_write(con, stored):
++    ro = WX.connect_ro(_db_path(con))
++    with pytest.raises(sqlite3.OperationalError):
++        ro.execute("CREATE TABLE x(a)")
++
++
++@NEEDS_DATA
++def test_projections_copy_the_official_forecast_and_nothing_else(con, stored, tmp_path):
++    gid, fc, _ = stored
++    ro = WX.connect_ro(_db_path(con))
++    doc, tag = WX.build("projections", ro, season=2026, week=9)
++    games = doc["body"]["games"]
++    assert {g["game_id"][:7] for g in games} == {"2026_09"} and all(not g["game_id"].startswith("CFB") for g in games)
++    g = next(x for x in games if x["game_id"] == gid)
++    assert g["forecast_status"] == "official" and g["forecast_id"] == fc["id"] and g["payload_sha256"] == fc["payload_sha256"]
++    assert g["game"]["win_prob"] == fc["summary"]["win_prob"] and g["representative"]["score"] == fc["payload"]["representative"]["score"]
++    pid, e = next(iter(fc["payload"]["players"].items()))
++    pl = next(x for x in g["players"] if x["player_id"] == pid)
++    st = next(iter(e["stats"]))
++    assert pl["stats"][st]["mean"] == e["stats"][st]["mean"] and pl["stats"][st]["median"] == e["stats"][st]["p50"]
++    assert pl["stats"][st]["dist"]["n"] == sum(c for _, c in e["counts"][st])
++    text = json.dumps(doc)
++    assert '"seed"' not in text and '"inputs"' not in text                   # internals are never exported
++    others = [x for x in games if x["game_id"] != gid]
++    assert others and all(x["forecast_status"] == "no_official_forecast" and "players" not in x for x in others)
++
++
++@NEEDS_DATA
++def test_edges_export_is_the_stored_report_with_whitelisted_fields(con, stored, tmp_path):
++    _, fc, rid = stored
++    doc, tag = WX.build("edges", WX.connect_ro(_db_path(con)), season=2026)
++    b = doc["body"]
++    assert b["meta"]["report_id"] == rid and b["meta"]["kind"] == "revision" and b["meta"]["rows_sha256"]
++    assert b["top_row_ids"] == b["row_ids"][:1] and b["rows"][0]["cal_roi_pct"] is None      # missing stays missing
++    assert "internal_note" not in b["rows"][0] and b["rows"][0]["model_version"] == fc["model_version"]
++
++
++@NEEDS_DATA
++def test_hash_and_files_are_never_overwritten(con, stored, tmp_path):
++    doc, tag = WX.build("projections", WX.connect_ro(_db_path(con)), season=2026, week=9,
++                        now=datetime(2026, 10, 31, 1, 0, tzinfo=timezone.utc))
++    path = WX.write(doc, tag, tmp_path)
++    assert path.name == "sims_nfl_projections_2026w09_20261031T010000Z.json.gz"
++    back = json.load(gzip.open(path, "rt"))
++    assert back["payload_sha256"] == hashlib.sha256(WX._canon(back["body"]).encode()).hexdigest()
++    assert back["format"] == WX.FORMAT and back["league"] == "NFL"
++    with pytest.raises(FileExistsError):
++        WX.write(doc, tag, tmp_path)
++
++
++@NEEDS_DATA
++def test_history_export_copies_the_graded_record(con, stored):
++    doc, _ = WX.build("history", WX.connect_ro(_db_path(con)), season=2026)
++    h = doc["body"]
++    decided = [r for r in h["top5_records"] if r["result"] in ("win", "loss", "push")]
++    assert h["top5"]["overall"]["n"] == len(decided) and "warning" in h["top5"] and "records" not in h["top5"]
+-- 
+2.43.0
+
