@@ -543,6 +543,7 @@ FAKE_GH_SITE = r"""#!/bin/bash
 case "$1" in
   api)
     case "$*" in
+      *official_*) echo "${FAKE_OFF:-0}"; exit 0 ;;          # Official Needs records (counted by their own pattern)
       *releases/tags/v4-book*) [[ -n "${FAKE_BOOK:-}" ]] || exit 1; echo "${FAKE_BOOK%%:*}"; exit 0 ;;
       *releases/tags/v4-need-decisions*) [[ -n "${FAKE_DEC:-}" ]] || exit 1; echo "${FAKE_DEC%%:*}"; exit 0 ;;
       *releases/tags/v4-need-*|*releases/tags/v4-results*|*releases/tags/v4-settlement*) exit 1 ;;
@@ -551,6 +552,8 @@ case "$1" in
   release)
     for a in "$@"; do last="$a"; done
     case "$*" in
+      *official_dec_*) mkdir -p "$last"; for i in $(seq 1 "${FAKE_OFF:-0}"); do echo x > "$last/official_dec_$i.json.gz"; done ;;
+      *official_snap_*) mkdir -p "$last"; for i in $(seq 1 "${FAKE_OFF:-0}"); do echo x > "$last/official_snap_nfl_$i.json.gz"; done ;;
       *v4-state*) [[ "${FAKE_NO_LEDGER:-0}" == 1 ]] && exit 1; mkdir -p "$last"; echo '{}' > "$last/ledger.jsonl" ;;
       *cfb-rankings*) [[ "${FAKE_RANKINGS:-0}" == 1 ]] || exit 1; mkdir -p "$last"; echo '{}' > "$last/rankings_x.json" ;;
       *v4-book*) mkdir -p "$last"; for i in $(seq 1 "${FAKE_BOOK##*:}"); do echo x > "$last/book_nfl_x_$i.json.gz"; done ;;
@@ -1157,19 +1160,21 @@ def test_gap_tolerance_is_bounded():
     assert SP._gap_met(4 - 0.25, 4) and not SP._gap_met(4 - 0.26, 4)               # long gaps: at most 15 min
 
 
-@pytest.mark.parametrize("dec,ok,n", [(None, True, 0), ("2:2", True, 2), ("3:2", False, None)])
-def test_site_inputs_need_tracker_decisions(tmp_path, dec, ok, n):
+@pytest.mark.parametrize("dec,ok,n,off", [(None, True, 0, 0), ("2:2", True, 2, 0), ("3:2", False, None, 0),
+                                          ("2:2", True, 2, 3)])
+def test_site_inputs_need_tracker_decisions(tmp_path, dec, ok, n, off):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     (bin_dir / "gh").write_text(FAKE_GH_SITE)
     (bin_dir / "gh").chmod(0o755)
     env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_TAGS="odds-data-2026-W44",
-               GITHUB_REPOSITORY="o/r", **({"FAKE_DEC": dec} if dec else {}))
+               GITHUB_REPOSITORY="o/r", FAKE_OFF=str(off), **({"FAKE_DEC": dec} if dec else {}))
     r = subprocess.run(["bash", os.path.join(REPO, ".github", "scripts", "site_inputs.sh")], cwd=tmp_path, env=env,
                        capture_output=True, text=True)
     assert (r.returncode == 0) == ok, r.stdout + r.stderr
     if ok:
         assert len(list((tmp_path / "need").rglob("decisions_*.json.gz"))) == n
+        assert len(list((tmp_path / "need").rglob("official_dec_*.json.gz"))) == off      # Official Needs decisions too
 
 
 def test_need_tracker_records_saved_before_publishing_never_overwritten_and_no_secrets():

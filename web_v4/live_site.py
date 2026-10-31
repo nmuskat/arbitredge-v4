@@ -165,6 +165,39 @@ def tracker_step(snap, snaps, now, need_dir=None, results_dir=None, need_out=Non
         "reports_by_engine": reports, "active_engine": live_book.ENGINE_VERSION}
 
 
+def official_step(snap, snaps, now, need_dir=None, results_dir=None, need_out=None):
+    """Official ArbitrEdge Needs (experimental): save this build's frozen pre-kickoff records, seal the last one before
+    kickoff for games that have started, grade sealed selections. Separate files (official_snap_*, official_dec_*)
+    in the existing Need-tracker releases; never mixed with the Need tracker or C1-C4. Never fails the build."""
+    from data_v4 import results as R
+    from official_v5 import rules as OFF
+    from sportsbook_v4 import need_tracker as NT
+    fresh = []
+    for sport in SPORTS:
+        bk = snap["sports"][sport].get("book") or {}
+        recs = bk.pop("official_snapshots", None) or []
+        if recs and need_out:
+            NT.write(os.path.join(need_out, NT.release_for(now)), OFF.snapshot_name(sport, now), recs)
+        fresh += recs
+    try:
+        old = NT.load(need_dir, OFF.SNAP_PREFIX + "*.json.gz")
+        decisions = OFF.unique(NT.load(need_dir, OFF.DEC_PREFIX + "*.json.gz"))
+        docs = R.load(results_dir)
+    except (NT.TrackerIntegrityError, ValueError) as e:
+        snap["official_needs"] = {"status": "INTEGRITY_FAILED", "reason": str(e), "label": OFF.LABEL}
+        return
+    new = OFF.seal(old + fresh, decisions, now)
+    if new and need_out:
+        NT.write(os.path.join(need_out, "v4-need-decisions"), OFF.decisions_name(now), new)
+    all_dec = decisions + new
+    latest_snap = max((x for x in snaps if x.get("teams")), key=lambda x: x["fetched_at"], default=None)
+    matcher = rankings.TeamMatcher(latest_snap["teams"]) if latest_snap else None
+    res = R.match([{k: d[k] for k in ("sport", "event_id", "home", "away", "kickoff")} for d in all_dec], docs, matcher)
+    snap["official_needs"] = {"status": "OK", "label": OFF.LABEL, "rules_version": OFF.RULES_VERSION,
+                              "records_this_build": len(fresh), "sealed_this_build": len(new),
+                              "sealed_total": len(all_dec), "report": OFF.report(all_dec, res)}
+
+
 def settlement_step(snap, bconn, conn, snaps, now, results_dir=None, settle_dir=None, settle_out=None):
     """Settle every accepted simulated wager whose game has a final score; derive bankrolls; reconcile."""
     from data_v4 import results as R
@@ -281,7 +314,7 @@ const D=JSON.parse(document.getElementById("data").textContent);
 {const ev=((((D.sports||{}).nfl||{}).book||{}).audit||{}).engine_version||"";
  document.getElementById("brand").textContent="ArbitrEdge "+(ev.startsWith("sportsbook_v5")?"V5":"V4")}
 const SECTIONS=[["overview","Overview"],["odds","Odds Board"],["splits","Betting Splits"],["need","ArbitrEdge Need"],
-["tracker","Need Tracker"],["sharp","Sharp Money"],["ev","EV Scanner"],["sims","SIMS"],["performance","Performance"],["health","Health"]];
+["tracker","Need Tracker"],["official","Official Needs"],["sharp","Sharp Money"],["ev","EV Scanner"],["sims","SIMS"],["performance","Performance"],["health","Health"]];
 const MK={spreads:"Spread",totals:"Total",h2h:"Moneyline"};const BMK={spread:"spreads",total:"totals",moneyline:"h2h"};
 const st={sport:"nfl",sec:"overview",game:null,f:{q:"",market:"",book:"",date:"",strength:"0",fresh:"all",unfiltered:false}};
 try{const s=localStorage.getItem("v4sport");if(s==="nfl"||s==="cfb")st.sport=s}catch(e){}
@@ -489,6 +522,33 @@ function sharpPublicCard(){const gs=bookGames().filter(g=>g.sharp_public);const 
  return card(el("h2",{},badge("MODELED"),"Sharp vs public (simulated customers)"),el("p",{class:"small"},SP_NOTE),
   el("p",{},el("b",{},vs)," of "+rows.length+" game-markets: SHARP VS PUBLIC. Click a game for every side's percentages, dollars and tickets."),
   rows.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Market"),el("th",{},"Signal"),el("th",{},"Rec majority (of rec handle)"),el("th",{},"Sharp majority (of sharp handle)"),el("th",{class:"num"},"Sharp % of handle"),el("th",{class:"num hide-s"},"Sharp $ / tickets"),el("th",{class:"num hide-s"},"Rec $ / tickets"))),el("tbody",{},rows))):el("p",{class:"mute"},"No modeled wagers on upcoming games."))}
+const OFFB={OFFICIAL:"OK",WATCHLIST:"WATCH",PASS:"INFO",EARLY:"INFO"};
+const ofKpi=(v,t)=>el("div",{class:"kpi"},el("b",{},String(v)),t);
+function ofPick(g){const p=g.pick||{};return p.side?(p.team||p.side)+" "+ln(p.line)+" "+am(p.price)+(p.price_book?" ("+p.price_book+")":""):"no Need side"}
+function ofRules(g){return el("table",{},el("tbody",{},(g.rules||[]).map(r=>el("tr",{},el("td",{},r.pass?"✓":"✗"),el("td",{class:"small"},r.name),el("td",{class:"small mute"},r.value||"")))))}
+function ofCard(g){return card(el("h3",{},badge(g.status==="EARLY"?"EARLY · indicates "+g.classification:g.status,OFFB[g.status])," "+g.away+" @ "+g.home),
+ el("p",{},el("b",{},"Need: "+ofPick(g))," · kickoff "+local(g.kickoff)),
+ el("p",{class:"small mute"},g.frozen?"Frozen in an immutable pre-kickoff record this build; the last record before kickoff becomes the selection.":(g.status==="EARLY"?"More than 24 hours before kickoff: provisional indication only, nothing frozen.":"Not frozen (outside the registered window).")),ofRules(g))}
+function ofRecord(ON,sp){const R=(ON||{}).report;if(!R)return card(el("p",{},badge(((ON||{}).status)||"UNAVAILABLE","UNAVAILABLE")," "+(((ON||{}).reason)||"No Official Needs records yet.")));
+ const o=R.official.by_sport[sp]||{},w=R.watchlist.by_sport[sp]||{};const rows=R.official.rows.filter(r=>r.sport===sp);
+ const line=x=>x.graded?x.wins+"-"+x.losses+"-"+x.pushes+" ATS, "+(x.units>=0?"+":"")+x.units.toFixed(2)+" units, ROI "+(x.roi_pct>=0?"+":"")+x.roi_pct.toFixed(1)+"%":"no graded selections yet";
+ return card(el("h3",{},"Record of sealed Official Needs ("+(sp==="nfl"?"NFL":"CFB")+")"),el("p",{},el("b",{},(o.selections||0)+" official selections: "),line(o)+(o.pending?" · "+o.pending+" awaiting result":"")),
+  el("p",{class:"small mute"},"Watchlist (informational, not official): "+(w.selections||0)+" sealed, "+line(w)+". "+(o.warning||"")+" Graded at the frozen line and price; 1 unit per selection. Tracked separately from the Need Tracker cohorts C1–C4."),
+  rows.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},...["Game","Selection","Frozen","Result"].map(h=>el("th",{},h)))),el("tbody",{},rows.map(r=>el("tr",{},el("td",{},r.away+" @ "+r.home,el("div",{class:"mute small"},local(r.kickoff))),
+   el("td",{class:"small"},(r.team||r.side||"–")+" "+ln(r.line)+" "+am(r.price)+(r.price_book?" ("+r.price_book+")":"")),el("td",{class:"small mute"},r.minutes_before_kickoff+" min before kickoff · "+r.engine_version),
+   el("td",{class:"small"},r.status==="GRADED"?r.away_score+"–"+r.home_score+" (away–home): "+r.ats+", "+(r.units>=0?"+":"")+r.units.toFixed(2)+"u":r.status)))))):el("p",{class:"mute"},"No sealed official selections yet."))}
+R.official=()=>{const bk=S().book||{},O=bk.official,ON=D.official_needs||{},sp=st.sport;
+ const out=[card(el("h2",{},badge("EXPERIMENTAL","WATCH")," Official ArbitrEdge Needs · "+(sp==="nfl"?"NFL":"CFB Top-25")),
+  el("p",{class:"small"},(O&&O.label)||ON.label||""),
+  el("p",{class:"small mute"},"Rules "+((O&&O.rules_version)||ON.rules_version||"–")+": a game is OFFICIAL only when all six rules pass. WATCHLIST: a stable Need and valid data, plus at least three of the other four rules. PASS: anything else. Within 24 hours of kickoff each evaluation is frozen; the last one before kickoff is the selection, graded at that line and price. Never created after the fact. Research thresholds, not proven profitable; the site's default decision remains NO BET.")),];
+ if(!O)out.push(card(el("p",{},badge("UNAVAILABLE","UNAVAILABLE")," No Official Needs evaluation in this build.")));
+ else{const gs=O.games||[],n=k=>gs.filter(g=>g.status===k);const off=n("OFFICIAL"),wl=n("WATCHLIST"),ps=n("PASS"),ea=n("EARLY");
+  out.push(card(el("div",{class:"grid"},ofKpi(off.length,"Official Needs"),ofKpi(wl.length,"Watchlist"),ofKpi(ps.length,"Pass"),ofKpi(ea.length,"more than 24 h away")),
+   el("p",{class:"small mute"},"Evaluated "+local(O.evaluated_at)+" from the ledger as of "+local(O.ledger_time)+". Rules registered "+local(O.registered_at)+".")));
+  out.push(...(off.length?off.map(ofCard):[card(el("p",{},el("b",{},"0 Official Needs")," on this slate right now: no game within 24 hours of kickoff meets all six rules."))]));
+  if(wl.length)out.push(card(el("h3",{},"Watchlist ("+wl.length+")"),el("p",{class:"small mute"},"Close to qualifying; not official selections.")),...wl.map(ofCard));
+  if(ps.length||ea.length)out.push(card(el("details",{},el("summary",{},"Pass ("+ps.length+") and more than 24 hours away ("+ea.length+")"),...[...ps,...ea].map(g=>el("div",{},el("p",{},badge(g.status==="EARLY"?"EARLY":"PASS","INFO")," "+g.away+" @ "+g.home+" · "+local(g.kickoff)+" · Need: "+ofPick(g)),el("p",{class:"small mute"},g.failed&&g.failed.length?"Fails: "+g.failed.join("; "):"")))))) }
+ out.push(ofRecord(ON,sp));return out};
 R.sharp=()=>{const f=st.f;const rows=(S().sharp||[]).filter(r=>cfbGate(r.top25)&&(!f.market||r.market===f.market)&&upcoming(r)&&gameMatch(r));
  const ev=rows.filter(r=>r.status!=="INSUFFICIENT EVIDENCE");
  return[freshBanner(),cfbBanner(),sharpPublicCard(),card(el("h2",{},badge("EXPERIMENTAL"),"Sharp money (price movement)"),
@@ -637,6 +697,12 @@ def main(argv=None):
     snap["shards"] = n_shards
     tracker_step(snap, load_rankings(a.rankings_dir), now, a.need_dir, a.results_dir, a.need_out, conn)
     settlement_step(snap, bconn, conn, load_rankings(a.rankings_dir), now, a.results_dir, a.settle_dir, a.need_out)
+    try:                                   # experimental and separate: can never stop the build
+        official_step(snap, load_rankings(a.rankings_dir), now, a.need_dir, a.results_dir, a.need_out)
+    except Exception as e:                 # noqa: BLE001
+        for sp in SPORTS:
+            (snap["sports"][sp].get("book") or {}).pop("official_snapshots", None)
+        snap["official_needs"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
     with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
         json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))
     snap = _clean(snap)

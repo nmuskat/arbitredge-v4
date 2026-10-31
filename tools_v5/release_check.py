@@ -65,9 +65,15 @@ def main(argv=None):
         s1 = _build(a, b1, os.path.join(work, "out1"))
         _build(a, b2, os.path.join(work, "out2"))
         after = _load(b1)
-        kept = all(persist.wager_set(after, rid) == ws for rid, ws in runs_before.items())
+        # every earlier wager is kept unchanged: runs of other engines (all V4 history, superseded runs) exactly;
+        # runs of the active engine may only gain new wagers (each build appends its interval), never alter or lose one
+        active = {r[0] for r in after.execute("SELECT run_id FROM v4_run WHERE engine_version=?", (ENGINE_VERSION,))}
+        kept = all((ws <= persist.wager_set(after, rid)) if rid in active else (persist.wager_set(after, rid) == ws)
+                   for rid, ws in runs_before.items())
         res["v4_history_intact"] = {"ok": kept, "runs_checked": len(runs_before),
-                                    "wagers_checked": sum(len(v) for v in runs_before.values())}
+                                    "wagers_checked": sum(len(v) for v in runs_before.values()),
+                                    "active_runs_append_only": len(active & set(runs_before)),
+                                    "other_runs_exact": len(set(runs_before) - active)}
         ids = [r[0] for r in after.execute("SELECT wager_id FROM v4_wager")]
         arr = after.execute("SELECT COUNT(*), COUNT(DISTINCT run_id || '|' || bettor_index || '|' || arrival_seq) FROM v4_wager").fetchone()
         res["no_duplicate_wagers"] = {"ok": len(ids) == len(set(ids)) and arr[0] == arr[1], "wagers": len(ids)}

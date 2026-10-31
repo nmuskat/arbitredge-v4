@@ -36,8 +36,10 @@ fetch_all() {   # $1 = release tag, $2 = asset pattern, $3 = destination; absent
 }
 for wk in "$(date -u +%G-W%V)" "$(date -u -d '7 days ago' +%G-W%V)"; do
   fetch_all "v4-need-$wk" 'need_*.json.gz' need '^need_'
+  fetch_all "v4-need-$wk" 'official_snap_*.json.gz' need '^official_snap_'      # Official Needs records (experimental)
 done
 fetch_all v4-need-decisions 'decisions_*.json.gz' need '^decisions_'
+fetch_all v4-need-decisions 'official_dec_*.json.gz' need '^official_dec_'
 fetch_all v4-results 'results_*.json.gz' results '^results_'
 mkdir -p settle
 fetch_all v4-settlement 'settle_*.json.gz' settle '^settle_'

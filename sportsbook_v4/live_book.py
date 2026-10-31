@@ -576,6 +576,11 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
         week_handles = {g.canonical_game_id: math.fsum(w["stake"] for w in per_game.get(g.canonical_game_id, [])
                                                        if w["market"] == "spread") for g in run["slate"].games}
         block["need_snapshots"], block["tracker_games"] = [], _tracker_games(book_conn, live_conn, sport)
+        # Official ArbitrEdge Needs (experimental, separate module): reads the values below, changes none of them
+        from official_v5 import rules as OFF
+        off_week = OFF.week_inputs({g.canonical_game_id: [w for w in per_game.get(g.canonical_game_id, [])
+                                                          if w["market"] == "spread"] for g in run["slate"].games})
+        block["official_snapshots"], off_games = [], []
         mkt = _market(live_conn, sport)
         for g in sorted(run["slate"].games, key=lambda x: (to_epoch(x.commence_time), x.canonical_game_id)):
             gid = g.canonical_game_id
@@ -605,6 +610,23 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                                                 1 for w in ws_ if w["market"] == "spread" and to_epoch(w["accepted_at"]) < opened_t),
                                             "prospective_spread_wagers": sum(
                                                 1 for w in ws_ if w["market"] == "spread" and to_epoch(w["accepted_at"]) >= opened_t)}}))
+            if T < kick:                     # upcoming games only; frozen records only inside the 24 h window
+                in_window = wm_t < kick <= wm_t + need_tracker.SNAPSHOT_HORIZON_S
+                gm = {"event_id": gid, "home": home, "away": away, "kickoff": _iso(kick)}
+                ev = OFF.evaluate(game=gm, spread_wagers=ws_, week=off_week,
+                                  need_stability=_need_stability(ws_, var_splits.get(gid, {})),
+                                  offer=representative_offer(mkt.latest_quotes(gid, wm_t)), odds_as_of=ref_at,
+                                  taken_at=wm_t, built_at=T, enforce_window=in_window)
+                frozen = in_window and wm_t >= to_epoch(OFF.REGISTERED_AT)
+                if frozen:
+                    block["official_snapshots"].append(OFF.snapshot(sport=sport, run=block["audit"], game=gm,
+                                                                    evaluation=ev, taken_at=wm_t, built_at=T))
+                off_games.append({**gm, "status": ev["classification"] if in_window else "EARLY",
+                                  "classification": ev["classification"], "frozen": frozen, "pick": ev["pick"],
+                                  "rules": ev["rules"], "failed": ev["failed"],
+                                  "supporting": {k: ev["supporting"][k] for k in ("need", "sharp", "week_handle_rank",
+                                                                                   "week_games", "swing_rank", "swing_games",
+                                                                                   "odds_as_of")}})
             block["games"].append({
                 "event_id": gid, "home": home, "away": away, "kickoff": _iso(to_epoch(g.commence_time)), "rankings": rk,
                 "reference": {"home_spread": ref_spread, "total": ref_total, "as_of": _iso(ref_at),
@@ -613,6 +635,9 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                 "need_stability": _need_stability(ws_, var_splits.get(gid, {})),
                 "reconstructed_wagers": sum(1 for w in ws_ if to_epoch(w["accepted_at"]) < opened_t),
                 "need": _need_summary(need) if need else None, "label": LABEL})
+        block["official"] = {"rules_version": OFF.RULES_VERSION, "rules_hash": OFF.RULES_HASH, "rules": OFF.RULES,
+                             "names": OFF.NAMES, "label": OFF.LABEL, "registered_at": OFF.REGISTERED_AT,
+                             "evaluated_at": _iso(T), "ledger_time": _iso(wm_t), "games": off_games}
     return out
 
 
