@@ -1,20 +1,18 @@
-From ade001e8b195600c66fda93ed8bc51c8b25a7c6c Mon Sep 17 00:00:00 2001
+From 047f8e20b477280485321aa47a0f9bd43df4cdea Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
-Date: Fri, 30 Oct 2026 21:50:59 +0000
-Subject: [PATCH] Read-only web export for the ArbitrEdge V5 website (arbsims
- web-export projections|edges|history): opens the database read-only, NFL
- only, whitelisted stored values copied unchanged, payload sha256, never
- overwrites; runbook adds it as the last step of the existing Saturday, Sunday
- and Tuesday sections (0 credits)
+Date: Sat, 31 Oct 2026 00:12:21 +0000
+Subject: [PATCH 1/2] Read-only web export command for the ArbitrEdge V5
+ website (arbsims web-export projections|edges|history): opens the database
+ read-only, NFL only, whitelisted stored values copied unchanged, payload
+ sha256, never overwrites. Inert until a runbook calls it.
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_016GA7v6iMKG52wL2eX3wFmm
 ---
- arbsims/cli.py              |  17 ++++
- arbsims/export_web.py       | 164 ++++++++++++++++++++++++++++++++++++
- docs/EDGE_SUNDAY_RUNBOOK.md |  14 +++
- tests/test_export_web.py    | 100 ++++++++++++++++++++++
- 4 files changed, 295 insertions(+)
+ arbsims/cli.py           |  17 ++++
+ arbsims/export_web.py    | 164 +++++++++++++++++++++++++++++++++++++++
+ tests/test_export_web.py | 100 ++++++++++++++++++++++++
+ 3 files changed, 281 insertions(+)
  create mode 100644 arbsims/export_web.py
  create mode 100644 tests/test_export_web.py
 
@@ -222,48 +220,6 @@ index 0000000..9dc75c9
 +    with gzip.open(path, "wt") as f:
 +        json.dump(doc, f, default=str)
 +    return path
-diff --git a/docs/EDGE_SUNDAY_RUNBOOK.md b/docs/EDGE_SUNDAY_RUNBOOK.md
-index 9b6cee5..48a78b4 100644
---- a/docs/EDGE_SUNDAY_RUNBOOK.md
-+++ b/docs/EDGE_SUNDAY_RUNBOOK.md
-@@ -10,6 +10,14 @@ stored forecasts, quotes, reports or grades; never rerun a game after kickoff. O
- `arbsims edge stage --stage publish` (approved budget about 84 per Sunday: EDGE_RUN_CREDITS 100, EDGE_WEEKLY_CREDITS 120).
- Every other command runs with `env -u ODDS_API_KEY`. No automatic retries of a failed publish stage.
- 
-+**Website export (owner-approved 2026-10-30, Phase 2; read-only, 0 credits).** The last step of each section below
-+exports what that section already stored, for the ArbitrEdge V5 website: `arbsims web-export` opens the database
-+read-only and writes one new `sims_nfl_*.json.gz` file to `$SCRATCH/web_export`, which is uploaded with
-+`gh release upload web-export <file>` (create the release once with `gh release create web-export --prerelease
-+--title "SIMS web exports (do not delete)" --notes "Read-only NFL exports for the V5 website"`). It never changes a
-+forecast, report, grade or the ledger, and runs only after the section's own steps are complete. If it fails,
-+report it in one line and do nothing else (never rerun the section's earlier steps because of it).
-+
- ## Saturday ~18:47 CT: prepare (0 credits)
- 1. `env -u ODDS_API_KEY .venv/bin/python scripts/free_refresh.py` (free nflverse data).
- 2. `env -u ODDS_API_KEY .venv/bin/python -m arbsims.cli edge plan` -> tomorrow's Sunday game ids (America/Chicago).
-@@ -22,6 +30,8 @@ Every other command runs with `env -u ODDS_API_KEY`. No automatic retries of a f
-    (`forecast.designate(..., by="owner")`, reason citing the owner's 2026-10-30 approval of the Sunday report system).
- 4. `env -u ODDS_API_KEY .venv/bin/python -m arbsims.cli edge stage --stage prepare` (records readiness).
- 5. `arbsims ledger sync`; commit locally; report in a few lines.
-+6. Website export: `env -u ODDS_API_KEY .venv/bin/python -m arbsims.cli web-export projections --week <week> --out $SCRATCH/web_export`,
-+   then upload the new file (see the top).
- 
- ## Sunday 9:15 CT: collect, validate, publish (<= ~84 credits)
- 1. `.venv/bin/python -m arbsims.cli edge stage --stage publish` (WITH the odds key; this is the only paid call).
-@@ -32,9 +42,13 @@ Every other command runs with `env -u ODDS_API_KEY`. No automatic retries of a f
- 4. Report: picks (player, side, line, book, calibrated ROI, raw simulated %), credits used and remaining (from the
-    report meta), warnings and excluded games. Must be done before 10:00 CT; say so if it was not.
- 5. `arbsims ledger sync`; commit locally.
-+6. Website export: `env -u ODDS_API_KEY .venv/bin/python -m arbsims.cli web-export edges --out $SCRATCH/web_export` and
-+   `... web-export projections --week <week> --out $SCRATCH/web_export`, then upload the new files (see the top).
- 
- ## Tuesday ~7:48 CT: grade (0 credits)
- 1. `env -u ODDS_API_KEY .venv/bin/python scripts/free_refresh.py`.
- 2. `env -u ODDS_API_KEY .venv/bin/python -m arbsims.cli edge stage --stage grade --slate <last Sunday>`.
- 3. Re-render and republish the page (history updates); report the week's graded Top 5 and running totals with the
-    sample-size warning. Commit locally.
-+4. Website export: `env -u ODDS_API_KEY .venv/bin/python -m arbsims.cli web-export history --out $SCRATCH/web_export`, then upload
-+   the new file (see the top).
 diff --git a/tests/test_export_web.py b/tests/test_export_web.py
 new file mode 100644
 index 0000000..5023a55

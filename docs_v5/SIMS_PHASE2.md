@@ -1,8 +1,8 @@
 # NFL SIMS on the V5 website: Phase 2 status (development branches only; nothing deployed)
 
 Date: 2026-10-30 (evening). Branches: V5 `sims-dev` (pushed; never deploys), SIMS `web-export` (committed in this session;
-push to `nmuskat/arbitredge-sims` was not permitted, so the change is preserved as
-`docs_v5/sims_handoff/0001-arbsims-web-export.patch`). No scheduled task, credential, workflow run or deployment was
+push to `nmuskat/arbitredge-sims` was not requested; the change is preserved as two patches in
+`docs_v5/sims_handoff/`, with instructions for the SIMS session). No scheduled task, credential, workflow run or deployment was
 created or changed. Live V5 (`v4-dev` `a230597`) and SIMS `master` are untouched.
 
 ## 1. What was built
@@ -52,19 +52,45 @@ The fixture: real SIMS 1.7.2 forecasts (5,000 simulations, 4 Week 9 games) with 
 SIMS's own fake-provider test path (no API call, no credits); every page built from it shows a TEST FIXTURE banner and
 production imports refuse it.
 
-## 3. GitHub Actions impact (measured, with the open item stated)
+## 3. GitHub Actions impact (measured 2026-10-31; no Actions job was run for benchmarking)
 
-- New recurring workflows: **none**. New scheduled tasks: **none**. SIMS exports are release uploads (no SIMS CI run).
-- Per dashboard build: one release listing and, about three times a week, a download of new files (~50-300 KB);
-  validation and the page block take 0.06 s; the page grows by about 0.2 MB (fixture, 4 games) to an estimated
-  0.7-0.8 MB for a full 14-game slate. Expected cost: about 2-4 seconds per build.
-- Billing is per job rounded up to the minute. The only V5 build measured so far (the first, cold, 4:00 pm ET) took
-  **118 s**, just under the 120 s line. If builds that close cross 120 s they bill 3 minutes instead of 2: at the
-  300-build cap that would be up to +300 minutes, which the 2,000-minute allowance cannot absorb on top of the 1,853
-  worst case. **Before the deployment request, the next several warm V5 builds must be measured**; if they are within
-  ~10 s of 120 s, the SIMS import moves to a separate job only when new files exist, or the build is trimmed first.
-- Billing headroom: GitHub's billing page cannot be read from this session. My job-level count for this repository
-  since Oct 26 is about 200 billed minutes, plus 2 for SIMS. The owner check below is required before enabling.
+Real V5 dashboard builds on GitHub (job logs; billing rounds each job up to whole minutes):
+
+| Build | Job total | Build-site step | Billed |
+|---|---|---|---|
+| 2026-10-30 20:00Z, first V5 build (opened the week mid-week, reconstructed Tue-Fri, full replay check) | 118 s | 82 s | 2 min |
+| 2026-10-30 22:22Z, warm (sensitivity cache valid) | 61 s | 27 s | 2 min |
+
+Non-build steps (checkout, data download, saves, publish, Cloudflare deploy) take about 34 s.
+
+Local timing on the same live inputs (37 shards, 49 ledger files), with and without the SIMS section:
+
+| Build type (how often) | Local, no SIMS | Local, with SIMS | Estimated GitHub job with SIMS* | Billed |
+|---|---|---|---|---|
+| Warm: cache valid (near-kickoff builds every 45 min) | 54.3 / 49.7 s | 49.4 / 49.5 s | ~63 s | 2 min |
+| Sensitivity cache expired (most quiet-period builds) | 76.1 s | 77.4 s | ~78 s | 2 min |
+| Cache expired + 12-hourly full replay check | 82.8 s | 85.0 s | ~82 s | 2 min |
+| Weekly run opening (Tuesday; first build of the week) | not reproducible now | | well under the 118 s mid-week case | 2 min |
+
+*34 s of non-build steps + the build step scaled by the measured GitHub/local ratio (27 s vs ~50 s warm) + the
+import step. The SIMS section itself adds no measurable build time (differences are within run-to-run noise of
+±5 s); page size grows ~0.2 MB (fixture) to ~0.8 MB (full slate).
+
+Import step cost (each GitHub API call measured at 0.34-0.50 s from this session): two release listings plus the
+newest imported file of each kind (at most 3 small downloads) = about 2 s per build; about 3-4 s in the few builds
+(about three a week) right after SIMS publishes. SIMS is contacted only to list exports, and files are downloaded
+only when new. Every network call is limited to 20 s and the step to 2 minutes, and it is continue-on-error.
+
+Expected monthly effect: **0 additional billed minutes** (every build type stays under 120 s with 35-55 s to spare).
+Worst case: a mid-week reconstruction like the deployment build (118 s) would cross 120 s and bill 3 minutes; that only
+happens after a redeploy or rollback, so about +1 minute when it does. Monthly worst case stays about 1,853-1,858 of
+2,000. SIMS side: one SIMS CI run per pushed patch (about 2 minutes each, 2 patches); release uploads run no CI.
+No new workflow and no new scheduled task. Billing page: owner check required (section 4, step 1).
+
+Failure safety (tested): missing SIMS release, expired or revoked token (HTTP 401), failed download, a hung call
+(timed out), corrupt or invalid files, or no token at all: the step exits 0, nothing is uploaded, and the page keeps
+the last valid export (aged by the viewer's clock) or shows "no export yet". The site build itself never imports SIMS
+code paths that can raise (release check 10 confirms the rest of the site is byte-identical).
 
 ## 4. Manual setup required (at deployment time, owner only)
 
@@ -76,9 +102,8 @@ production imports refuse it.
    Repository permissions -> Contents: Read-only (nothing else). Generate and copy it.
 3. **Save it as a secret**: github.com/nmuskat/arbitredge-v4 -> Settings -> Secrets and variables -> Actions -> New
    repository secret -> Name `SIMS_EXPORT_READ_TOKEN` -> paste -> Add secret.
-4. **SIMS**: allow the `web-export` change into SIMS `master` (push access for this session, or apply the patch in the
-   SIMS session with `git am docs_v5/sims_handoff/0001-arbsims-web-export.patch`), and create the `web-export` release
-   once (the runbook gives the command).
+4. **SIMS**: in the SIMS session, follow `docs_v5/sims_handoff/APPLY_IN_SIMS_SESSION.md` (patch 0001 after Sunday's
+   report; patch 0002 and the `web-export` release only at activation).
 5. Approve the V5 merge (`sims-dev` -> `v4-dev`) including CLAUDE.md rule 2d.
 
 ## 5. Rollback
@@ -86,3 +111,13 @@ production imports refuse it.
 Remove the secret (imports stop; the tab keeps the last valid export and ages it out), or revert the merge commit.
 Nothing in the sportsbook, Need, sharp vs public, ledger or settlements reads SIMS data (release check 10). The SIMS
 runbook step can be removed without touching any other step.
+
+## 6. Shortest safe sequence to finish (nothing here before the Sunday Nov 1 report is out)
+
+1. SIMS session, after the Sunday Nov 1 report: apply and test patch 0001 (inert), push (Step A of the handoff).
+2. Owner: check Actions usage on the billing page (no setting changes).
+3. Owner: create the read-only token and save it as `SIMS_EXPORT_READ_TOKEN` (section 4, steps 2-3).
+4. Owner: approve deploying `sims-dev` (rerun the full suite and the 10 release checks first; merge as a fast-forward
+   onto `v4-dev`). The NFL SIMS tab shows "no export yet" until step 5.
+5. Owner: "activate SIMS exports" -> SIMS session Step C (patch 0002, create the release, first exports). The next
+   dashboard build imports them; verify the tab on the live site.

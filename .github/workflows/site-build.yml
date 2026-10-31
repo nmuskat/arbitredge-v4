@@ -39,6 +39,7 @@ jobs:
         run: bash .github/scripts/site_inputs.sh
       - name: Import SIMS exports (read-only; never blocks the build)
         continue-on-error: true
+        timeout-minutes: 2
         env:
           GH_TOKEN: ${{ github.token }}
           SIMS_TOKEN: ${{ secrets.SIMS_EXPORT_READ_TOKEN }}

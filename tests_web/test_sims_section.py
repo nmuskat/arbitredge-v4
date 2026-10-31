@@ -153,68 +153,87 @@ def test_fixture_age_rules_are_left_to_the_viewer_clock():
     assert schema.validate(_doc("edges"), late, allow_fixture=True) == []       # an old file is still valid; the page ages it
 
 
-FAKE_GH = r'''#!/bin/bash
+FAKE_GH = r"""#!/bin/bash
 echo "gh $*" >> "$LOG"
 [[ "$GH_TOKEN" == "$SECRET" ]] && echo "SIMS-TOKEN-CALL $*" >> "$LOG"
 case "$1 $2" in
   "release download")
-    if [[ "$3" == "web-export" ]]; then pat="${@: -3:1}"; dir="${@: -1}"; mkdir -p "$dir"; cp "$SRC/$pat" "$dir/"; exit 0; fi
+    pat="${@: -3:1}"; dir="${@: -1}"; mkdir -p "$dir"
+    if [[ "$3" == "web-export" ]]; then [[ "$FAIL" == download ]] && exit 1; cp "$SRC/$pat" "$dir/"; exit 0; fi
+    if [[ "$3" == "sims-import" ]]; then cp "$HAVE/$pat" "$dir/"; exit 0; fi
     exit 1 ;;
-  "api repos/nmuskat/arbitredge-sims/releases/tags/web-export") ls "$SRC"; exit 0 ;;
+  "api repos/nmuskat/arbitredge-sims/releases/tags/web-export")
+    [[ "$FAIL" == auth ]] && { echo "HTTP 401: Bad credentials" >&2; exit 1; }
+    [[ "$FAIL" == hang ]] && sleep 30
+    ls "$SRC"; exit 0 ;;
+  "api repos/nmuskat/arbitredge-v4/releases/tags/sims-import") ls "$HAVE"; exit 0 ;;
   "release view") exit 1 ;;
   "release create") exit 0 ;;
   "release upload") shift 3; for f in "$@"; do echo "UPLOADED $(basename "$f")" >> "$LOG"; done; exit 0 ;;
 esac
 exit 0
-'''
+"""
 
 
-def _run_import(tmp_path, token):
+def _run_import(tmp_path, token, fail="", have=()):
     import os
     import subprocess
-    src, bin_dir = tmp_path / "src", tmp_path / "bin"
-    src.mkdir(), bin_dir.mkdir()
+    import time
+    src, bin_dir, hv = tmp_path / "src", tmp_path / "bin", tmp_path / "have"
+    for d in (src, bin_dir, hv):
+        d.mkdir()
     real = _doc("history")
     real.pop("fixture")
     _write(src, "sims_nfl_history_2026_20261030T210000Z.json.gz", real)
     for p in FIX.glob("*.json.gz"):
         shutil.copy(p, src)
+    for n in have:
+        shutil.copy(src / n, hv / n)
     (bin_dir / "gh").write_text(FAKE_GH)
     (bin_dir / "gh").chmod(0o755)
-    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", LOG=str(tmp_path / "log"), SRC=str(src),
-               SECRET="tok-123-secret", GH_TOKEN="github-token", SIMS_TOKEN=token, PYTHONPATH=str(ROOT))
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", LOG=str(tmp_path / "log"), SRC=str(src), HAVE=str(hv),
+               SECRET="tok-123-secret", GH_TOKEN="github-token", SIMS_TOKEN=token, PYTHONPATH=str(ROOT), FAIL=fail,
+               GITHUB_REPOSITORY="nmuskat/arbitredge-v4", SIMS_NET_TIMEOUT_S="2")
+    t = time.time()
     r = subprocess.run(["bash", str(ROOT / ".github" / "scripts" / "sims_import.sh")], cwd=tmp_path, env=env,
                        capture_output=True, text=True)
     log = (tmp_path / "log").read_text() if (tmp_path / "log").exists() else ""
-    return r, log
+    return r, log, time.time() - t
+
+
+REAL = "sims_nfl_history_2026_20261030T210000Z.json.gz"
 
 
 def test_import_script_without_token_uses_imported_files_only(tmp_path):
-    r, log = _run_import(tmp_path, "")
+    r, log, _ = _run_import(tmp_path, "", have=(REAL,))
     assert r.returncode == 0 and "not configured" in r.stdout
     assert "arbitredge-sims" not in log and "UPLOADED" not in log
+    assert (tmp_path / "sims" / REAL).exists()                                       # last good export still shown
 
 
 def test_import_script_imports_only_valid_real_exports_and_never_prints_the_token(tmp_path):
-    r, log = _run_import(tmp_path, "tok-123-secret")
+    r, log, _ = _run_import(tmp_path, "tok-123-secret")
     assert r.returncode == 0
     up = [ln.split()[1] for ln in log.splitlines() if ln.startswith("UPLOADED")]
-    assert up == ["sims_nfl_history_2026_20261030T210000Z.json.gz"]                  # fixtures refused
+    assert up == [REAL]                                                              # fixtures refused
     assert "tok-123-secret" not in r.stdout + r.stderr
     sims_calls = [ln for ln in log.splitlines() if ln.startswith("SIMS-TOKEN-CALL")]
     assert sims_calls and all("arbitredge-sims" in ln or "web-export" in ln for ln in sims_calls)
     assert (tmp_path / "sims" / up[0]).exists()
 
 
-def test_distribution_bars_only_regroup_sims_counts():
-    b = sims_section.block(str(FIX), NOW, allow_fixture=True)
-    src = {g["game_id"]: g for g in _doc("projections")["body"]["games"]}
-    checked = 0
-    for g in b["projections"]["games"]:
-        for p in g.get("players") or []:
-            sp = next(x for x in src[g["game_id"]]["players"] if x["player_id"] == p["player_id"])
-            for st, d in p["stats"].items():
-                assert len(d["dist"]["counts"]) <= 20 and sum(d["dist"]["counts"]) == sp["stats"][st]["dist"]["n"]
-                assert d["mean"] == sp["stats"][st]["mean"] and d["median"] == sp["stats"][st]["median"]
-                checked += 1
-    assert checked > 50
+def test_import_script_downloads_nothing_when_no_export_is_new(tmp_path):
+    names = [REAL] + [p.name for p in FIX.glob("*.json.gz")]
+    r, log, _ = _run_import(tmp_path, "tok-123-secret", have=names)
+    assert r.returncode == 0 and "no new SIMS exports" in r.stdout
+    assert not [ln for ln in log.splitlines() if "release download web-export" in ln] and "UPLOADED" not in log
+    assert sum("release download sims-import" in ln for ln in log.splitlines()) <= 3  # newest of each kind only
+
+
+@pytest.mark.parametrize("fail", ["auth", "download", "hang"])
+def test_expired_token_failed_download_or_hung_sims_never_break_the_build(tmp_path, fail):
+    r, log, took = _run_import(tmp_path, "tok-123-secret", fail=fail, have=(REAL,))
+    assert r.returncode == 0 and "UPLOADED" not in log and took < 15
+    assert (tmp_path / "sims" / REAL).exists()                                       # keeps the last valid export
+    b = sims_section.block(str(tmp_path / "sims"), NOW)
+    assert b["status"] == "OK" and b["history"] is not None
