@@ -50,7 +50,7 @@ def test_rules_are_versioned_and_pinned():
     assert OFF.RULES["rec_opposes"] == {"min_rec_handle_share": 0.65, "min_rec_ticket_share_exclusive": 0.50}
     assert OFF.RULES["sharp_supports"]["min_sharp_handle_share"] == 0.60
     assert OFF.RULES["top_handle"]["top_share"] == OFF.RULES["top_swing"]["top_share"] == 0.25
-    assert OFF.RULES_HASH == "31ba8109a746941b92e5286d6898e1dfa9eddba692d8476b092522f2d2538504"     # any change needs a new RULES_VERSION
+    assert OFF.RULES_HASH == "d121b6b6b942dc4f9a3ad2834b25a93deb1357747a5c97dd4202f2e74917b487"     # any change needs a new RULES_VERSION
 
 
 def test_all_six_rules_pass_is_official_with_the_need_side_at_the_market_price():
@@ -183,8 +183,8 @@ def test_official_code_changes_nothing_it_reads():
             for t in (n.targets if isinstance(n, ast.Assign) else [n.target]):
                 assert not (isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name) and t.value.id in ("NT",)), ast.dump(t)
     for f in (ROOT / "sportsbook_v4").glob("*.py"):
-        if f.name != "live_book.py":
-            assert "official_v5" not in f.read_text(), f.name     # only the build reads it; no engine/Need/cohort code does
+        if f.name not in ("live_book.py", "seal_run.py"):      # the build and the collection-job seal step only
+            assert "official_v5" not in f.read_text(), f.name     # no engine/Need/cohort code reads it
     from sportsbook_v4 import cohorts as C
     assert "official" not in str(C.COHORTS).lower()
 
@@ -234,3 +234,143 @@ def test_builds_before_registration_freeze_nothing(tmp_path, monkeypatch):
     assert s["official_needs"]["records_this_build"] == 0
     assert not any(x["frozen"] for x in s["sports"]["nfl"]["book"]["official"]["games"])
     assert NT.load(str(tmp_path / "need"), OFF.SNAP_PREFIX + "*.json.gz") == []
+
+
+# ------------------------------------------------------------------ owner's pre-deployment sealing checklist (2026-10-31)
+
+def _manual(rec, **kw):
+    """A record as if written by a build (re-hashed), for situations a real build refuses to create."""
+    from sportsbook_v4.util import json_hash
+    r = {k: v for k, v in rec.items() if k != "record_hash"}
+    r.update(kw)
+    r["record_hash"] = json_hash(r)
+    return r
+
+
+def test_1_records_are_immutable_timestamped_and_tamper_evident(tmp_path):
+    from sportsbook_v4 import need_tracker as NT
+    rec = _rec(qualifying_wagers(), K - 1800, K - 1700)
+    assert rec["taken_at"] == "2026-11-08T17:30:00Z" and rec["built_at"] == "2026-11-08T17:31:40Z" and rec["record_hash"]
+    NT.write(str(tmp_path), OFF.snapshot_name("nfl", K - 1700), [rec])
+    with pytest.raises(NT.TrackerIntegrityError, match="never overwritten"):
+        NT.write(str(tmp_path), OFF.snapshot_name("nfl", K - 1700), [rec])
+    import gzip
+    import json
+    p = next(tmp_path.glob("official_snap_*"))
+    doc = json.load(gzip.open(p, "rt"))
+    doc["records"][0]["pick"]["line"] = -1.5                       # edited after the fact
+    json.dump(doc, gzip.open(p, "wt"))
+    with pytest.raises(NT.TrackerIntegrityError):
+        NT.load(str(tmp_path), OFF.SNAP_PREFIX + "*.json.gz")
+
+
+def test_2_3_only_the_final_evaluation_decides_and_an_earlier_official_is_dropped():
+    early = _rec(qualifying_wagers(), K - 9000, K - 8900)          # OFFICIAL 2.5 h before
+    assert early["classification"] == "OFFICIAL"
+    final_pass = _rec(qualifying_wagers(), K - 1800, K - 1700)
+    final_pass = _manual(final_pass, classification="PASS")        # the final evaluation no longer qualifies
+    d = OFF.seal([early, final_pass], [], K + 99999)[0]
+    assert d["classification"] == "PASS" and d["snapshot"]["record_hash"] == final_pass["record_hash"]
+    assert OFF.report([d], {})["official"]["overall"]["selections"] == 0
+
+
+def test_4_a_final_official_keeps_the_exact_side_spread_odds_book_model_and_support():
+    final = _rec(qualifying_wagers(), K - 1800, K - 1700)
+    d = OFF.seal([final], [], K + 99999)[0]
+    assert d["classification"] == "OFFICIAL" and d["data_quality"] == "VALID" and d["snapshot"] == final
+    pk = d["snapshot"]["pick"]
+    assert (pk["side"], pk["line"], pk["price"], pk["price_book"]) == ("home", -3.5, -110, "fanduel")
+    assert d["snapshot"]["engine_version"] == "sportsbook_v5.r2" and d["snapshot"]["format"] == "official_needs.v1"
+    assert d["snapshot"]["rules_hash"] == OFF.RULES_HASH and d["snapshot"]["supporting"]["pressure"]["bettors"] >= 100
+    g = OFF.grade(d, {"home_score": 24, "away_score": 20})
+    assert (g["line"], g["price"], g["price_book"], g["ats"]) == (-3.5, -110, "fanduel", "W")
+
+
+def test_5_stale_or_missing_final_data_never_reuses_an_old_official():
+    old = _rec(qualifying_wagers(), K - 4 * 3600, K - 4 * 3600 + 60)   # OFFICIAL, but 4 h before kickoff
+    assert old["classification"] == "OFFICIAL"
+    d = OFF.seal([old], [], K + 99999)[0]
+    assert d["classification"] == "NO_FINAL_EVALUATION" and "is not used" in d["data_quality"]
+    stale = _rec(qualifying_wagers(), K - 1800, K - 1700)
+    stale_ev = _eval(qualifying_wagers(), taken=K - 1800, built=K - 1700, odds=K - 1800 - 4 * 3600)
+    stale = _manual(stale, classification=stale_ev["classification"], rules=stale_ev["rules"])
+    d2 = OFF.seal([stale], [], K + 99999)[0]
+    assert d2["classification"] == "PASS" and d2["data_quality"].startswith("INVALID: odds older than 3 h")
+    rep = OFF.report([d, d2], {})
+    assert rep["official"]["overall"]["selections"] == 0 and len(rep["data_quality_issues"]) == 2
+
+
+def test_6_windows_for_saturday_oct_31_and_sunday_nov_1_including_the_dst_change():
+    reg = to_epoch(OFF.REGISTERED_AT)
+    assert OFF.REGISTERED_AT == "2026-10-31T04:00:00Z"                     # midnight ET, before every Saturday kickoff
+    run = {"run_id": "r", "engine_version": "sportsbook_v5.r2", "params_hash": "p"}
+    cfb = dict(GAME, kickoff="2026-10-31T16:00:00Z")                        # first Top-25 kickoffs, 12:00 ET
+    nfl = dict(GAME, kickoff="2026-11-01T18:00:00Z")                        # 1:00 pm EST (DST ends 06:00Z Nov 1)
+    ev = lambda g, t: OFF.evaluate(game=g, spread_wagers=qualifying_wagers(), week=_week(), need_stability=_ns(),
+                                   offer=OFFER, odds_as_of=t - 600, taken_at=t, built_at=t + 60)
+    t = reg + 3600                                                          # 05:00Z Saturday
+    assert ev(cfb, t)["classification"] == "OFFICIAL"                       # 11 h before the CFB kickoff: in window
+    assert OFF.snapshot(sport="cfb", run=run, game=cfb, evaluation=ev(cfb, t), taken_at=t, built_at=t + 60)
+    assert "more than 24 h" in [r for r in ev(nfl, t)["rules"] if r["id"] == "data_valid"][0]["value"]
+    with pytest.raises(ValueError, match="never retroactive"):
+        OFF.snapshot(sport="cfb", run=run, game=cfb, evaluation=ev(cfb, reg - 60), taken_at=reg - 60, built_at=reg)
+    t2 = to_epoch("2026-11-01T05:30:00Z")                                   # 30 min before the DST change
+    rec = OFF.snapshot(sport="nfl", run=run, game=nfl, evaluation=ev(nfl, t2), taken_at=t2, built_at=t2 + 60)
+    assert rec["minutes_before_kickoff"] == 750 and rec["classification"] == "OFFICIAL"   # UTC arithmetic, no DST jump
+    t3 = to_epoch("2026-11-01T17:30:00Z")
+    late = OFF.snapshot(sport="nfl", run=run, game=nfl, evaluation=ev(nfl, t3), taken_at=t3, built_at=t3 + 60)
+    assert OFF.seal([rec, late], [], to_epoch("2026-11-01T18:30:00Z"))[0]["snapshot"]["record_hash"] == late["record_hash"]
+
+
+def _week():
+    from sportsbook_v4 import need_tracker as NT
+    sw = NT.need_of(qualifying_wagers())["swing"]
+    return {"handles": {"g1": 1e9, "a": 1.0, "b": 1.0, "c": 1.0}, "swings": {"g1": sw, "a": -1, "b": -1, "c": -1}}
+
+
+def _ns():
+    return {"baseline": "home", "variants": 4, "agree": 4, "label": "STABLE"}
+
+
+def test_7_nothing_is_promoted_or_altered_after_kickoff():
+    run = {"run_id": "r", "engine_version": "sportsbook_v5.r2", "params_hash": "p"}
+    ev = _eval(qualifying_wagers())
+    with pytest.raises(ValueError):
+        OFF.snapshot(sport="nfl", run=run, game=GAME, evaluation=ev, taken_at=K - 60, built_at=K + 60)
+    final_pass = _manual(_rec(qualifying_wagers(), K - 1800, K - 1700), classification="PASS")
+    after = _manual(_rec(qualifying_wagers(), K - 1700, K - 1600), built_at="2026-11-08T18:05:00Z")   # built after kickoff
+    d = OFF.seal([final_pass, after], [], K + 99999)
+    assert d[0]["classification"] == "PASS" and d[0]["snapshot"]["record_hash"] == final_pass["record_hash"]
+    better = _rec(qualifying_wagers(), K - 600, K - 500)                 # appears later (e.g. a delayed upload)
+    assert OFF.seal([final_pass, better], d, K + 999999) == []           # already sealed: never re-sealed
+
+
+def test_8_a_selection_is_never_recorded_or_graded_twice(tmp_path):
+    from sportsbook_v4 import need_tracker as NT
+    d = OFF.seal([_rec(qualifying_wagers(), K - 1800, K - 1700)], [], K + 99999)
+    NT.write(str(tmp_path), "official_dec_20261108T183000Z.json.gz", d)          # sealed by the collection job
+    second = {k: v for k, v in d[0].items() if k != "record_hash"}            # the same seal again, by a later build
+    second["sealed_at"] = "2026-11-08T19:00:00Z"
+    from sportsbook_v4.util import json_hash
+    second["record_hash"] = json_hash(second)
+    NT.write(str(tmp_path), "official_dec_20261108T190000Z.json.gz", [second])
+    loaded = OFF.unique(NT.load(str(tmp_path), OFF.DEC_PREFIX + "*.json.gz"))
+    assert len(loaded) == 1
+    rep = OFF.report(loaded, {("nfl", "g1"): {"home_score": 24, "away_score": 20}})
+    assert rep["official"]["overall"]["selections"] == 1 and rep["official"]["overall"]["graded"] == 1
+
+
+def test_9_the_collection_job_seals_without_a_dashboard_build_and_builds_then_add_nothing(tmp_path):
+    from sportsbook_v4 import need_tracker as NT, seal_run
+    need = tmp_path / "need" / "v4-need-2026-W45"
+    NT.write(str(need), OFF.snapshot_name("nfl", K - 1700), [_rec(qualifying_wagers(), K - 1800, K - 1700)])
+    new, path = seal_run.seal_official(str(tmp_path / "need"), str(tmp_path / "out"), K + OFF.SEAL_GRACE_S + 60)
+    assert len(new) == 1 and path.endswith(".json.gz") and "official_dec_" in path
+    import shutil
+    shutil.copy(path, tmp_path / "need")
+    again, _ = seal_run.seal_official(str(tmp_path / "need"), str(tmp_path / "out3"), K + 99999)
+    assert again == []                                                   # the build/collect job never seals it twice
+    assert OFF.seal(NT.load(str(tmp_path / "need"), OFF.SNAP_PREFIX + "*.json.gz"),
+                    OFF.unique(NT.load(str(tmp_path / "need"), OFF.DEC_PREFIX + "*.json.gz")), K + 99999) == []
+    script = open(ROOT / ".github" / "scripts" / "seal_step.sh").read()
+    assert "official_dec_*.json.gz" in script and "--clobber" not in script

@@ -44,6 +44,17 @@ def seal(state, need_dir, out_dir, now):
     return new, path
 
 
+def seal_official(need_dir, out_dir, now):
+    """Official ArbitrEdge Needs (experimental): the same kickoff sealing from the collection job, so a selection is
+    sealed without waiting for a dashboard build. Same rule as the build (official_v5.rules.seal): identical result."""
+    from official_v5 import rules as OFF
+    snaps = NT.load(need_dir, OFF.SNAP_PREFIX + "*.json.gz")
+    decisions = OFF.unique(NT.load(need_dir, OFF.DEC_PREFIX + "*.json.gz"))
+    new = OFF.seal(snaps, decisions, now)
+    path = NT.write(os.path.join(out_dir, "v4-need-decisions"), OFF.decisions_name(now), new) if new else None
+    return new, path
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("command", choices=("due", "seal"))
@@ -59,6 +70,12 @@ def main(argv=None):
     new, path = seal(state, a.need_dir, a.out, now)
     print(json.dumps({"sealed": [(d["sport"], d["away"], d["home"], d["status"]) for d in new],
                       "file": os.path.basename(path) if path else None}))
+    try:                      # experimental and separate: never affects the Need tracker's sealing above
+        onew, opath = seal_official(a.need_dir, a.out, now)
+        print(json.dumps({"official_sealed": [(d["sport"], d["away"], d["home"], d["classification"]) for d in onew],
+                          "file": os.path.basename(opath) if opath else None}))
+    except Exception as e:    # noqa: BLE001
+        print(json.dumps({"official_sealed": None, "error": f"{type(e).__name__}: {e}"[:300]}))
     return 0
 
 

@@ -1,4 +1,4 @@
-# Official ArbitrEdge Needs (EXPERIMENTAL, rules `official_needs.v1`)
+# Official ArbitrEdge Needs: EXPERIMENTAL MODEL SIGNALS (rules `official_needs.v1`)
 
 Versioned research thresholds applied to the MODELED V5 synthetic sportsbook. **Not proven profitable and not an
 official play under rebuild plan §G** (CLAUDE.md rule 6); the site's default decision stays NO BET.
@@ -22,8 +22,12 @@ show a provisional indication (EARLY) and are never frozen.
   the weekly `v4-need-YYYY-Www` release): rule results with values, pick (side, line, price, book, offer), supporting
   data, ledger and build times, engine version, run id, rules version and hash. Only builds at or after
   `REGISTERED_AT` (2026-10-31T04:00Z) and before kickoff can write one: never retroactive.
-- After kickoff (+20 min) the next build seals the LAST record taken and built before kickoff
-  (`official_dec_<UTC>.json.gz` in `v4-need-decisions`). A game with no record gets no selection.
+- After kickoff (+20 min) the LAST record taken and built before kickoff decides (`official_dec_<UTC>.json.gz` in
+  `v4-need-decisions`), sealed by the scheduled collection job's seal step or by the next dashboard build, whichever runs
+  first (identical result; a second seal of the same game is never recorded). A game with no record gets no selection.
+- The deciding record must be from the final 180 minutes before kickoff; otherwise the game is sealed
+  NO_FINAL_EVALUATION and an earlier OFFICIAL is not used. Every sealed record states its data quality (VALID or why
+  rule R6 failed), and the tab lists sealed games without valid final data.
 - Graded ATS at the frozen line and price, 1 unit per selection (win pays the American price, push 0); Official and
   Watchlist summarised separately, by sport; never mixed with the Need Tracker or C1-C4.
 

@@ -14,7 +14,7 @@ for tag in "v4-need-$(date -u +%G-W%V)" "v4-need-$(date -u -d '7 days ago' +%G-W
 done
 python3 -m sportsbook_v4.seal_run seal --state "$state" --need-dir need --out need_new
 shopt -s nullglob
-files=(need_new/v4-need-decisions/decisions_*.json.gz)
+files=(need_new/v4-need-decisions/decisions_*.json.gz need_new/v4-need-decisions/official_dec_*.json.gz)
 (( ${#files[@]} )) || exit 0
 gh release view v4-need-decisions >/dev/null 2>&1 || gh release create v4-need-decisions --prerelease \
   --title "V4 Book Need Tracker: v4-need-decisions (do not delete)" --notes "Immutable MODELED research records."

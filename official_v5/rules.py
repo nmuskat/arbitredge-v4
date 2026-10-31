@@ -4,7 +4,7 @@ official_v5/rules.py -- the Official ArbitrEdge Needs rules (version below), eva
 EXPERIMENTAL research thresholds, not proven betting signals. Fixed in advance; changing any value requires a new
 RULES_VERSION (the hash of RULES is stored in every record and pinned by a test). Never lowered to produce plays.
 
-A game is OFFICIAL only when all six rules pass:
+A game is OFFICIAL only when all six rules pass (an EXPERIMENTAL MODEL SIGNAL; the site's decision stays NO BET):
   R1 stable_need      the spread Book Need side is the same under the baseline and all four sensitivity assumptions
   R2 top_handle       the game's spread handle ranks in the top 25% of the week's games (rank <= ceil(n / 4))
   R3 rec_opposes      at least 65% of recreational spread handle AND a majority (> 50%) of recreational spread
@@ -17,6 +17,8 @@ A game is OFFICIAL only when all six rules pass:
                       time within 3 h of the build; evaluated within 24 h before kickoff; >= 100 distinct spread
                       bettors and no single bettor above 15% of the game's spread handle
 WATCHLIST: R1 and R6 pass and at least three of R2-R5 pass. PASS: everything else (reasons listed).
+Sealing: after kickoff (+20 min) the LAST record taken and built before kickoff decides; if it is older than 180 minutes
+before kickoff the game is sealed NO_FINAL_EVALUATION. Every sealed record states its data quality.
 """
 
 import math
@@ -29,8 +31,9 @@ from sportsbook_v4.util import json_hash, to_epoch
 
 RULES_VERSION = "official_needs.v1"
 REGISTERED_AT = "2026-10-31T04:00:00Z"   # records are created only by builds at/after this time, before kickoff
-LABEL = ("EXPERIMENTAL: versioned research rules applied to the MODELED synthetic sportsbook. Not a proven betting "
-         "signal and not an instruction to wager.")
+LABEL = ("EXPERIMENTAL MODEL SIGNALS: versioned research rules applied to the MODELED synthetic sportsbook. Not a "
+         "proven betting signal, not an official play under rebuild plan section G, and not an instruction to wager. "
+         "Default decision: NO BET.")
 RULES = {
     "stable_need": {"variants_required": 4},
     "top_handle": {"top_share": 0.25},
@@ -41,6 +44,9 @@ RULES = {
     "data_valid": {"max_odds_age_h": 3, "max_ledger_lag_h": 3, "max_hours_before_kickoff": 24,
                    "min_distinct_bettors": 100, "max_largest_bettor_share": 0.15},
     "watchlist": {"requires": ["stable_need", "data_valid"], "min_other_passes": 3},
+    # the sealed classification comes only from a FINAL evaluation: the last record before kickoff must be taken within
+    # this many minutes of kickoff, otherwise the game is sealed NO_FINAL_EVALUATION (an older OFFICIAL is never reused)
+    "seal": {"final_record_max_minutes_before_kickoff": 180},
 }
 RULES_HASH = json_hash(RULES)
 NAMES = {"stable_need": "Stable Book Need (all 4 sensitivity assumptions)", "top_handle": "Top 25% weekly spread handle",
@@ -228,18 +234,30 @@ def seal(snapshots, decisions, now):
     for k, ss in sorted(by.items()):
         if k in done:
             continue
-        kick = to_epoch(ss[0]["kickoff"])
+        kick = to_epoch(max(ss, key=lambda s: s["built_at"])["kickoff"])     # the latest known kickoff (postponements)
         if kick + SEAL_GRACE_S > now:
             continue
         pre = [s for s in ss if to_epoch(s["taken_at"]) < kick and to_epoch(s["built_at"]) < kick]
         if not pre:
             continue
         last = max(pre, key=lambda s: (s["built_at"], s["taken_at"]))
+        cls, dq = last["classification"], data_quality(last)
+        if last["minutes_before_kickoff"] > RULES["seal"]["final_record_max_minutes_before_kickoff"]:
+            cls = "NO_FINAL_EVALUATION"
+            dq = (f"no evaluation in the final {RULES['seal']['final_record_max_minutes_before_kickoff']} minutes before "
+                  f"kickoff (last one {last['minutes_before_kickoff']} min before); its {last['classification']} is not used")
         d = {"format": RULES_VERSION, "sport": k[0], "event_id": k[1], "home": last["home"], "away": last["away"],
-             "kickoff": last["kickoff"], "sealed_at": _iso(now), "classification": last["classification"], "snapshot": last}
+             "kickoff": last["kickoff"], "sealed_at": _iso(now), "classification": cls, "data_quality": dq,
+             "snapshot": last}
         d["record_hash"] = json_hash(d)
         new.append(d)
     return new
+
+
+def data_quality(rec):
+    """'VALID', or why the evaluation's data failed rule R6 (stale odds, ledger lag, too few bettors, ...)."""
+    r = next((x for x in rec.get("rules") or [] if x["id"] == "data_valid"), None)
+    return "VALID" if r and r["pass"] else f"INVALID: {(r or {}).get('value') or 'not evaluated'}"
 
 
 def unique(decisions):
@@ -291,4 +309,7 @@ def report(decisions, results):
         by_sport = {sp: summary([r for r in rows if r["sport"] == sp]) for sp in ("nfl", "cfb")}
         out[cls.lower()] = {"overall": summary(rows), "by_sport": by_sport, "rows": rows}
     out["passes_sealed"] = sum(d["classification"] == "PASS" for d in decisions)
+    out["data_quality_issues"] = [{k: d.get(k) for k in ("sport", "event_id", "home", "away", "kickoff", "classification",
+                                                          "data_quality")}
+                                  for d in decisions if d.get("data_quality", "VALID") != "VALID"]
     return out
