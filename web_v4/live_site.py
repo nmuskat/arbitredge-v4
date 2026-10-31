@@ -193,9 +193,11 @@ def official_step(snap, snaps, now, need_dir=None, results_dir=None, need_out=No
     latest_snap = max((x for x in snaps if x.get("teams")), key=lambda x: x["fetched_at"], default=None)
     matcher = rankings.TeamMatcher(latest_snap["teams"]) if latest_snap else None
     res = R.match([{k: d[k] for k in ("sport", "event_id", "home", "away", "kickoff")} for d in all_dec], docs, matcher)
-    snap["official_needs"] = {"status": "OK", "label": OFF.LABEL, "rules_version": OFF.RULES_VERSION,
+    from official_v5 import strategies as STR
+    snap["official_needs"] = {"status": "OK", "label": OFF.LABEL, "strategies": list(STR.STRATEGIES),
+                              "superseded": [OFF.RULES_VERSION],
                               "records_this_build": len(fresh), "sealed_this_build": len(new),
-                              "sealed_total": len(all_dec), "report": OFF.report(all_dec, res)}
+                              "sealed_total": len(all_dec), "reports": OFF.report_all(all_dec, res)}
 
 
 def settlement_step(snap, bconn, conn, snaps, now, results_dir=None, settle_dir=None, settle_out=None):
@@ -522,34 +524,44 @@ function sharpPublicCard(){const gs=bookGames().filter(g=>g.sharp_public);const 
  return card(el("h2",{},badge("MODELED"),"Sharp vs public (simulated customers)"),el("p",{class:"small"},SP_NOTE),
   el("p",{},el("b",{},vs)," of "+rows.length+" game-markets: SHARP VS PUBLIC. Click a game for every side's percentages, dollars and tickets."),
   rows.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Market"),el("th",{},"Signal"),el("th",{},"Rec majority (of rec handle)"),el("th",{},"Sharp majority (of sharp handle)"),el("th",{class:"num"},"Sharp % of handle"),el("th",{class:"num hide-s"},"Sharp $ / tickets"),el("th",{class:"num hide-s"},"Rec $ / tickets"))),el("tbody",{},rows))):el("p",{class:"mute"},"No modeled wagers on upcoming games."))}
-const OFFB={OFFICIAL:"OK",WATCHLIST:"WATCH",PASS:"INFO",EARLY:"INFO"};
+const OFFB={OFFICIAL:"OK",WATCHLIST:"WATCH",PASS:"INFO",EARLY:"INFO",NO_FINAL_EVALUATION:"STALE"};
+const OFS={"official_needs.spread.v2":"Spreads","official_needs.total.v1":"Totals","official_needs.v1":"Spreads (v1, superseded)"};
 const ofKpi=(v,t)=>el("div",{class:"kpi"},el("b",{},String(v)),t);
-function ofPick(g){const p=g.pick||{};return p.side?(p.team||p.side)+" "+ln(p.line)+" "+am(p.price)+(p.price_book?" ("+p.price_book+")":""):"no Need side"}
-function ofRules(g){return el("table",{},el("tbody",{},(g.rules||[]).map(r=>el("tr",{},el("td",{},r.pass?"✓":"✗"),el("td",{class:"small"},r.name),el("td",{class:"small mute"},r.value||"")))))}
-function ofCard(g){return card(el("h3",{},badge(g.status==="EARLY"?"EARLY · indicates "+g.classification:g.status,OFFB[g.status]),g.status==="OFFICIAL"?badge("EXPERIMENTAL MODEL SIGNAL","WATCH"):null," "+g.away+" @ "+g.home),
- el("p",{},el("b",{},"Need: "+ofPick(g))," · kickoff "+local(g.kickoff)),
- el("p",{class:"small mute"},g.frozen?"Frozen in an immutable pre-kickoff record this build; the last record before kickoff becomes the selection.":(g.status==="EARLY"?"More than 24 hours before kickoff: provisional indication only, nothing frozen.":"Not frozen (outside the registered window).")),ofRules(g))}
-function ofRecord(ON,sp){const R=(ON||{}).report;if(!R)return card(el("p",{},badge(((ON||{}).status)||"UNAVAILABLE","UNAVAILABLE")," "+(((ON||{}).reason)||"No Official Needs records yet.")));
- const o=R.official.by_sport[sp]||{},w=R.watchlist.by_sport[sp]||{};const rows=R.official.rows.filter(r=>r.sport===sp);
- const line=x=>x.graded?x.wins+"-"+x.losses+"-"+x.pushes+" ATS, "+(x.units>=0?"+":"")+x.units.toFixed(2)+" units, ROI "+(x.roi_pct>=0?"+":"")+x.roi_pct.toFixed(1)+"%":"no graded selections yet";
- return card(el("h3",{},"Record of sealed Official Needs ("+(sp==="nfl"?"NFL":"CFB")+") ",badge("EXPERIMENTAL MODEL SIGNALS","WATCH")),el("p",{},el("b",{},(o.selections||0)+" official selections: "),line(o)+(o.pending?" · "+o.pending+" awaiting result":"")),
-  el("p",{class:"small mute"},"Watchlist (informational, not official): "+(w.selections||0)+" sealed, "+line(w)+". "+(o.warning||"")+" Graded at the frozen line and price; 1 unit per selection. Tracked separately from the Need Tracker cohorts C1–C4."),
-  (R.data_quality_issues||[]).filter(x=>x.sport===sp).length?el("div",{},el("p",{class:"small"},badge("DATA QUALITY","STALE")," Sealed without a valid final evaluation (never counted as official selections):"),
-   ...R.data_quality_issues.filter(x=>x.sport===sp).map(x=>el("p",{class:"small mute"},x.away+" @ "+x.home+" · "+local(x.kickoff)+" · sealed "+x.classification+" · "+x.data_quality))):null,
-  rows.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},...["Game","Selection","Frozen","Result"].map(h=>el("th",{},h)))),el("tbody",{},rows.map(r=>el("tr",{},el("td",{},r.away+" @ "+r.home,el("div",{class:"mute small"},local(r.kickoff))),
-   el("td",{class:"small"},(r.team||r.side||"–")+" "+ln(r.line)+" "+am(r.price)+(r.price_book?" ("+r.price_book+")":"")),el("td",{class:"small mute"},r.minutes_before_kickoff+" min before kickoff · "+r.engine_version),
-   el("td",{class:"small"},r.status==="GRADED"?r.away_score+"–"+r.home_score+" (away–home): "+r.ats+", "+(r.units>=0?"+":"")+r.units.toFixed(2)+"u":r.status)))))):el("p",{class:"mute"},"No sealed official selections yet."))}
+function ofPick(g,mk){const p=g.pick||{};if(!p.side)return"no Need side";
+ const sel=(mk==="total"?String(p.side).toUpperCase()+" "+(p.line==null?"–":p.line):(p.team||p.side)+" "+ln(p.line));
+ return sel+" "+am(p.price)+(p.price_book?" ("+p.price_book+")":"")}
+function ofRules(g){return el("table",{},el("tbody",{},(g.rules||[]).map(r=>el("tr",{},el("td",{},r.pass?"✓":"✗"),el("td",{class:"small"},r.name+(r.mandatory?" (required)":"")),el("td",{class:"small mute"},r.value||"")))))}
+function ofTier(g){if(g.status!=="OFFICIAL")return null;const f=(g.rules||[]).filter(r=>!r.pass).map(r=>r.name);
+ return g.tier==="PERFECT"?badge("PERFECT 6/6","OK"):el("span",{},badge("STANDARD 5/6","WATCH"),el("span",{class:"small"}," failed: "+f.join(", ")))}
+function ofCard(g,mk){return card(el("h3",{},badge(g.status==="EARLY"?"EARLY · indicates "+g.classification:g.status,OFFB[g.status]),g.status==="OFFICIAL"?badge("EXPERIMENTAL MODEL SIGNAL","WATCH"):null," "+g.away+" @ "+g.home),
+ g.status==="OFFICIAL"?el("p",{},ofTier(g)):null,
+ el("p",{},el("b",{},(mk==="total"?"Total Need: ":"Spread Need: ")+ofPick(g,mk))," · "+(g.score||"")+" rules · kickoff "+local(g.kickoff)),
+ el("p",{class:"small mute"},g.frozen?"Frozen in an immutable pre-kickoff record this build; the last record before kickoff decides.":(g.status==="EARLY"?"More than 24 hours before kickoff: provisional indication only, nothing frozen.":"Not frozen.")),ofRules(g))}
+function ofMarket(st,X){const mk=X.market,gs=X.games||[],n=k=>gs.filter(g=>g.status===k);const off=n("OFFICIAL"),wl=n("WATCHLIST"),ps=n("PASS"),ea=n("EARLY");
+ const out=[card(el("h2",{},(mk==="total"?"Totals":"Spreads")+" · "+st),el("div",{class:"grid"},ofKpi(off.length,"Official ("+off.filter(g=>g.tier==="PERFECT").length+" perfect, "+off.filter(g=>g.tier==="STANDARD").length+" standard)"),ofKpi(wl.length,"Watchlist"),ofKpi(ps.length,"Pass"),ofKpi(ea.length,"more than 24 h away")))];
+ out.push(...(off.length?off.map(g=>ofCard(g,mk)):[card(el("p",{},el("b",{},"0 Official "+(mk==="total"?"total":"spread")+" Needs")," on this slate right now."))]));
+ if(wl.length)out.push(card(el("h3",{},"Watchlist ("+wl.length+")"),el("p",{class:"small mute"},"Both required rules and 2 of the other 4: not official.")),...wl.map(g=>ofCard(g,mk)));
+ if(ps.length||ea.length)out.push(card(el("details",{},el("summary",{},"Pass ("+ps.length+") and more than 24 hours away ("+ea.length+")"),...[...ps,...ea].map(g=>el("div",{},el("p",{},badge(g.status==="EARLY"?"EARLY":"PASS","INFO")," "+g.away+" @ "+g.home+" · "+local(g.kickoff)+" · "+ofPick(g,mk)+" · "+(g.score||"")),el("p",{class:"small mute"},g.failed&&g.failed.length?"Fails: "+g.failed.join("; "):""))))));
+ return out}
+function ofRecord(ON,sp){const RS=(ON||{}).reports;if(!RS)return card(el("p",{},badge(((ON||{}).status)||"UNAVAILABLE","UNAVAILABLE")," "+(((ON||{}).reason)||"No Official Needs records yet.")));
+ const line=x=>x.graded?x.wins+"-"+x.losses+"-"+x.pushes+", "+(x.units>=0?"+":"")+x.units.toFixed(2)+" units, ROI "+(x.roi_pct>=0?"+":"")+x.roi_pct.toFixed(1)+"%":"no graded selections yet";
+ const keys=Object.keys(RS);if(!keys.length)return card(el("h3",{},"Record of sealed Official Needs ",badge("EXPERIMENTAL MODEL SIGNALS","WATCH")),el("p",{class:"mute"},"No sealed selections yet."));
+ return card(el("h3",{},"Record of sealed Official Needs ("+(sp==="nfl"?"NFL":"CFB")+") ",badge("EXPERIMENTAL MODEL SIGNALS","WATCH")),...keys.map(k=>{const R=RS[k],o=R.official.by_sport[sp]||{},w=R.watchlist.by_sport[sp]||{};const rows=R.official.rows.filter(r=>r.sport===sp);
+  const dq=(R.data_quality_issues||[]).filter(x=>x.sport===sp);
+  return el("div",{},el("h3",{},(OFS[k]||k)+" · "+k),el("p",{},el("b",{},(o.selections||0)+" official: "),line(o)+(o.pending?" · "+o.pending+" awaiting result":"")),
+   el("p",{class:"small mute"},"Watchlist (not official): "+(w.selections||0)+" sealed, "+line(w)+". "+(o.warning||"")+" Graded at the frozen line and price; 1 unit each; separate from C1–C4."),
+   dq.length?el("p",{class:"small"},badge("DATA QUALITY","STALE")," "+dq.map(x=>x.away+" @ "+x.home+": sealed "+x.classification+" ("+x.data_quality+")").join(" · ")):null,
+   rows.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},...["Game","Selection","Qualification","Result"].map(h=>el("th",{},h)))),el("tbody",{},rows.map(r=>el("tr",{},el("td",{},r.away+" @ "+r.home,el("div",{class:"mute small"},local(r.kickoff))),
+    el("td",{class:"small"},(r.market==="total"?String(r.side).toUpperCase()+" "+r.line:(r.team||r.side||"–")+" "+ln(r.line))+" "+am(r.price)+(r.price_book?" ("+r.price_book+")":"")),
+    el("td",{class:"small mute"},(r.tier?r.tier+" "+(r.score||""):"v1 6/6")+(r.tier==="STANDARD"&&r.failed.length?" · failed: "+r.failed.join(", "):"")+" · "+r.minutes_before_kickoff+" min before kickoff"),
+    el("td",{class:"small"},r.status==="GRADED"?r.away_score+"–"+r.home_score+" (away–home): "+r.ats+", "+(r.units>=0?"+":"")+r.units.toFixed(2)+"u":r.status)))))):null)}))}
 R.official=()=>{const bk=S().book||{},O=bk.official,ON=D.official_needs||{},sp=st.sport;
  const out=[card(el("h2",{},badge("EXPERIMENTAL","WATCH")," Official ArbitrEdge Needs · "+(sp==="nfl"?"NFL":"CFB Top-25")),
   el("p",{class:"small"},(O&&O.label)||ON.label||""),
-  el("p",{class:"small mute"},"Rules "+((O&&O.rules_version)||ON.rules_version||"–")+": a game is OFFICIAL only when all six rules pass. WATCHLIST: a stable Need and valid data, plus at least three of the other four rules. PASS: anything else. Within 24 hours of kickoff each evaluation is frozen; the last one before kickoff decides, and must be from the final 3 hours (otherwise the game is sealed NO FINAL EVALUATION, never official). Selections are graded at the frozen line and price and never created after the fact. Research thresholds, not proven profitable; the site's default decision remains NO BET.")),];
- if(!O)out.push(card(el("p",{},badge("UNAVAILABLE","UNAVAILABLE")," No Official Needs evaluation in this build.")));
- else{const gs=O.games||[],n=k=>gs.filter(g=>g.status===k);const off=n("OFFICIAL"),wl=n("WATCHLIST"),ps=n("PASS"),ea=n("EARLY");
-  out.push(card(el("div",{class:"grid"},ofKpi(off.length,"Official Needs"),ofKpi(wl.length,"Watchlist"),ofKpi(ps.length,"Pass"),ofKpi(ea.length,"more than 24 h away")),
-   el("p",{class:"small mute"},"Evaluated "+local(O.evaluated_at)+" from the ledger as of "+local(O.ledger_time)+". Rules registered "+local(O.registered_at)+".")));
-  out.push(...(off.length?off.map(ofCard):[card(el("p",{},el("b",{},"0 Official Needs")," on this slate right now: no game within 24 hours of kickoff meets all six rules."))]));
-  if(wl.length)out.push(card(el("h3",{},"Watchlist ("+wl.length+")"),el("p",{class:"small mute"},"Close to qualifying; not official selections.")),...wl.map(ofCard));
-  if(ps.length||ea.length)out.push(card(el("details",{},el("summary",{},"Pass ("+ps.length+") and more than 24 hours away ("+ea.length+")"),...[...ps,...ea].map(g=>el("div",{},el("p",{},badge(g.status==="EARLY"?"EARLY":"PASS","INFO")," "+g.away+" @ "+g.home+" · "+local(g.kickoff)+" · Need: "+ofPick(g)),el("p",{class:"small mute"},g.failed&&g.failed.length?"Fails: "+g.failed.join("; "):"")))))) }
+  el("p",{class:"small mute"},"Strategies official_needs.spread.v2 and official_needs.total.v1, each applied to its own market with its own handle and liability rankings. OFFICIAL needs both required rules (stable Need, valid data) plus at least 3 of High Handle, Public Pressure, Sharp Alignment and High Liability: 6/6 is PERFECT, 5/6 is STANDARD (the failed rule is shown). WATCHLIST: both required rules plus 2 of the 4. Within 24 hours of kickoff each evaluation is frozen; the last one before kickoff decides and must be from the final 3 hours, otherwise the game is sealed NO FINAL EVALUATION and is never official. Graded at the frozen line and price; never created after the fact. Research thresholds, not proven profitable; the site's default decision remains NO BET."+(O&&O.superseded?" Records made under "+O.superseded+" are kept, sealed and graded under their own rules.":"")))];
+ if(!O||!O.strategies)out.push(card(el("p",{},badge("UNAVAILABLE","UNAVAILABLE")," No Official Needs evaluation in this build.")));
+ else{out.push(card(el("p",{class:"small mute"},"Evaluated "+local(O.evaluated_at)+" from the ledger as of "+local(O.ledger_time)+". Strategies registered "+local(O.registered_at)+".")));
+  for(const[st,X]of Object.entries(O.strategies))out.push(...ofMarket(st,X))}
  out.push(ofRecord(ON,sp));return out};
 R.sharp=()=>{const f=st.f;const rows=(S().sharp||[]).filter(r=>cfbGate(r.top25)&&(!f.market||r.market===f.market)&&upcoming(r)&&gameMatch(r));
  const ev=rows.filter(r=>r.status!=="INSUFFICIENT EVIDENCE");

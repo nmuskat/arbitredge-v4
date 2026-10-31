@@ -36,3 +36,23 @@ New package `official_v5/`; the build calls it after Book Need is computed and r
 Book Need, sharp vs public, the Need tracker, C1-C4, settlement and the ledger are unchanged: a build of this branch and
 of the live code on identical inputs give byte-identical site data, ledger wagers and Need/settlement files except the
 new Official Needs fields (the only ledger difference is each interval's wall-clock `committed_at`).
+
+
+## Strategies after v1 (2026-10-31): `official_needs.spread.v2` and `official_needs.total.v1`
+
+`official_v5/strategies.py`. The same six rules and thresholds, applied **separately to spreads (home/away) and totals
+(over/under)**, each with its own market's Book Need (modeled P&L: `need_of` for spreads, `total_exposure` for totals),
+its own handle ranking and its own P&L-swing (liability) ranking, and Need stability across the four sensitivity
+assumptions computed per market (each variant now also records its totals Need side, `_need_total`).
+
+- Required: Stable Need and Valid data.
+- Of High Handle, Public Pressure, Sharp Alignment and High Liability, at least 3 must pass.
+- OFFICIAL (EXPERIMENTAL MODEL SIGNAL): 6/6 = PERFECT, 5/6 = STANDARD (the failed rule is shown).
+- WATCHLIST: both required rules plus 2 of the 4.
+- PASS: anything else.
+
+Versioning: each strategy's rule set is hashed into every record (pinned in tests). `official_needs.v1` is unchanged
+(rules, hash and evaluator); the build stops creating v1 records once these strategies are deployed, and any v1
+records made before that are sealed, graded and reported under v1 only. Records, seals and grades are keyed by
+(sport, game, strategy), so versions never mix. The new strategies' registration time is 2026-10-31T05:00Z: no
+record before it.

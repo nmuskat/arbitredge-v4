@@ -195,7 +195,9 @@ def _site(tmp_path, T, registered, monkeypatch, need_in=None):
     from sportsbook_v4 import live_book as LB
     from tests_v4.test_live_book import T0, build_store, new_book, poll
     from web_v4 import live_site
+    from official_v5 import strategies as STR
     monkeypatch.setattr(OFF, "REGISTERED_AT", registered)
+    monkeypatch.setattr(STR, "REGISTERED_AT", registered)
     live = build_store(end=T)
     out = LB.build(new_book(), live, T, [poll(T0 - 86400)], bettors=500, variants={},
                    book_in=str(tmp_path / "book"), book_out=str(tmp_path / "book"))
@@ -210,19 +212,25 @@ def test_builds_freeze_records_in_the_window_and_seal_the_last_one_after_kickoff
     from tests_v4.test_live_book import KICK, T0
     t1 = KICK["n1"] - 3 * 3600
     s1 = _site(tmp_path, t1, "2026-10-01T00:00:00Z", monkeypatch)
-    g = {x["event_id"]: x for x in s1["sports"]["nfl"]["book"]["official"]["games"]}
+    strategies = s1["sports"]["nfl"]["book"]["official"]["strategies"]
+    assert set(strategies) == {"official_needs.spread.v2", "official_needs.total.v1"}
+    g = {x["event_id"]: x for x in strategies["official_needs.spread.v2"]["games"]}
     n1 = next(v for k, v in g.items() if v["home"] == "Kansas City Chiefs")
     assert n1["frozen"] and n1["status"] in ("OFFICIAL", "WATCHLIST", "PASS")
     assert all(x["status"] == "EARLY" and not x["frozen"] for x in g.values() if x is not n1)   # > 24 h away
     assert s1["official_needs"]["records_this_build"] >= 1 and s1["official_needs"]["sealed_this_build"] == 0
     recs = NT.load(str(tmp_path / "need"), OFF.SNAP_PREFIX + "*.json.gz")
-    assert recs and all(r["format"] == "official_needs.v1" and r["engine_version"].startswith("sportsbook_v5") for r in recs)
+    assert recs and all(r["format"] in ("official_needs.spread.v2", "official_needs.total.v1")
+                        and r["engine_version"].startswith("sportsbook_v5") for r in recs)
+    assert not any(r["format"] == "official_needs.v1" for r in recs)          # the build no longer makes v1 records
     t2 = KICK["n1"] + OFF.SEAL_GRACE_S + 600
     s2 = _site(tmp_path, t2, "2026-10-01T00:00:00Z", monkeypatch)
     dec = NT.load(str(tmp_path / "need"), OFF.DEC_PREFIX + "*.json.gz")
-    n1rec = [r for r in recs if r["home"] == "Kansas City Chiefs"]
-    assert len(dec) == 1 and dec[0]["snapshot"]["record_hash"] == max(n1rec, key=lambda r: r["built_at"])["record_hash"]
-    assert s2["official_needs"]["sealed_total"] == 1
+    for st in ("official_needs.spread.v2", "official_needs.total.v1"):      # one decision per game AND strategy
+        n1rec = [r for r in recs if r["home"] == "Kansas City Chiefs" and r["strategy"] == st]
+        d = [x for x in dec if x["strategy"] == st]
+        assert len(d) == 1 and d[0]["snapshot"]["record_hash"] == max(n1rec, key=lambda r: r["built_at"])["record_hash"]
+    assert s2["official_needs"]["sealed_total"] == 2
     assert not NT.load(str(tmp_path / "need"), "decisions_*.json.gz")      # the Need tracker's own files are untouched
 
 
@@ -232,7 +240,7 @@ def test_builds_before_registration_freeze_nothing(tmp_path, monkeypatch):
     t1 = KICK["n1"] - 3 * 3600
     s = _site(tmp_path, t1, "2030-01-01T00:00:00Z", monkeypatch)
     assert s["official_needs"]["records_this_build"] == 0
-    assert not any(x["frozen"] for x in s["sports"]["nfl"]["book"]["official"]["games"])
+    assert not any(x["frozen"] for X in s["sports"]["nfl"]["book"]["official"]["strategies"].values() for x in X["games"])
     assert NT.load(str(tmp_path / "need"), OFF.SNAP_PREFIX + "*.json.gz") == []
 
 
@@ -374,3 +382,138 @@ def test_9_the_collection_job_seals_without_a_dashboard_build_and_builds_then_ad
                     OFF.unique(NT.load(str(tmp_path / "need"), OFF.DEC_PREFIX + "*.json.gz")), K + 99999) == []
     script = open(ROOT / ".github" / "scripts" / "seal_step.sh").read()
     assert "official_dec_*.json.gz" in script and "--clobber" not in script
+
+
+
+# ------------------------------------------------------------------ official_needs.spread.v2 and official_needs.total.v1
+
+from official_v5 import strategies as STR   # noqa: E402
+
+SP, TO = "official_needs.spread.v2", "official_needs.total.v1"
+TOTAL_OFFER = {"total": 47.5, "over_price": -110, "under_price": -110, "price_book": "draftkings"}
+
+
+def _tw(arch, side, stake, bettor=None):
+    w = _w(arch, side, stake, bettor)
+    w.update(market="total", accepted_line=47.5)
+    return w
+
+
+def total_wagers():
+    """Recreational money on the OVER, sharps on the UNDER: the book needs the UNDER."""
+    ws = [_tw("REC_CASUAL", "over", 40) for _ in range(110)] + [_tw("REC_CASUAL", "under", 40) for _ in range(40)]
+    return ws + [_tw("SHARP", "under", 300, bettor=900 + i) for i in range(4)] + [_tw("SHARP", "over", 100, bettor=990)]
+
+
+def _ev(st, ws, *, fail=(), taken=None, offer=None):
+    taken = taken if taken is not None else K - 3600
+    m = STR.STRATEGIES[st]["market"]
+    nd = STR._need(STR.market_wagers(ws, m), m)
+    handles = {"g1": 1e9 if "top_handle" not in fail else 1.0, "a": 5.0, "b": 5.0, "c": 5.0}
+    swings = {"g1": (nd["swing"] or 0) if "top_swing" not in fail else -1, "a": 0.5, "b": 0.5, "c": 0.5}
+    ns = {"baseline": nd["side"], "variants": 4, "agree": 3 if "stable_need" in fail else 4,
+          "label": "FRAGILE" if "stable_need" in fail else "STABLE"}
+    return STR.evaluate(st, game=GAME, wagers=ws, week={"handles": handles, "swings": swings}, need_stability=ns,
+                        offer=offer or (OFFER if m == "spread" else TOTAL_OFFER),
+                        odds_as_of=taken - (4 * 3600 if "data_valid" in fail else 600), taken_at=taken, built_at=taken + 60)
+
+
+def test_new_strategies_are_versioned_separately_with_v1_thresholds():
+    for st in (SP, TO):
+        R = STR.STRATEGIES[st]
+        for k in ("stable_need", "top_handle", "rec_opposes", "sharp_supports", "top_swing", "data_valid"):
+            assert R[k] == OFF.RULES[k], (st, k)                          # same thresholds as v1, nothing lowered
+        assert R["official"] == {"mandatory": ["stable_need", "data_valid"], "min_other_passes": 3}
+    assert STR.HASHES == {SP: "8f5a15e92b21b385c263f252ec1f7ad14228b9bc4bd024b8662a04ccfbdd467e", TO: "617ece6b2274655d051f67c6eb932882057479a73bd3f291010f4fad4c6a07eb"}     # pinned: any change needs a new version
+    assert OFF.RULES_VERSION == "official_needs.v1" and SP != OFF.RULES_VERSION
+
+
+def _single_failure(st, f):
+    """Wagers / ranks in which exactly rule f fails (the other five pass)."""
+    total = st == TO
+    mk = (lambda *a, **k: _tw(*a, **k)) if total else (lambda *a, **k: _w(*a, **k))
+    pub, need = ("over", "under") if total else ("away", "home")
+    base = (total_wagers if total else qualifying_wagers)()
+    if f == "rec_opposes":      # recreational HANDLE still >= 65% against the Need, but the ticket majority is not
+        rec = [mk("REC_CASUAL", pub, 400) for _ in range(30)] + [mk("REC_CASUAL", need, 10) for _ in range(80)]
+        return [w for w in base if w["archetype"] == "SHARP"] + rec, ()
+    if f == "sharp_supports":   # sharps split evenly: below 60% on the Need side, every safeguard met
+        sh = [mk("SHARP", need, 300, bettor=900 + i) for i in range(3)] + [mk("SHARP", pub, 300, bettor=950 + i) for i in range(3)]
+        return [w for w in base if w["archetype"] != "SHARP"] + sh, ()
+    return base, (f,)           # top_handle / top_swing: ranked outside the top 25%
+
+
+@pytest.mark.parametrize("st", [SP, TO])
+@pytest.mark.parametrize("f", ["top_handle", "rec_opposes", "sharp_supports", "top_swing"])
+def test_six_of_six_is_perfect_and_five_of_six_standard_naming_the_failed_rule(st, f):
+    perfect = _ev(st, (total_wagers if st == TO else qualifying_wagers)())
+    assert (perfect["classification"], perfect["tier"], perfect["score"]) == ("OFFICIAL", "PERFECT", "6/6"), perfect["failed"]
+    ws, fail = _single_failure(st, f)
+    ev = _ev(st, ws, fail=fail)
+    assert [r["id"] for r in ev["rules"] if not r["pass"]] == [f], ev["failed"]
+    assert (ev["classification"], ev["tier"], ev["score"]) == ("OFFICIAL", "STANDARD", "5/6")
+    assert ev["failed"] == [STR.LABELS[f]] and ev["pick"]["side"] == ("under" if st == TO else "home")
+
+
+@pytest.mark.parametrize("st,ws", [(SP, qualifying_wagers), (TO, total_wagers)])
+def test_both_mandatory_rules_are_required_and_two_of_four_is_watchlist(st, ws):
+    assert _ev(st, ws(), fail=("stable_need",))["classification"] == "PASS"       # 5/6 without a stable Need
+    assert _ev(st, ws(), fail=("data_valid",))["classification"] == "PASS"        # 5/6 without valid data
+    ev = _ev(st, ws(), fail=("top_handle", "top_swing"))
+    assert (ev["classification"], ev["score"]) == ("WATCHLIST", "4/6")
+    assert _ev(st, ws(), fail=("top_handle", "top_swing", "stable_need"))["classification"] == "PASS"
+
+
+def test_totals_use_their_own_market_need_ranks_and_offer():
+    ev = _ev(TO, total_wagers() + qualifying_wagers())                   # spread wagers in the same game are ignored
+    assert ev["market"] == "total" and ev["pick"]["side"] == "under" and ev["pick"]["team"] == "UNDER"
+    assert (ev["pick"]["line"], ev["pick"]["price"], ev["pick"]["price_book"]) == (47.5, -110, "draftkings")
+    assert ev["supporting"]["pressure"]["wagers"] == len(total_wagers())
+    wk = STR.week_inputs({"g1": total_wagers() + qualifying_wagers(), "g2": qualifying_wagers()}, "total")
+    assert set(wk["handles"]) == {"g1"}                                    # g2 has no total wagers: not ranked
+    ws = STR.week_inputs({"g1": total_wagers() + qualifying_wagers(), "g2": qualifying_wagers()}, "spread")
+    assert set(ws["handles"]) == {"g1", "g2"}
+
+
+def test_totals_stability_needs_every_variant_to_carry_the_totals_need():
+    v = {f"v{i}": {"_need": "home", "_need_total": "under"} for i in range(4)}
+    assert STR.stability("under", v, "_need_total")["label"] == "STABLE"
+    v["v0"]["_need_total"] = "over"
+    assert STR.stability("under", v, "_need_total")["label"] == "FRAGILE"
+    old_cache = {f"v{i}": {"_need": "home"} for i in range(4)}             # a cache made before totals existed
+    s = STR.stability("under", old_cache, "_need_total")
+    assert s["label"] is None and s["agree"] is None                      # "not available": rule fails, never guessed
+
+
+def _srec(st, ws, taken, built, **kw):
+    run = {"run_id": "r", "engine_version": "sportsbook_v5.r2", "params_hash": "p"}
+    return STR.snapshot(st, sport="nfl", run=run, game=GAME, evaluation=_ev(st, ws, taken=taken, **kw), taken_at=taken,
+                        built_at=built)
+
+
+def test_strategies_seal_and_grade_separately_and_v1_records_keep_their_own_rules():
+    v1 = _rec(qualifying_wagers(), K - 1800, K - 1700)                   # a v1 record made before the switch
+    sp = _srec(SP, qualifying_wagers(), K - 1500, K - 1400)
+    to = _srec(TO, total_wagers(), K - 1500, K - 1400)
+    d = OFF.seal([v1, sp, to], [], K + 99999)
+    by = {OFF.strategy_of(x): x for x in d}
+    assert set(by) == {"official_needs.v1", SP, TO}                       # never mixed, never an integrity error
+    assert "strategy" not in by["official_needs.v1"] and by["official_needs.v1"]["format"] == "official_needs.v1"
+    assert by[SP]["tier"] == by[TO]["tier"] == "PERFECT" and by[TO]["market"] == "total"
+    res = {("nfl", "g1"): {"home_score": 27, "away_score": 17}}           # total 44: UNDER 47.5 wins; home -3.5 covers
+    rep = OFF.report_all(d, res)
+    assert set(rep) == {"official_needs.v1", SP, TO}
+    assert rep[TO]["official"]["rows"][0]["ats"] == "W" and rep[SP]["official"]["rows"][0]["ats"] == "W"
+    assert rep[SP]["tiers"] == {"PERFECT": 1, "STANDARD": 0}
+    push = OFF.grade(by[TO], {"home_score": 27, "away_score": 20.5})
+    assert push["ats"] == "P" and push["units"] == 0.0
+    over_loss = OFF.grade(by[TO], {"home_score": 30, "away_score": 24})
+    assert over_loss["ats"] == "L" and over_loss["units"] == -1.0
+    assert OFF.seal([v1, sp, to], d, K + 999999) == []                   # sealed once per strategy
+
+
+def test_new_strategy_records_are_prospective_only():
+    with pytest.raises(ValueError, match="never retroactive"):
+        _srec(SP, qualifying_wagers(), to_epoch(STR.REGISTERED_AT) - 60, K - 60)
+    with pytest.raises(ValueError, match="before kickoff"):
+        _srec(TO, total_wagers(), K - 60, K + 60)

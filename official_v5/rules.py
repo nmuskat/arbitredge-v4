@@ -223,13 +223,30 @@ def decisions_name(t):
     return f"{DEC_PREFIX}{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(t))}.json.gz"
 
 
+def strategy_of(x):
+    """The strategy a record or decision belongs to (v1 records carry only their format)."""
+    return x.get("strategy") or x.get("format") or RULES_VERSION
+
+
+def _key(x):
+    return (x["sport"], x["event_id"], strategy_of(x))
+
+
+def _seal_window(strategy):
+    if strategy == RULES_VERSION:
+        return RULES["seal"]["final_record_max_minutes_before_kickoff"]
+    from official_v5 import strategies as S
+    return S.STRATEGIES[strategy]["seal"]["final_record_max_minutes_before_kickoff"]
+
+
 def seal(snapshots, decisions, now):
-    """Freeze, for each game that has kicked off (plus a 20-minute grace) and has at least one prospective record, the
-    LAST record taken and built before kickoff. Games without a record get no selection (never retroactive)."""
-    done = {(d["sport"], d["event_id"]): d for d in decisions}
+    """Freeze, for each game and strategy that has kicked off (plus a 20-minute grace) and has at least one prospective
+    record, the LAST record taken and built before kickoff. Games without a record get no selection (never
+    retroactive). Each strategy (official_needs.v1, spread.v2, total.v1) is sealed on its own records only."""
+    done = {_key(d): d for d in decisions}
     by = {}
     for s in snapshots:
-        by.setdefault((s["sport"], s["event_id"]), []).append(s)
+        by.setdefault(_key(s), []).append(s)
     new = []
     for k, ss in sorted(by.items()):
         if k in done:
@@ -242,13 +259,17 @@ def seal(snapshots, decisions, now):
             continue
         last = max(pre, key=lambda s: (s["built_at"], s["taken_at"]))
         cls, dq = last["classification"], data_quality(last)
-        if last["minutes_before_kickoff"] > RULES["seal"]["final_record_max_minutes_before_kickoff"]:
+        win = _seal_window(k[2])
+        if last["minutes_before_kickoff"] > win:
             cls = "NO_FINAL_EVALUATION"
-            dq = (f"no evaluation in the final {RULES['seal']['final_record_max_minutes_before_kickoff']} minutes before "
-                  f"kickoff (last one {last['minutes_before_kickoff']} min before); its {last['classification']} is not used")
-        d = {"format": RULES_VERSION, "sport": k[0], "event_id": k[1], "home": last["home"], "away": last["away"],
+            dq = (f"no evaluation in the final {win} minutes before kickoff (last one {last['minutes_before_kickoff']} "
+                  f"min before); its {last['classification']} is not used")
+        d = {"format": k[2], "sport": k[0], "event_id": k[1], "home": last["home"], "away": last["away"],
              "kickoff": last["kickoff"], "sealed_at": _iso(now), "classification": cls, "data_quality": dq,
              "snapshot": last}
+        if k[2] != RULES_VERSION:                       # later strategies name themselves; v1 decisions are unchanged
+            d.update(strategy=k[2], market=last.get("market"),
+                     tier=last.get("tier") if cls == "OFFICIAL" else None, score=last.get("score"))
         d["record_hash"] = json_hash(d)
         new.append(d)
     return new
@@ -264,7 +285,7 @@ def unique(decisions):
     """One sealed decision per game; two different seals of the same game are an integrity failure."""
     out = {}
     for d in sorted(decisions, key=lambda x: x["sealed_at"]):
-        k = (d["sport"], d["event_id"])
+        k = _key(d)
         if k in out and out[k]["snapshot"]["record_hash"] != d["snapshot"]["record_hash"]:
             raise NT.TrackerIntegrityError(f"two different Official Needs decisions for {k}")
         out.setdefault(k, d)
@@ -279,13 +300,21 @@ def grade(d, result):
            "price": pk.get("price"), "price_book": pk.get("price_book"), "taken_at": s["taken_at"],
            "minutes_before_kickoff": s["minutes_before_kickoff"], "engine_version": s["engine_version"],
            "rules_version": s["format"]}
+    out.update(strategy=strategy_of(d), market=d.get("market") or "spread", tier=d.get("tier"), score=d.get("score"),
+               failed=s.get("failed") or [])
     if not pk.get("side") or pk.get("line") is None or pk.get("price") is None:
         out["status"] = "NO_PRICE"
     elif result is None:
         out["status"] = "AWAITING_RESULT"
+    elif out["market"] == "total":                  # over/under against the frozen total (a push when equal)
+        t = result["home_score"] + result["away_score"]
+        x = (t - pk["line"]) if pk["side"] == "over" else (pk["line"] - t)
+        out.update(status="GRADED", home_score=result["home_score"], away_score=result["away_score"],
+                   ats="W" if x > 0 else ("P" if x == 0 else "L"))
     else:
         out.update(status="GRADED", home_score=result["home_score"], away_score=result["away_score"],
                    ats=ats(pk["side"], pk["line"], result["home_score"], result["away_score"]))
+    if out.get("status") == "GRADED":
         out["units"] = round(profit_on_win(1.0, pk["price"]), 4) if out["ats"] == "W" else (-1.0 if out["ats"] == "L" else 0.0)
     return out
 
@@ -312,4 +341,19 @@ def report(decisions, results):
     out["data_quality_issues"] = [{k: d.get(k) for k in ("sport", "event_id", "home", "away", "kickoff", "classification",
                                                           "data_quality")}
                                   for d in decisions if d.get("data_quality", "VALID") != "VALID"]
+    return out
+
+
+def report_all(decisions, results):
+    """One report per strategy (official_needs.v1, spread.v2, total.v1): never mixed."""
+    by = {}
+    for d in decisions:
+        by.setdefault(strategy_of(d), []).append(d)
+    out = {}
+    for st, ds in sorted(by.items()):
+        r = report(ds, results)
+        off = [d for d in ds if d["classification"] == "OFFICIAL"]
+        r["tiers"] = {"PERFECT": sum(d.get("tier") == "PERFECT" for d in off),
+                      "STANDARD": sum(d.get("tier") == "STANDARD" for d in off)}
+        out[st] = r
     return out

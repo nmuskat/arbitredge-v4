@@ -47,10 +47,10 @@ from sportsbook_v4.facts import NoFacts
 from sportsbook_v4.ledger_read import fetch_wagers
 from sportsbook_v4 import need_tracker
 from sportsbook_v4 import sharp_public
-from sportsbook_v4.market import MarketV4Source, profit_on_win, representative_offer
+from sportsbook_v4.market import MarketV4Source, profit_on_win, representative_offer, representative_total_offer
 from sportsbook_v4.population import ensure_population
 from sportsbook_v4.schema import ensure_schema
-from sportsbook_v4.settlement import book_need_all
+from sportsbook_v4.settlement import book_need_all, total_exposure
 from sportsbook_v4.util import from_epoch, json_hash, to_epoch
 
 LABEL = "MODELED"
@@ -565,7 +565,8 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                 mem, rid = replay(book_conn, live_conn, run_id, wm, _iso(D), variant=(name, kw))
                 for gid, ws_ in _by_game(fetch_wagers(mem, rid, market=None)).items():
                     var_splits.setdefault(gid, {})[name] = dict(
-                        splits(ws_), _need=need_tracker.need_of([w for w in ws_ if w["market"] == "spread"])["side"])
+                        splits(ws_), _need=need_tracker.need_of([w for w in ws_ if w["market"] == "spread"])["side"],
+                        _need_total=total_exposure(ws_).get("financial_need_side"))   # totals Need side (Official Needs)
                 mem.close()
         block["sensitivity_cache"] = {"run_id": run_id, "variants": sorted(variants or {}), "computed_at": bands_at,
                                       "variant_splits": var_splits, "replay_verified_at": verified_at}
@@ -576,11 +577,13 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
         week_handles = {g.canonical_game_id: math.fsum(w["stake"] for w in per_game.get(g.canonical_game_id, [])
                                                        if w["market"] == "spread") for g in run["slate"].games}
         block["need_snapshots"], block["tracker_games"] = [], _tracker_games(book_conn, live_conn, sport)
-        # Official ArbitrEdge Needs (experimental, separate module): reads the values below, changes none of them
-        from official_v5 import rules as OFF
-        off_week = OFF.week_inputs({g.canonical_game_id: [w for w in per_game.get(g.canonical_game_id, [])
-                                                          if w["market"] == "spread"] for g in run["slate"].games})
-        block["official_snapshots"], off_games = [], []
+        # Official ArbitrEdge Needs (experimental, separate module): reads the values below, changes none of them.
+        # New records use the strategies after official_needs.v1 (spread.v2, total.v1), each on its own market.
+        from official_v5 import rules as OFF, strategies as STR
+        off_week = {st: STR.week_inputs({g.canonical_game_id: per_game.get(g.canonical_game_id, [])
+                                         for g in run["slate"].games}, cfg["market"])
+                    for st, cfg in STR.STRATEGIES.items()}
+        block["official_snapshots"], off_games = [], {st: [] for st in STR.STRATEGIES}
         mkt = _market(live_conn, sport)
         for g in sorted(run["slate"].games, key=lambda x: (to_epoch(x.commence_time), x.canonical_game_id)):
             gid = g.canonical_game_id
@@ -613,20 +616,25 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
             if T < kick:                     # upcoming games only; frozen records only inside the 24 h window
                 in_window = wm_t < kick <= wm_t + need_tracker.SNAPSHOT_HORIZON_S
                 gm = {"event_id": gid, "home": home, "away": away, "kickoff": _iso(kick)}
-                ev = OFF.evaluate(game=gm, spread_wagers=ws_, week=off_week,
-                                  need_stability=_need_stability(ws_, var_splits.get(gid, {})),
-                                  offer=representative_offer(mkt.latest_quotes(gid, wm_t)), odds_as_of=ref_at,
-                                  taken_at=wm_t, built_at=T, enforce_window=in_window)
-                frozen = in_window and wm_t >= to_epoch(OFF.REGISTERED_AT)
-                if frozen:
-                    block["official_snapshots"].append(OFF.snapshot(sport=sport, run=block["audit"], game=gm,
-                                                                    evaluation=ev, taken_at=wm_t, built_at=T))
-                off_games.append({**gm, "status": ev["classification"] if in_window else "EARLY",
-                                  "classification": ev["classification"], "frozen": frozen, "pick": ev["pick"],
-                                  "rules": ev["rules"], "failed": ev["failed"],
-                                  "supporting": {k: ev["supporting"][k] for k in ("need", "sharp", "week_handle_rank",
-                                                                                   "week_games", "swing_rank", "swing_games",
-                                                                                   "odds_as_of")}})
+                quotes = mkt.latest_quotes(gid, wm_t)
+                offers = {"spread": representative_offer(quotes), "total": representative_total_offer(quotes)}
+                variants_g = var_splits.get(gid, {})
+                for st, cfg in STR.STRATEGIES.items():
+                    m = cfg["market"]
+                    base = STR._need(STR.market_wagers(ws_, m), m)["side"]
+                    ns = STR.stability(base, variants_g, "_need" if m == "spread" else "_need_total")
+                    ev = STR.evaluate(st, game=gm, wagers=ws_, week=off_week[st], need_stability=ns, offer=offers[m],
+                                      odds_as_of=ref_at, taken_at=wm_t, built_at=T, enforce_window=in_window)
+                    frozen = in_window and wm_t >= to_epoch(STR.REGISTERED_AT)
+                    if frozen:
+                        block["official_snapshots"].append(STR.snapshot(st, sport=sport, run=block["audit"], game=gm,
+                                                                        evaluation=ev, taken_at=wm_t, built_at=T))
+                    off_games[st].append({**gm, "status": ev["classification"] if in_window else "EARLY",
+                                          "classification": ev["classification"], "tier": ev["tier"], "score": ev["score"],
+                                          "frozen": frozen, "pick": ev["pick"], "rules": ev["rules"], "failed": ev["failed"],
+                                          "supporting": {k: ev["supporting"][k] for k in (
+                                              "need", "sharp", "week_handle_rank", "week_games", "swing_rank",
+                                              "swing_games", "odds_as_of")}})
             block["games"].append({
                 "event_id": gid, "home": home, "away": away, "kickoff": _iso(to_epoch(g.commence_time)), "rankings": rk,
                 "reference": {"home_spread": ref_spread, "total": ref_total, "as_of": _iso(ref_at),
@@ -635,9 +643,10 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                 "need_stability": _need_stability(ws_, var_splits.get(gid, {})),
                 "reconstructed_wagers": sum(1 for w in ws_ if to_epoch(w["accepted_at"]) < opened_t),
                 "need": _need_summary(need) if need else None, "label": LABEL})
-        block["official"] = {"rules_version": OFF.RULES_VERSION, "rules_hash": OFF.RULES_HASH, "rules": OFF.RULES,
-                             "names": OFF.NAMES, "label": OFF.LABEL, "registered_at": OFF.REGISTERED_AT,
-                             "evaluated_at": _iso(T), "ledger_time": _iso(wm_t), "games": off_games}
+        block["official"] = {"label": OFF.LABEL, "registered_at": STR.REGISTERED_AT, "superseded": OFF.RULES_VERSION,
+                             "evaluated_at": _iso(T), "ledger_time": _iso(wm_t),
+                             "strategies": {st: {"market": cfg["market"], "rules_hash": STR.HASHES[st], "rules": cfg,
+                                                 "games": off_games[st]} for st, cfg in STR.STRATEGIES.items()}}
     return out
 
 
