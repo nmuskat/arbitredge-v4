@@ -195,7 +195,7 @@ def official_step(snap, snaps, now, need_dir=None, results_dir=None, need_out=No
     res = R.match([{k: d[k] for k in ("sport", "event_id", "home", "away", "kickoff")} for d in all_dec], docs, matcher)
     from official_v5 import strategies as STR
     snap["official_needs"] = {"status": "OK", "label": OFF.LABEL, "strategies": list(STR.STRATEGIES),
-                              "superseded": [OFF.RULES_VERSION],
+                              "superseded": [OFF.RULES_VERSION, *STR.RETIRED],
                               "records_this_build": len(fresh), "sealed_this_build": len(new),
                               "sealed_total": len(all_dec), "reports": OFF.report_all(all_dec, res)}
 
@@ -525,7 +525,7 @@ function sharpPublicCard(){const gs=bookGames().filter(g=>g.sharp_public);const 
   el("p",{},el("b",{},vs)," of "+rows.length+" game-markets: SHARP VS PUBLIC. Click a game for every side's percentages, dollars and tickets."),
   rows.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Market"),el("th",{},"Signal"),el("th",{},"Rec majority (of rec handle)"),el("th",{},"Sharp majority (of sharp handle)"),el("th",{class:"num"},"Sharp % of handle"),el("th",{class:"num hide-s"},"Sharp $ / tickets"),el("th",{class:"num hide-s"},"Rec $ / tickets"))),el("tbody",{},rows))):el("p",{class:"mute"},"No modeled wagers on upcoming games."))}
 const OFFB={OFFICIAL:"OK",WATCHLIST:"WATCH",PASS:"INFO",EARLY:"INFO",NO_FINAL_EVALUATION:"STALE"};
-const OFS={"official_needs.spread.v2":"Spreads","official_needs.total.v1":"Totals","official_needs.v1":"Spreads (v1, superseded)"};
+const OFS={"official_needs.spread.v3":"Spreads","official_needs.total.v2":"Totals","official_needs.spread.v2":"Spreads (v2, retired: Public Pressure 65%)","official_needs.total.v1":"Totals (v1, retired: Public Pressure 65%)","official_needs.v1":"Spreads (v1, superseded)"};
 const ofKpi=(v,t)=>el("div",{class:"kpi"},el("b",{},String(v)),t);
 function ofPick(g,mk){const p=g.pick||{};if(!p.side)return"no Need side";
  const sel=(mk==="total"?String(p.side).toUpperCase()+" "+(p.line==null?"–":p.line):(p.team||p.side)+" "+ln(p.line));
@@ -558,7 +558,7 @@ function ofRecord(ON,sp){const RS=(ON||{}).reports;if(!RS)return card(el("p",{},
 R.official=()=>{const bk=S().book||{},O=bk.official,ON=D.official_needs||{},sp=st.sport;
  const out=[card(el("h2",{},badge("EXPERIMENTAL","WATCH")," Official ArbitrEdge Needs · "+(sp==="nfl"?"NFL":"CFB Top-25")),
   el("p",{class:"small"},(O&&O.label)||ON.label||""),
-  el("p",{class:"small mute"},"Strategies official_needs.spread.v2 and official_needs.total.v1, each applied to its own market with its own handle and liability rankings. OFFICIAL needs both required rules (stable Need, valid data) plus at least 3 of High Handle, Public Pressure, Sharp Alignment and High Liability: 6/6 is PERFECT, 5/6 is STANDARD (the failed rule is shown). WATCHLIST: both required rules plus 2 of the 4. Within 24 hours of kickoff each evaluation is frozen; the last one before kickoff decides and must be from the final 3 hours, otherwise the game is sealed NO FINAL EVALUATION and is never official. Graded at the frozen line and price; never created after the fact. Research thresholds, not proven profitable; the site's default decision remains NO BET."+(O&&O.superseded?" Records made under "+O.superseded+" are kept, sealed and graded under their own rules.":"")))];
+  el("p",{class:"small mute"},"Strategies official_needs.spread.v3 and official_needs.total.v2, each applied to its own market with its own handle and liability rankings (Public Pressure: at least 60% of recreational handle and a recreational ticket majority against the Need). OFFICIAL needs both required rules (stable Need, valid data) plus at least 3 of High Handle, Public Pressure, Sharp Alignment and High Liability: 6/6 is PERFECT, 5/6 is STANDARD (the failed rule is shown). WATCHLIST: both required rules plus 2 of the 4. Within 24 hours of kickoff each evaluation is frozen; the last one before kickoff decides and must be from the final 3 hours, otherwise the game is sealed NO FINAL EVALUATION and is never official. Graded at the frozen line and price; never created after the fact. Research thresholds, not proven profitable; the site's default decision remains NO BET."+(O&&O.superseded?" Records made under "+O.superseded+" are kept, sealed and graded under their own rules.":"")))];
  if(!O||!O.strategies)out.push(card(el("p",{},badge("UNAVAILABLE","UNAVAILABLE")," No Official Needs evaluation in this build.")));
  else{out.push(card(el("p",{class:"small mute"},"Evaluated "+local(O.evaluated_at)+" from the ledger as of "+local(O.ledger_time)+". Strategies registered "+local(O.registered_at)+".")));
   for(const[st,X]of Object.entries(O.strategies))out.push(...ofMarket(st,X))}

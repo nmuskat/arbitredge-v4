@@ -197,7 +197,7 @@ def _site(tmp_path, T, registered, monkeypatch, need_in=None):
     from web_v4 import live_site
     from official_v5 import strategies as STR
     monkeypatch.setattr(OFF, "REGISTERED_AT", registered)
-    monkeypatch.setattr(STR, "REGISTERED_AT", registered)
+    monkeypatch.setattr(STR, "REGISTERED", {k: registered for k in STR.ALL})
     live = build_store(end=T)
     out = LB.build(new_book(), live, T, [poll(T0 - 86400)], bettors=500, variants={},
                    book_in=str(tmp_path / "book"), book_out=str(tmp_path / "book"))
@@ -213,20 +213,20 @@ def test_builds_freeze_records_in_the_window_and_seal_the_last_one_after_kickoff
     t1 = KICK["n1"] - 3 * 3600
     s1 = _site(tmp_path, t1, "2026-10-01T00:00:00Z", monkeypatch)
     strategies = s1["sports"]["nfl"]["book"]["official"]["strategies"]
-    assert set(strategies) == {"official_needs.spread.v2", "official_needs.total.v1"}
-    g = {x["event_id"]: x for x in strategies["official_needs.spread.v2"]["games"]}
+    assert set(strategies) == {"official_needs.spread.v3", "official_needs.total.v2"}
+    g = {x["event_id"]: x for x in strategies["official_needs.spread.v3"]["games"]}
     n1 = next(v for k, v in g.items() if v["home"] == "Kansas City Chiefs")
     assert n1["frozen"] and n1["status"] in ("OFFICIAL", "WATCHLIST", "PASS")
     assert all(x["status"] == "EARLY" and not x["frozen"] for x in g.values() if x is not n1)   # > 24 h away
     assert s1["official_needs"]["records_this_build"] >= 1 and s1["official_needs"]["sealed_this_build"] == 0
     recs = NT.load(str(tmp_path / "need"), OFF.SNAP_PREFIX + "*.json.gz")
-    assert recs and all(r["format"] in ("official_needs.spread.v2", "official_needs.total.v1")
+    assert recs and all(r["format"] in ("official_needs.spread.v3", "official_needs.total.v2")
                         and r["engine_version"].startswith("sportsbook_v5") for r in recs)
     assert not any(r["format"] == "official_needs.v1" for r in recs)          # the build no longer makes v1 records
     t2 = KICK["n1"] + OFF.SEAL_GRACE_S + 600
     s2 = _site(tmp_path, t2, "2026-10-01T00:00:00Z", monkeypatch)
     dec = NT.load(str(tmp_path / "need"), OFF.DEC_PREFIX + "*.json.gz")
-    for st in ("official_needs.spread.v2", "official_needs.total.v1"):      # one decision per game AND strategy
+    for st in ("official_needs.spread.v3", "official_needs.total.v2"):      # one decision per game AND strategy
         n1rec = [r for r in recs if r["home"] == "Kansas City Chiefs" and r["strategy"] == st]
         d = [x for x in dec if x["strategy"] == st]
         assert len(d) == 1 and d[0]["snapshot"]["record_hash"] == max(n1rec, key=lambda r: r["built_at"])["record_hash"]
@@ -407,7 +407,7 @@ def total_wagers():
 
 def _ev(st, ws, *, fail=(), taken=None, offer=None):
     taken = taken if taken is not None else K - 3600
-    m = STR.STRATEGIES[st]["market"]
+    m = STR.ALL[st]["market"]
     nd = STR._need(STR.market_wagers(ws, m), m)
     handles = {"g1": 1e9 if "top_handle" not in fail else 1.0, "a": 5.0, "b": 5.0, "c": 5.0}
     swings = {"g1": (nd["swing"] or 0) if "top_swing" not in fail else -1, "a": 0.5, "b": 0.5, "c": 0.5}
@@ -420,11 +420,11 @@ def _ev(st, ws, *, fail=(), taken=None, offer=None):
 
 def test_new_strategies_are_versioned_separately_with_v1_thresholds():
     for st in (SP, TO):
-        R = STR.STRATEGIES[st]
+        R = STR.ALL[st]
         for k in ("stable_need", "top_handle", "rec_opposes", "sharp_supports", "top_swing", "data_valid"):
             assert R[k] == OFF.RULES[k], (st, k)                          # same thresholds as v1, nothing lowered
         assert R["official"] == {"mandatory": ["stable_need", "data_valid"], "min_other_passes": 3}
-    assert STR.HASHES == {SP: "8f5a15e92b21b385c263f252ec1f7ad14228b9bc4bd024b8662a04ccfbdd467e", TO: "617ece6b2274655d051f67c6eb932882057479a73bd3f291010f4fad4c6a07eb"}     # pinned: any change needs a new version
+    assert {k: STR.HASHES[k] for k in (SP, TO)} == {SP: "8f5a15e92b21b385c263f252ec1f7ad14228b9bc4bd024b8662a04ccfbdd467e", TO: "617ece6b2274655d051f67c6eb932882057479a73bd3f291010f4fad4c6a07eb"}     # pinned: any change needs a new version
     assert OFF.RULES_VERSION == "official_needs.v1" and SP != OFF.RULES_VERSION
 
 
@@ -514,6 +514,68 @@ def test_strategies_seal_and_grade_separately_and_v1_records_keep_their_own_rule
 
 def test_new_strategy_records_are_prospective_only():
     with pytest.raises(ValueError, match="never retroactive"):
-        _srec(SP, qualifying_wagers(), to_epoch(STR.REGISTERED_AT) - 60, K - 60)
+        _srec(SP, qualifying_wagers(), to_epoch(STR.REGISTERED[SP]) - 60, K - 60)
     with pytest.raises(ValueError, match="before kickoff"):
         _srec(TO, total_wagers(), K - 60, K + 60)
+
+
+
+# ------------------------------------------------------------------ official_needs.spread.v3 / total.v2 (Public Pressure 60%)
+
+SP3, TO2 = "official_needs.spread.v3", "official_needs.total.v2"
+
+
+def test_v3_v2_differ_from_their_predecessors_only_in_the_public_pressure_handle_share():
+    assert set(STR.STRATEGIES) == {SP3, TO2} and set(STR.RETIRED) == {SP, TO}
+    for new, old in ((SP3, SP), (TO2, TO)):
+        a, b = STR.ALL[new], STR.ALL[old]
+        assert a["rec_opposes"] == {"min_rec_handle_share": 0.60, "min_rec_ticket_share_exclusive": 0.50}
+        assert {k: v for k, v in a.items() if k != "rec_opposes"} == {k: v for k, v in b.items() if k != "rec_opposes"}
+    assert STR.HASHES[SP] == "8f5a15e92b21b385c263f252ec1f7ad14228b9bc4bd024b8662a04ccfbdd467e" and STR.HASHES[TO] == "617ece6b2274655d051f67c6eb932882057479a73bd3f291010f4fad4c6a07eb"     # the retired rule sets are unchanged
+    assert STR.HASHES[SP3] == "f048dae2af2206ca9e9a2f3039ebcfc284e490dd4ef606df0a25871a8e4695d4" and STR.HASHES[TO2] == "8d7023fd8782de7423d4f9aad8232dad80dc704eae58be394112c483c12e6e3d"
+    assert STR.REGISTERED[SP3] == STR.REGISTERED[TO2] == "2026-10-31T14:45:00Z"
+
+
+def _rec62(st):
+    """Recreational handle 62.5% against the Need with a ticket majority: passes Public Pressure at 60%, not 65%."""
+    total = st in (TO, TO2)
+    mk = _tw if total else _w
+    pub, need = ("over", "under") if total else ("away", "home")
+    base = (total_wagers if total else qualifying_wagers)()
+    rec = [mk("REC_CASUAL", pub, 50) for _ in range(100)] + [mk("REC_CASUAL", need, 50) for _ in range(60)]
+    return [w for w in base if w["archetype"] == "SHARP"] + rec
+
+
+@pytest.mark.parametrize("new,old", [(SP3, SP), (TO2, TO)])
+def test_sixty_percent_public_pressure_passes_where_sixty_five_fails(new, old):
+    ws = _rec62(new)
+    r_new = next(r for r in _ev(new, ws)["rules"] if r["id"] == "rec_opposes")
+    r_old = next(r for r in _ev(old, ws)["rules"] if r["id"] == "rec_opposes")
+    assert r_new["pass"] and not r_old["pass"] and "62.5% of rec handle" in r_new["value"]
+    assert _ev(new, ws)["classification"] == "OFFICIAL" and _ev(old, ws, fail=())["score"] == "5/6"
+
+
+@pytest.mark.parametrize("new", [SP3, TO2])
+def test_ticket_majority_is_still_required_at_sixty_percent(new):
+    total = new == TO2
+    mk = _tw if total else _w
+    pub, need = ("over", "under") if total else ("away", "home")
+    base = (total_wagers if total else qualifying_wagers)()
+    rec = [mk("REC_CASUAL", pub, 400) for _ in range(30)] + [mk("REC_CASUAL", need, 10) for _ in range(80)]
+    ev = _ev(new, [w for w in base if w["archetype"] == "SHARP"] + rec)
+    assert not next(r for r in ev["rules"] if r["id"] == "rec_opposes")["pass"]
+
+
+def test_records_of_old_and_new_strategies_seal_and_grade_separately():
+    old_sp = _srec(SP, qualifying_wagers(), K - 1800, K - 1700)        # frozen before the switch
+    old_to = _srec(TO, total_wagers(), K - 1800, K - 1700)
+    new_sp = _srec(SP3, qualifying_wagers(), K - 900, K - 800)
+    new_to = _srec(TO2, total_wagers(), K - 900, K - 800)
+    d = OFF.seal([old_sp, old_to, new_sp, new_to], [], K + 99999)
+    assert {OFF.strategy_of(x) for x in d} == {SP, TO, SP3, TO2} and len(d) == 4
+    by = {OFF.strategy_of(x): x for x in d}
+    assert by[SP]["snapshot"]["record_hash"] == old_sp["record_hash"] and by[SP]["snapshot"]["rules_hash"] == STR.HASHES[SP]
+    rep = OFF.report_all(d, {("nfl", "g1"): {"home_score": 27, "away_score": 17}})
+    assert set(rep) == {SP, TO, SP3, TO2} and all(rep[k]["official"]["overall"]["selections"] == 1 for k in rep)
+    with pytest.raises(ValueError, match="never retroactive"):
+        _srec(SP3, qualifying_wagers(), to_epoch(STR.REGISTERED[SP3]) - 60, K - 60)

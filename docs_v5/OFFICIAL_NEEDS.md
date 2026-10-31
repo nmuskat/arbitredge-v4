@@ -56,3 +56,16 @@ Versioning: each strategy's rule set is hashed into every record (pinned in test
 records made before that are sealed, graded and reported under v1 only. Records, seals and grades are keyed by
 (sport, game, strategy), so versions never mix. The new strategies' registration time is 2026-10-31T05:00Z: no
 record before it.
+
+
+## Public Pressure at 60%: `official_needs.spread.v3` and `official_needs.total.v2` (2026-10-31)
+
+Owner request: Public Pressure passes at >= 60% (was 65%) of recreational handle against the Need; the recreational
+ticket majority (> 50%) and every other threshold and the 5/6 framework are unchanged. New strategies registered
+2026-10-31T14:45Z; `spread.v2` and `total.v1` are retired (rules and hashes unchanged): their frozen records are sealed,
+graded and reported under their own rules, and no new records are made under them.
+
+Comparison before the change, on production data of 2026-10-31: every one of the 108 records frozen that day
+(18 CFB games x 2 markets x 3 builds) keeps its classification at 60%; no CFB record lies between 60% and 65% of
+recreational handle with a ticket majority. At the latest evaluation two NFL games (both more than 24 h out) newly pass
+Public Pressure (Browns @ Steelers spread 62.3%, Raiders @ Jets total 63.8%) without changing class.

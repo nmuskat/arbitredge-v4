@@ -236,7 +236,7 @@ def _seal_window(strategy):
     if strategy == RULES_VERSION:
         return RULES["seal"]["final_record_max_minutes_before_kickoff"]
     from official_v5 import strategies as S
-    return S.STRATEGIES[strategy]["seal"]["final_record_max_minutes_before_kickoff"]
+    return S.ALL[strategy]["seal"]["final_record_max_minutes_before_kickoff"]
 
 
 def seal(snapshots, decisions, now):

@@ -1,8 +1,10 @@
 """
 official_v5/strategies.py -- Official ArbitrEdge Needs strategies after official_needs.v1 (EXPERIMENTAL MODEL SIGNALS).
 
-  official_needs.spread.v2   spreads (home/away)
-  official_needs.total.v1    game totals (over/under)
+  official_needs.spread.v2   spreads (home/away)        } retired 2026-10-31: records kept, sealed and graded
+  official_needs.total.v1    game totals (over/under)   } under their own rules
+  official_needs.spread.v3   spreads, Public Pressure at >= 60% of recreational handle (active)
+  official_needs.total.v2    totals, Public Pressure at >= 60% of recreational handle (active)
 
 Each strategy applies six rules to its OWN market, with that market's Book Need (modeled P&L), handle and liability
 rankings computed separately per market:
@@ -10,7 +12,8 @@ rankings computed separately per market:
   data_valid      (MANDATORY) directional Need, priced offer, odds <= 3 h old, ledger <= 3 h behind the build, within 24 h
                   of kickoff, >= 100 distinct bettors in the market, no bettor above 15% of the market's handle
   top_handle      High Handle: the market's handle ranks in the top 25% of the week's games
-  rec_opposes     Public Pressure: >= 65% of recreational handle and > 50% of recreational tickets against the Need
+  rec_opposes     Public Pressure: >= 65% (v3/v2: >= 60%) of recreational handle and > 50% of recreational tickets
+                  against the Need
   sharp_supports  Sharp Alignment: >= 60% of sharp handle on the Need side; >= 3 sharp wagers, >= 2 sharp customers,
                   no sharp customer above 70% of sharp handle, sharp handle >= 5% of the market's handle
   top_swing       High Liability: the book's P&L swing in the market ranks in the top 25% of the week's directional games
@@ -28,16 +31,18 @@ from sportsbook_v4.settlement import total_exposure
 from sportsbook_v4.util import json_hash, to_epoch
 from official_v5 import rules as V1
 
-REGISTERED_AT = "2026-10-31T05:00:00Z"     # these strategies' rules were fixed at this time; no record before it
+# when each strategy's rules were fixed: no record of a strategy is ever created before its time
+REGISTERED = {"official_needs.spread.v2": "2026-10-31T05:00:00Z", "official_needs.total.v1": "2026-10-31T05:00:00Z",
+              "official_needs.spread.v3": "2026-10-31T14:45:00Z", "official_needs.total.v2": "2026-10-31T14:45:00Z"}
 OTHERS = ("top_handle", "rec_opposes", "sharp_supports", "top_swing")
 MANDATORY = ("stable_need", "data_valid")
 
 
-def _rules(market):
+def _rules(market, min_rec_handle_share=0.65):
     return {"market": market,
             "stable_need": {"variants_required": 4},
             "top_handle": {"top_share": 0.25},
-            "rec_opposes": {"min_rec_handle_share": 0.65, "min_rec_ticket_share_exclusive": 0.50},
+            "rec_opposes": {"min_rec_handle_share": min_rec_handle_share, "min_rec_ticket_share_exclusive": 0.50},
             "sharp_supports": {"min_sharp_handle_share": 0.60, "min_sharp_wagers": 3, "min_sharp_bettors": 2,
                                "max_one_sharp_share": 0.70, "min_sharp_share_of_handle": 0.05},
             "top_swing": {"top_share": 0.25},
@@ -48,8 +53,12 @@ def _rules(market):
             "seal": {"final_record_max_minutes_before_kickoff": 180}}
 
 
-STRATEGIES = {"official_needs.spread.v2": _rules("spread"), "official_needs.total.v1": _rules("total")}
-HASHES = {k: json_hash(v) for k, v in STRATEGIES.items()}
+# earlier strategies: rules unchanged (hash pinned); their records are still sealed and graded, no new ones are made
+RETIRED = {"official_needs.spread.v2": _rules("spread"), "official_needs.total.v1": _rules("total")}
+# active strategies (owner request 2026-10-31): identical except Public Pressure at >= 60% of recreational handle
+STRATEGIES = {"official_needs.spread.v3": _rules("spread", 0.60), "official_needs.total.v2": _rules("total", 0.60)}
+ALL = {**RETIRED, **STRATEGIES}
+HASHES = {k: json_hash(v) for k, v in ALL.items()}
 SIDES = {"spread": ("home", "away"), "total": ("over", "under")}
 OPPOSITE = {"home": "away", "away": "home", "over": "under", "under": "over"}
 LABELS = {"stable_need": "Stable Book Need (all 4 sensitivity assumptions)", "data_valid": "Valid, fresh data and bettors",
@@ -132,7 +141,7 @@ def _pick(market, side, offer, game):
 def evaluate(strategy, *, game, wagers, week, need_stability, offer, odds_as_of, taken_at, built_at,
              enforce_window=True):
     """Rule results for one game in the strategy's market (pure; no side effects)."""
-    R = STRATEGIES[strategy]
+    R = ALL[strategy]
     m = R["market"]
     kick = to_epoch(game["kickoff"])
     ws = market_wagers(wagers, m)
@@ -227,7 +236,7 @@ def snapshot(strategy, *, sport, run, game, evaluation, taken_at, built_at):
     kick = to_epoch(game["kickoff"])
     if not (taken_at < kick and built_at < kick):
         raise ValueError("an Official Needs record must be taken before kickoff")
-    if taken_at < to_epoch(REGISTERED_AT):
+    if taken_at < to_epoch(REGISTERED[strategy]):
         raise ValueError("before the rules were registered: never retroactive")
     rec = {"format": strategy, "strategy": strategy, "rules_hash": HASHES[strategy], "label": V1.LABEL, "sport": sport,
            "event_id": game["event_id"], "home": game["home"], "away": game["away"], "kickoff": V1._iso(kick),

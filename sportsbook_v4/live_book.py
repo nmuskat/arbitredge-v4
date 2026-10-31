@@ -625,7 +625,7 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                     ns = STR.stability(base, variants_g, "_need" if m == "spread" else "_need_total")
                     ev = STR.evaluate(st, game=gm, wagers=ws_, week=off_week[st], need_stability=ns, offer=offers[m],
                                       odds_as_of=ref_at, taken_at=wm_t, built_at=T, enforce_window=in_window)
-                    frozen = in_window and wm_t >= to_epoch(STR.REGISTERED_AT)
+                    frozen = in_window and wm_t >= to_epoch(STR.REGISTERED[st])
                     if frozen:
                         block["official_snapshots"].append(STR.snapshot(st, sport=sport, run=block["audit"], game=gm,
                                                                         evaluation=ev, taken_at=wm_t, built_at=T))
@@ -643,7 +643,8 @@ def build(book_conn, live_conn, T, rankings_snapshots=None, bettors=10_000, vari
                 "need_stability": _need_stability(ws_, var_splits.get(gid, {})),
                 "reconstructed_wagers": sum(1 for w in ws_ if to_epoch(w["accepted_at"]) < opened_t),
                 "need": _need_summary(need) if need else None, "label": LABEL})
-        block["official"] = {"label": OFF.LABEL, "registered_at": STR.REGISTERED_AT, "superseded": OFF.RULES_VERSION,
+        block["official"] = {"label": OFF.LABEL, "registered_at": min(STR.REGISTERED[st] for st in STR.STRATEGIES),
+                             "superseded": ", ".join([OFF.RULES_VERSION, *STR.RETIRED]),
                              "evaluated_at": _iso(T), "ledger_time": _iso(wm_t),
                              "strategies": {st: {"market": cfg["market"], "rules_hash": STR.HASHES[st], "rules": cfg,
                                                  "games": off_games[st]} for st, cfg in STR.STRATEGIES.items()}}
