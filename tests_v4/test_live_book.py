@@ -451,3 +451,27 @@ def test_sensitivity_replays_are_reused_for_at_most_three_hours_and_only_for_the
         again(NOW + LB.SENSITIVITY_REFRESH_S, cache)
     with pytest.raises(AssertionError, match="replayed"):          # another run's cache: recomputed
         again(NOW + 60, {sp: dict(c, run_id="other") for sp, c in cache.items()})
+
+
+def test_pickem_away_line_negative_zero_survives_storage():
+    # advance() hashes the away line of a pick'em as -0.0; SQLite stores it as 0.0 (2026-11-01 NFL interval 27)
+    from sportsbook_v4 import persist
+    from sportsbook_v4.util import json_hash
+
+    def wager(i, side, hs, line):
+        return {"wager_id": f"w{i}", "market": "spread", "side": side, "accepted_home_spread": hs,
+                "accepted_line": line, "accepted_price": -110.0, "stake": 25.0,
+                "accepted_at": "2026-11-01T19:00:00.000000Z"}
+
+    in_memory = [wager(1, "away", 0.0, -0.0), wager(2, "home", 0.0, 0.0), wager(3, "away", -3.0, 3.0)]
+    recorded = persist._engine_wagers_hash(in_memory)
+    stored = [dict(w, accepted_line=w["accepted_line"] + 0.0) for w in in_memory]     # -0.0 -> 0.0
+    assert persist._engine_wagers_hash(stored) != recorded
+    assert persist.wagers_match_hash(stored, recorded)
+    assert persist.wagers_match_hash(in_memory, recorded)
+    # any real change still fails
+    assert not persist.wagers_match_hash([stored[0], stored[1], dict(stored[2], accepted_line=3.5)], recorded)
+    assert not persist.wagers_match_hash([stored[0], dict(stored[1], stake=26.0), stored[2]], recorded)
+    assert not persist.wagers_match_hash([dict(stored[0], accepted_home_spread=-1.0, accepted_line=1.0),
+                                          stored[1], stored[2]], recorded)
+    assert json_hash([0.0]) != json_hash([-0.0])

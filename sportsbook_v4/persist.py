@@ -42,6 +42,26 @@ def _engine_wagers_hash(wagers):
                        w["stake"], w["accepted_at"]] for w in wagers])
 
 
+def _engine_line(w):
+    """The accepted line exactly as advance() held it in memory. advance() derives a spread line as
+    home_spread (home) or -home_spread (away), so the away side of a pick'em (home_spread 0) is -0.0.
+    SQLite stores -0.0 as 0.0, so a stored row loses that sign; it is rebuilt here from the stored
+    accepted_home_spread and side (no other value is changed)."""
+    hs, line = w.get("accepted_home_spread"), w["accepted_line"]
+    if w["market"] == "spread" and hs is not None and line == 0 and hs == 0:
+        return hs if w["side"] == "home" else -hs
+    return line
+
+
+def wagers_match_hash(wagers, recorded):
+    """True when the stored wagers reproduce the interval's recorded wagers_hash: either as stored,
+    or with the sign of a pick'em away line (-0.0) restored as the engine computed it."""
+    if _engine_wagers_hash(wagers) == recorded:
+        return True
+    return json_hash([[w["wager_id"], w["market"], w["side"], _engine_line(w), w["accepted_price"],
+                       w["stake"], w["accepted_at"]] for w in wagers]) == recorded
+
+
 def _body_hash(d):
     keys = ("format", "population", "run", "interval", "wagers") + tuple(
         k for k in ("bankroll_snapshot", "v5_params_hash") if k in d)
@@ -139,7 +159,7 @@ def load_dir(conn, book_dir):
         if iv["seq"] != s["last_seq"] + 1 or iv["interval_start"] != s["watermark"]:
             raise LedgerIntegrityError(f"run {rid[:12]}: interval seq {iv['seq']} does not continue the ledger "
                                        f"(expected seq {s['last_seq'] + 1} starting {s['watermark']})")
-        if (len(wagers) != iv["accepted"] or _engine_wagers_hash(wagers) != iv["wagers_hash"]
+        if (len(wagers) != iv["accepted"] or not wagers_match_hash(wagers, iv["wagers_hash"])
                 or any(w["run_id"] != rid or w["interval_seq"] != iv["seq"] for w in wagers)):
             raise LedgerIntegrityError(f"run {rid[:12]} interval {iv['seq']}: wagers do not match the interval record")
         for w in wagers:
