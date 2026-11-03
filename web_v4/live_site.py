@@ -503,23 +503,52 @@ const SPC={SHARP_VS_PUBLIC:"WATCH",ALIGNED:"OK",MIXED:"INFO",INSUFFICIENT:"INFO"
 const spSide=(g,bm,sd)=>bm==="total"?sd:(sd==="home"?g.home:g.away);
 const spPct=x=>x==null?"–":x.toFixed(1)+"%";
 function spBadge(x){return x&&x.status==="OK"?badge(x.display,SPC[x.classification]):badge("NO WAGERS","INFO")}
+const spVal=(bm,sd,l)=>bm==="total"?(sd==="over"?-l:l):l;
+const spNum=(g,bm,sd,l)=>bm==="total"?(sd==="over"?"Over ":"Under ")+l:bm==="spread"?spSide(g,bm,sd)+" "+(l===0?"PK":ln(l)):spSide(g,bm,sd);
+const spDec=a=>a>0?1+a/100:1+100/Math.abs(a);
+function spNow(g,bm,sd){const b=(S().games||[]).find(x=>x.event_id===g.event_id);const m=b&&b.markets&&b.markets[BMK[bm]];
+ if(!m||m.status!=="OK")return null;const cons=bm==="spread"?(sd==="home"?m.line:-m.line):bm==="total"?m.line:null;
+ let top=null;for(const[k,q]of Object.entries(m.books||{})){const v=q&&q.fresh&&q[sd];if(!v||v[0]==null)continue;
+  const l=bm==="moneyline"?null:v[1];if(bm!=="moneyline"&&l==null)continue;
+  const key=[bm==="moneyline"?0:spVal(bm,sd,l),spDec(v[0])];
+  if(!top||key[0]>top.key[0]||(key[0]===top.key[0]&&key[1]>top.key[1]))top={key,book:k,line:l,price:v[0]}}
+ return{line:cons,best:(m.best||{})[sd],top,as_of:b.as_of||S().observed_at}}
+function spGot(g,bm,sd,b){if(!b)return"–";if(bm==="moneyline")return"last "+am(b.last_price)+" ("+local(b.last_at)+")";
+ const rng=b.min_line===b.max_line?spNum(g,bm,sd,b.min_line):spNum(g,bm,sd,b.min_line)+" to "+(bm==="spread"?ln(b.max_line):b.max_line);
+ return rng+" · last "+(bm==="spread"?(b.last_line===0?"PK":ln(b.last_line)):b.last_line)+" "+am(b.last_price)+" ("+local(b.last_at)+")"}
+function spMove(g,bm,sd,b,n){if(!b||!n)return"";if(bm==="moneyline"){if(!n.best)return"";const d=spDec(n.best.price)-spDec(b.last_price);
+  return Math.abs(d)<1e-9?"same price as the sharps' last bet":d<0?"price now WORSE than the sharps' last bet":"price now better than the sharps' last bet"}
+ if(n.line==null||b.avg_line==null)return"";const d=Math.round((spVal(bm,sd,n.line)-spVal(bm,sd,b.avg_line))*10)/10;
+ return Math.abs(d)<0.05?"same number the sharps got (on average)":d<0?"number now "+Math.abs(d)+" pt WORSE than the sharps got (on average)":"number now "+d+" pt better than the sharps got (on average)"}
+function spNowTxt(g,bm,sd,n){if(!n)return"no current price";const p=[];
+ if(bm!=="moneyline"&&n.line!=null)p.push("market "+spNum(g,bm,sd,n.line)+(n.best?" · best "+am(n.best.price)+" ("+n.best.book+")":""));
+ else if(n.best)p.push(spSide(g,bm,sd)+" best "+am(n.best.price)+" ("+n.best.book+")");
+ if(bm!=="moneyline"&&n.top&&n.top.line!==n.line)p.push("best number "+spNum(g,bm,sd,n.top.line)+" "+am(n.top.price)+" ("+n.top.book+")");
+ return p.join(" · ")}
 function spTable(g,bm,x){const sides=bm==="total"?["over","under"]:["away","home"];const R_=x.recreational,S_=x.sharp;
  const row=(lbl,f)=>el("tr",{},el("td",{class:"small"},lbl),...sides.map(sd=>el("td",{class:"num small"},f(sd))));
  return el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},""),...sides.map(sd=>el("th",{class:"num"},spSide(g,bm,sd))))),
   el("tbody",{},row("Rec handle % (of rec handle)",sd=>spPct(R_.sides[sd].handle_pct)),row("Sharp handle % (of sharp handle)",sd=>spPct(S_.sides[sd].handle_pct)),
    row("Rec ticket %",sd=>spPct(R_.sides[sd].ticket_pct)),row("Sharp ticket %",sd=>spPct(S_.sides[sd].ticket_pct)),
-   row("Rec $ / tickets",sd=>money(R_.sides[sd].handle)+" / "+R_.sides[sd].tickets),row("Sharp $ / tickets",sd=>money(S_.sides[sd].handle)+" / "+S_.sides[sd].tickets))))}
+   row("Rec $ / tickets",sd=>money(R_.sides[sd].handle)+" / "+R_.sides[sd].tickets),row("Sharp $ / tickets",sd=>money(S_.sides[sd].handle)+" / "+S_.sides[sd].tickets),
+   row("Sharps got",sd=>spGot(g,bm,sd,S_.sides[sd].bet_at)),row("Public got",sd=>spGot(g,bm,sd,R_.sides[sd].bet_at)),
+   row("Now (last odds collected)",sd=>spNowTxt(g,bm,sd,spNow(g,bm,sd))),
+   row("Move since sharps bet",sd=>spMove(g,bm,sd,S_.sides[sd].bet_at,spNow(g,bm,sd))||"–"))))}
 function spDetail(g,bm,x){if(!x||x.status!=="OK")return el("div",{},el("b",{},MK[BMK[bm]]," "),spBadge(x));
  return el("div",{},el("p",{},el("b",{},MK[BMK[bm]]," "),spBadge(x)," ",el("span",{class:"small"},"Sharp handle "+spPct(x.sharp_share_of_handle_pct)+" of total "+money(x.total_handle)+" ("+x.total_tickets+" tickets; "+x.sharp.bettors+" sharp, "+x.recreational.bettors+" recreational customers)")),
   x.reasons.length?el("p",{class:"small mute"},x.reasons.join("; ")):null,spTable(g,bm,x))}
-const SP_NOTE="Public = this book's SIMULATED recreational customers, not real sportsbook betting splits. From accepted wagers in the immutable ledger; each percentage uses its own group's handle or tickets in that game and market. SHARP VS PUBLIC needs at least 3 sharp wagers from 2+ sharp customers, no single sharp customer above 70% of sharp handle, sharp handle at least 5% of the market, 20+ recreational wagers, and a 55%+ handle majority in each group. The Need is computed from the book's modeled P&L and is independent of this label.";
+const SP_NOTE="Public = this book's SIMULATED recreational customers, not real sportsbook betting splits. From accepted wagers in the immutable ledger; each percentage uses its own group's handle or tickets in that game and market. SHARP VS PUBLIC needs at least 3 sharp wagers from 2+ sharp customers, no single sharp customer above 70% of sharp handle, sharp handle at least 5% of the market, 20+ recreational wagers, and a 55%+ handle majority in each group. The Need is computed from the book's modeled P&L and is independent of this label. Sharps got = the numbers the simulated sharps actually accepted (range, and their latest bet with its time). Now = the market at the last odds collection (see the age at the top); best number = the best line any tracked book offered for that side. Lines move: check the current number at your book before acting.";
 function sharpPublicCard(){const gs=bookGames().filter(g=>g.sharp_public);const f=st.f;const ms=f.market?[Object.keys(BMK).find(k=>BMK[k]===f.market)]:["spread","total","moneyline"];
  const rows=[];for(const g of gs)for(const bm of ms){const x=g.sharp_public[bm];if(!x)continue;
   const sides=bm==="total"?["over","under"]:["away","home"];const ok=x.status==="OK";
   const maj=gr=>ok&&x[gr].majority_side?spSide(g,bm,x[gr].majority_side)+" "+spPct(x[gr].sides[x[gr].majority_side].handle_pct):"–";
   rows.push(el("tr",{class:"game",on:{click:()=>openGame(g.event_id)}},el("td",{},g.away+" @ "+g.home),el("td",{},MK[BMK[bm]]),el("td",{},spBadge(x)),
-   el("td",{class:"small"},maj("recreational")),el("td",{class:"small"},maj("sharp")),el("td",{class:"num small"},ok?spPct(x.sharp_share_of_handle_pct):"–"),
-   el("td",{class:"num small hide-s"},ok?money(x.sharp.handle)+" / "+x.sharp.tickets:"–"),el("td",{class:"num small hide-s"},ok?money(x.recreational.handle)+" / "+x.recreational.tickets:"–")))}
+   el("td",{class:"small"},maj("recreational")),el("td",{class:"small"},maj("sharp")),
+el("td",{class:"num small"},ok?spPct(x.sharp_share_of_handle_pct):"–"),
+   el("td",{class:"num small hide-s"},ok?money(x.sharp.handle)+" / "+x.sharp.tickets:"–"),el("td",{class:"num small hide-s"},ok?money(x.recreational.handle)+" / "+x.recreational.tickets:"–")));
+  const sd=ok&&x.sharp.majority_side;if(sd){const b=x.sharp.sides[sd].bet_at,n=spNow(g,bm,sd),mv=spMove(g,bm,sd,b,n);
+   rows.push(el("tr",{class:"game sp-lines",on:{click:()=>openGame(g.event_id)}},el("td",{colspan:"8",class:"small"},el("div",{style:"position:sticky;left:0;max-width:calc(100vw - 80px);white-space:normal"},
+    el("div",{},el("b",{},"Sharps got: "),spGot(g,bm,sd,b)),el("div",{},el("b",{},"Now: "),spNowTxt(g,bm,sd,n)),mv?el("div",{},el("b",{},mv)):null))))}}
  const vs=rows.length?gs.reduce((n,g)=>n+ms.filter(bm=>(g.sharp_public[bm]||{}).classification==="SHARP_VS_PUBLIC").length,0):0;
  return card(el("h2",{},badge("MODELED"),"Sharp vs public (simulated customers)"),el("p",{class:"small"},SP_NOTE),
   el("p",{},el("b",{},vs)," of "+rows.length+" game-markets: SHARP VS PUBLIC. Click a game for every side's percentages, dollars and tickets."),

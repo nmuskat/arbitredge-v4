@@ -101,3 +101,21 @@ def test_every_built_game_carries_it_next_to_an_unchanged_need(tmp_path):
             if x["status"] == "OK":
                 assert x["total_tickets"] == g["splits"][m]["tickets"]
                 assert x["total_handle"] == pytest.approx(g["splits"][m]["handle"])
+
+
+def test_bet_at_reports_the_numbers_each_group_actually_got():
+    def bet(side, line, price, stake, at, arch="SHARP"):
+        x = w(arch, side, stake)
+        x.update(accepted_line=line, accepted_price=price, accepted_at=at)
+        return x
+    ws = [bet("home", -2.5, -110, 300, "2026-11-03T12:00:00.000000Z"),
+          bet("home", -3.0, -105, 100, "2026-11-05T12:00:00.000000Z"),
+          bet("away", -0.0, -110, 50, "2026-11-04T12:00:00.000000Z")] + rec("away", 25)
+    x = SP.market(ws, "spread")
+    b = x["sharp"]["sides"]["home"]["bet_at"]
+    assert (b["min_line"], b["max_line"], b["avg_line"]) == (-3.0, -2.5, -2.62)     # stake-weighted
+    assert (b["last_line"], b["last_price"], b["last_at"]) == (-3.0, -105, "2026-11-05T12:00:00.000000Z")
+    a = x["sharp"]["sides"]["away"]["bet_at"]
+    assert str(a["last_line"]) == "0.0" and str(a["min_line"]) == "0.0"              # never "-0.0"
+    assert x["recreational"]["sides"]["away"]["bet_at"] is None                      # no prices in these test rows
+    assert x["classification"] in ("SHARP_VS_PUBLIC", "ALIGNED", "MIXED", "INSUFFICIENT")

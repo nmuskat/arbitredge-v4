@@ -45,6 +45,24 @@ def _pct(x, d):
     return round(100 * x / d, 1) if d else None
 
 
+def _bet_at(sel):
+    """The numbers this group actually got on one side (display only): line range, stake-weighted average line,
+    and the most recent accepted wager's line, price and time. Lines are that side's own number."""
+    ws = [w for w in sel if w.get("accepted_price") is not None and w.get("accepted_at")]
+    if not ws:
+        return None
+    last = max(ws, key=lambda w: (w["accepted_at"], w.get("wager_id", "")))
+    lines = [w["accepted_line"] for w in ws if w.get("accepted_line") is not None]
+    stake = math.fsum(w["stake"] for w in ws if w.get("accepted_line") is not None)
+    avg = (math.fsum(w["accepted_line"] * w["stake"] for w in ws if w.get("accepted_line") is not None) / stake
+           if lines and stake else None)
+    z = lambda x: None if x is None else x + 0.0          # never show -0.0
+    return {"min_line": z(min(lines)) if lines else None, "max_line": z(max(lines)) if lines else None,
+            "avg_line": z(round(avg, 2)) if avg is not None else None,
+            "last_line": z(last.get("accepted_line")), "last_price": last["accepted_price"],
+            "last_at": last["accepted_at"], "first_at": min(w["accepted_at"] for w in ws)}
+
+
 def _group(ws, sides):
     handle = math.fsum(w["stake"] for w in ws)
     out = {"tickets": len(ws), "handle": round(handle, 2), "bettors": len({w["bettor_index"] for w in ws}),
@@ -53,7 +71,8 @@ def _group(ws, sides):
         sel = [w for w in ws if w["side"] == s]
         h = math.fsum(w["stake"] for w in sel)
         out["sides"][s] = {"tickets": len(sel), "handle": round(h, 2),
-                           "ticket_pct": _pct(len(sel), len(ws)), "handle_pct": _pct(h, handle)}
+                           "ticket_pct": _pct(len(sel), len(ws)), "handle_pct": _pct(h, handle),
+                           "bet_at": _bet_at(sel)}
     fav = [s for s in sides if handle and out["sides"][s]["handle"] / handle >= MAJORITY]
     out["majority_side"] = fav[0] if fav else None
     return out
