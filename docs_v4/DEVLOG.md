@@ -257,3 +257,20 @@ An intermediate version of the population cache ignored the sensitivity variants
 - no trend with pressure strength.
 
 See `docs_v4/NEED_TRACKER_HISTORY.md`. Thresholds unchanged.
+
+## 2026-11-06: Sharp follow list (EXPERIMENTAL) and a replay-portability finding
+
+**Sharp follow list** (`sportsbook_v4/sharp_follow.py`, top card of the Sharp Money tab, owner-requested). For every
+spread and total the simulated sharps bet, the side with more sharp dollars, tagged ONE_SIDE / SPLIT /
+SHARP_VS_PUBLIC / ALIGNED. Graded from the immutable ledger (wagers before kickoff), final scores and the market line
+last observed before kickoff. Patterns were chosen after seeing week 1, so records are split at
+`REGISTERED_AT` = 2026-11-06T23:45Z: before = in-sample, after = the only real test. Display only; NO BET.
+In-sample (graded at the close): CFB totals ANY 12-5, ONE_SIDE 6-2, SPLIT 6-3, SVP 5-3, ALIGNED 4-1; CFB spreads ANY
+9-8; NFL spreads ANY 9-6, totals ANY 8-6.
+
+**Finding, not fixed:** a from-scratch replay of the current weekly runs on this cloud machine diverges from the
+stored ledger from 2026-11-05 ~22:00Z (54/51 wagers), with identical inputs (the 158 shards the 13:21Z production
+build verified), Python 3.12.3, SQLite 3.45.1 and glibc 2.39. Production's own 12-hourly replay check passes on the
+GitHub runner, so production is self-consistent; the engine's floating-point decisions appear machine-dependent
+(likely last-bit differences in libm on different CPUs). Risk: a runner on different hardware could flag
+INTEGRITY_FAILED. Proposed (needs approval): round the engine's probability/utility comparisons before thresholds.

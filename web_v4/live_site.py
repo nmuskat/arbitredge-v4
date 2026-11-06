@@ -241,6 +241,33 @@ def settlement_step(snap, bconn, conn, snaps, now, results_dir=None, settle_dir=
                           "new_this_build": len(new), "corrections": sum(1 for s in allset if s["supersedes"]),
                           "open_overdue_48h": overdue, "problems": problems[:20], "reconciliation": rec,
                           "summary": BS.summary(rows, wagers, allset, active)}
+    try:
+        snap["sharp_follow"] = sharp_follow_step(bconn, conn, active, games, res, now)
+    except Exception as e:                       # a research display must never fail the build
+        snap["sharp_follow"] = {"status": "UNAVAILABLE", "reason": f"{type(e).__name__}: {e}", "label": "EXPERIMENTAL"}
+
+
+def sharp_follow_step(bconn, conn, active, games, res, now):
+    """SHARP FOLLOW LIST: simulated sharps' bigger side per spread/total, its tags and graded records."""
+    from market_v4 import asof
+    from sportsbook_v4 import sharp_follow as SF
+    from sportsbook_v4.util import to_epoch
+    cols = ("run_id", "canonical_game_id", "sport", "market", "side", "archetype", "stake", "bettor_index",
+            "accepted_line", "accepted_home_spread", "accepted_price", "accepted_at", "wager_id")
+    by_game = {}
+    for r in bconn.execute(f"SELECT {', '.join(cols)} FROM v4_wager WHERE market IN ('spread', 'total')"):
+        w = dict(zip(cols, r))
+        if w["run_id"] in active:
+            by_game.setdefault((w["sport"], w["canonical_game_id"]), []).append(w)
+    gs = {k: {**g, "kickoff": _iso(to_epoch(g["kickoff"]))} for k, g in games.items() if k in by_game}
+
+    def close_line(sport, eid, market):
+        ko = to_epoch(gs[(sport, eid)]["kickoff"])
+        st = asof.market_state(conn, eid, "spreads" if market == "spread" else "totals", ko - 1e-6,
+                               max_age_s=24 * 3600)
+        return st.get("line") if st.get("status") == "OK" else None
+
+    return SF.report(gs, by_game, res, close_line, _iso(now))
 
 
 def rebuild_store(shards_dir, db_path=":memory:"):
@@ -538,6 +565,40 @@ function spDetail(g,bm,x){if(!x||x.status!=="OK")return el("div",{},el("b",{},MK
  return el("div",{},el("p",{},el("b",{},MK[BMK[bm]]," "),spBadge(x)," ",el("span",{class:"small"},"Sharp handle "+spPct(x.sharp_share_of_handle_pct)+" of total "+money(x.total_handle)+" ("+x.total_tickets+" tickets; "+x.sharp.bettors+" sharp, "+x.recreational.bettors+" recreational customers)")),
   x.reasons.length?el("p",{class:"small mute"},x.reasons.join("; ")):null,spTable(g,bm,x))}
 const SP_NOTE="Public = this book's SIMULATED recreational customers, not real sportsbook betting splits. From accepted wagers in the immutable ledger; each percentage uses its own group's handle or tickets in that game and market. SHARP VS PUBLIC needs at least 3 sharp wagers from 2+ sharp customers, no single sharp customer above 70% of sharp handle, sharp handle at least 5% of the market, 20+ recreational wagers, and a 55%+ handle majority in each group. The Need is computed from the book's modeled P&L and is independent of this label. Sharps got = the numbers the simulated sharps actually accepted (range, and their latest bet with its time). Now = the market at the last odds collection (see the age at the top); best number = the best line any tracked book offered for that side. Lines move: check the current number at your book before acting.";
+function sfRec(r){if(!r)return"0-0";const n=r.W+r.L;return r.W+"-"+r.L+(r.P?"-"+r.P:"")+(n?" ("+Math.round(100*r.W/n)+"%)":"")}
+function sharpFollowCard(){const F=D.sharp_follow;const sp=st.sport;
+ const head=el("h2",{},badge("EXPERIMENTAL"),"Sharp follow list (simulated sharps)");
+ if(!F||F.status!=="OK")return card(head,el("p",{class:"mute"},"Unavailable"+(F&&F.reason?": "+F.reason:"")+"."));
+ const L=F.labels,R_=(F.records||{})[sp]||{},MKN={spread:"Spread",total:"Total"};
+ const intro=el("p",{class:"small"},badge("NO BET")," For every spread and total the simulated sharps bet: the side with more sharp dollars, tagged with the patterns reviewed after week 1. Records are graded at the market line last observed before kickoff. ",el("b",{},"Before "+local(F.registered_at)+" the patterns were chosen after seeing the results (in-sample, flattering); only games after that test them."),
+  " Simulated sharps, not real bettors. Not official plays.");
+ const recRows=[];for(const m of["total","spread"])for(const t of F.tags){const r=(R_[m]||{})[t];if(!r)continue;
+  recRows.push(el("tr",{},el("td",{class:"small"},L[t]),el("td",{class:"small"},MKN[m]),el("td",{class:"num small"},sfRec(r.before)),el("td",{class:"num small"},el("b",{},sfRec(r.forward)))))}
+ const recTable=recRows.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Pattern"),el("th",{},"Market"),el("th",{class:"num"},"Before (in-sample)"),el("th",{class:"num"},"Since registration"))),el("tbody",{},recRows))):el("p",{class:"mute"},"No graded games yet for this sport.");
+ const bks=(S().book||{}).games||[];const f=st.f;
+ const up=(F.upcoming||[]).filter(r=>r.sport===sp&&upcoming(r)&&gameMatch(r)&&(!f.market||BMK[r.market]===f.market));
+ const items=up.map(r=>{const g=bks.find(x=>x.event_id===r.event_id)||r;const x=(g.sharp_public||{})[r.market];const b=x&&x.sharp&&x.sharp.sides[r.side]?x.sharp.sides[r.side].bet_at:null;
+  const n=spNow(g,r.market,r.side);const sides=r.market==="total"?["over","under"]:["away","home"];
+  const nm=s=>r.market==="total"?(s==="over"?"Over":"Under"):(s==="home"?r.home:r.away);
+  const follow=n&&n.line!=null?spNum(g,r.market,r.side,n.line):nm(r.side);
+  const recs=r.tags.map(t=>{const q=(R_[r.market]||{})[t];return L[t]+": "+(q?sfRec(q.before)+" before / "+sfRec(q.forward)+" since":"no record")});
+  const mv=spMove(g,r.market,r.side,b,n);
+  return el("div",{class:"card game",style:"margin:8px 0;cursor:pointer",on:{click:()=>openGame(r.event_id)}},
+   el("div",{class:"small mute"},r.away+" @ "+r.home+" · "+local(r.kickoff)),
+   el("div",{},el("b",{},MKN[r.market]+": follow "+follow)," ",...r.tags.filter(t=>t!=="ANY").map(t=>badge(L[t],"WATCH"))),
+   el("div",{class:"small"},"Sharp $: "+sides.map(s=>nm(s)+" "+money(r.sharp_handle[s])+" ("+r.sharp_tickets[s]+" bets)").join(" / ")+" · "+r.sharp_bettors+" sharps · "+Math.round(100*r.sharp_share_on_side)+"% on the followed side"),
+   el("div",{class:"small"},el("b",{},"Sharps got: "),spGot(g,r.market,r.side,b)),
+   el("div",{class:"small"},el("b",{},"Now: "),spNowTxt(g,r.market,r.side,n)),mv?el("div",{class:"small"},el("b",{},mv)):null,
+   el("div",{class:"small mute"},"Pattern records: "+recs.join(" · ")))});
+ const done=(F.graded||[]).filter(r=>r.sport===sp).slice().reverse();
+ const gr=el("details",{},el("summary",{},"Graded games ("+done.length+" shown of "+F.graded_total+" across sports)"),
+  el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Followed"),el("th",{},"Tags"),el("th",{},"Result"))),
+   el("tbody",{},done.map(r=>{const nm=r.market==="total"?(r.side==="over"?"Over ":"Under ")+r.line:(r.side==="home"?r.home:r.away)+" "+(r.line==null?"":(r.line===0?"PK":ln(r.line)));
+    return el("tr",{},el("td",{class:"small"},r.away+" @ "+r.home+" ("+(r.period==="forward"?"since":"before")+")"),el("td",{class:"small"},MKN[r.market]+": "+nm),
+     el("td",{class:"small"},r.tags.filter(t=>t!=="ANY").map(t=>L[t]).join(", ")),el("td",{class:"small"},r.result?(r.result+" "+r.away_score+"-"+r.home_score):"no observed line"))})))));
+ return card(head,intro,el("h3",{},"Pattern records ("+(sp==="cfb"?"CFB":"NFL")+")"),recTable,
+  el("h3",{},"Upcoming plays fitting a pattern ("+up.length+")"),up.length?el("div",{},items):el("p",{class:"mute"},"None right now."),gr,
+  el("p",{class:"small mute"},F.basis+". "+F.version+"."))}
 function sharpPublicCard(){const gs=bookGames().filter(g=>g.sharp_public);const f=st.f;const ms=f.market?[Object.keys(BMK).find(k=>BMK[k]===f.market)]:["spread","total","moneyline"];
  const rows=[];for(const g of gs)for(const bm of ms){const x=g.sharp_public[bm];if(!x)continue;
   const sides=bm==="total"?["over","under"]:["away","home"];const ok=x.status==="OK";
@@ -594,7 +655,7 @@ R.official=()=>{const bk=S().book||{},O=bk.official,ON=D.official_needs||{},sp=s
  out.push(ofRecord(ON,sp));return out};
 R.sharp=()=>{const f=st.f;const rows=(S().sharp||[]).filter(r=>cfbGate(r.top25)&&(!f.market||r.market===f.market)&&upcoming(r)&&gameMatch(r));
  const ev=rows.filter(r=>r.status!=="INSUFFICIENT EVIDENCE");
- return[freshBanner(),cfbBanner(),sharpPublicCard(),card(el("h2",{},badge("EXPERIMENTAL"),"Sharp money (price movement)"),
+ return[freshBanner(),cfbBanner(),sharpFollowCard(),sharpPublicCard(),card(el("h2",{},badge("EXPERIMENTAL"),"Sharp money (price movement)"),
   el("p",{class:"small"},"Evidence from real price movement at market-making books versus retail books. Reverse line movement and ticket/handle divergence need real betting splits and are UNAVAILABLE. The score is uncalibrated; when the quote history is too thin the page says INSUFFICIENT EVIDENCE instead of guessing."),
   filters({market:1}),el("p",{},el("b",{},ev.length)," of "+rows.length+" game-markets show evidence."),
   el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Market"),el("th",{},"Status"),el("th",{class:"hide-s"},"Detail"))),
