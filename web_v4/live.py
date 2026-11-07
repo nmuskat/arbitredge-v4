@@ -34,9 +34,9 @@ def last_fetch(conn, sport, now=None):
 
 
 def events(conn, sport, after):
-    return [{"event_id": e, "kickoff": k, "home": h, "away": a} for e, k, h, a in conn.execute(
-        "SELECT event_id, MIN(commence), home, away FROM mkt_quote WHERE sport=? GROUP BY event_id "
-        "HAVING MIN(commence) > ? ORDER BY MIN(commence), home", (sport, after))]
+    evs = [{"event_id": e, "kickoff": k, "home": h, "away": a}
+           for e, (k, h, a) in asof.kickoffs(conn, sport=sport).items() if k > after]
+    return sorted(evs, key=lambda x: (x["kickoff"], x["home"]))
 
 
 def _side_quote(st, side):

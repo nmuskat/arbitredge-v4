@@ -274,3 +274,27 @@ build verified), Python 3.12.3, SQLite 3.45.1 and glibc 2.39. Production's own 1
 GitHub runner, so production is self-consistent; the engine's floating-point decisions appear machine-dependent
 (likely last-bit differences in libm on different CPUs). Risk: a runner on different hardware could flag
 INTEGRITY_FAILED. Proposed (needs approval): round the engine's probability/utility comparisons before thresholds.
+
+## 2026-11-07 — Kickoff times: use the feed's latest report, not the earliest ever seen
+
+Owner report: the dashboard showed some CFB games at 11:00 am (Central; noon ET) that kick off later.
+Cause: the Odds API lists CFB games without a set time at a placeholder (17:00Z = noon ET this week)
+and moves them once TV slots are announced. Every kickoff query used `MIN(commence)`, so the placeholder stuck.
+This week: Oregon @ Ohio State (real 3:30 pm ET), Cincinnati @ Houston, Iowa @ Northwestern, West Virginia @
+Texas Tech, Kentucky @ Tennessee, Georgia @ Ole Miss and others.
+
+Effects of the bug beyond the display:
+- `asof.observed_close` took the "close" at the placeholder, so a moved game's close was reported
+  unobserved (or taken hours early) in the line-shopping closing-EV analysis.
+- The collection scheduler (`actions_run`) planned close-window fetches around the placeholder, then dropped
+  the game as already started.
+
+Fix: `market_v4.asof.kickoffs()` returns each event's kickoff from its latest fetch (books disagreeing: most
+common value, ties to the later time; point in time with `as_of`). Used by the board, observed closes,
+line-shop events, collection scheduling, the stale-market check and `consumption_check`.
+
+Not changed: the synthetic book (`live_book.week_games`) freezes each weekly run's games, kickoffs included,
+when the run opens. Its trading cutoff, Need/Official snapshots and seals use that stored time (immutable
+ledger, replay-verified). This week, moved games stopped trading at the placeholder. The dashboard now shows
+the feed's time for upcoming games and notes "time moved; sim book closed <time>". A forward-only change
+(runs opened after a cutoff use the latest kickoff) is proposed, not built.

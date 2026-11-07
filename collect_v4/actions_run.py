@@ -31,6 +31,7 @@ sys.path.insert(0, os.path.join(HERE, "..", "infra", "devhost", "gateway"))
 import odds_gateway as og  # noqa: E402
 
 from collect_v4 import schedule_policy  # noqa: E402
+from market_v4 import asof  # noqa: E402
 from collect_v4.collector import BOOKS, MARKETS, SPORTS, Collector  # noqa: E402
 from edge_v4.odds_client import GatewayRefused  # noqa: E402
 
@@ -197,9 +198,8 @@ def run(state_in, out, env=os.environ, clock=time.time, opener=None, tier=None, 
             except GatewayRefused as e:
                 summary["refused"].append({"sport": sport, "status": e.status, "detail": str(e)})
                 continue
-            evs = sorted({(e, k, h, a) for e, k, h, a in col.conn.execute(
-                "SELECT event_id, MIN(commence), home, away FROM mkt_quote WHERE sport=? GROUP BY event_id",
-                (sport,)) if k > clock()}, key=lambda x: (x[1], x[0]))[:400]
+            evs = sorted({(e, k, h, a) for e, (k, h, a) in asof.kickoffs(col.conn, sport=sport).items()
+                          if k > clock()}, key=lambda x: (x[1], x[0]))[:400]
             fps = quote_fingerprints(col.conn, sport)
             st.update(odds_at=clock(), kickoffs=[k for _, k, _, _ in evs], events=[list(x) for x in evs],
                       last_reason=why, change_rate=schedule_policy.change_rate(st.get("quote_fp"), fps),

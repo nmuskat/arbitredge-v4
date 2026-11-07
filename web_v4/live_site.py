@@ -247,6 +247,29 @@ def settlement_step(snap, bconn, conn, snaps, now, results_dir=None, settle_dir=
         snap["sharp_follow"] = {"status": "UNAVAILABLE", "reason": f"{type(e).__name__}: {e}", "label": "EXPERIMENTAL"}
 
 
+def feed_kickoffs(snap, conn, now):
+    """Display fix: the kickoff of every UPCOMING game shown is the one the odds feed reports NOW. The feed lists
+    CFB games without a set time at a placeholder (e.g. noon ET) and moves them later; the synthetic book's weekly
+    run froze the time it saw when it opened, and its trading, snapshots and seals keep that time (immutable
+    ledger, unchanged). Rows whose time moved keep the book's time in `book_kickoff`."""
+    from market_v4 import asof
+    feed = {e: k for e, (k, _h, _a) in asof.kickoffs(conn).items() if k > now}
+
+    def walk(o):
+        if isinstance(o, dict):
+            eid, k = o.get("event_id"), o.get("kickoff")
+            if isinstance(eid, str) and isinstance(k, str) and eid in feed:
+                fk = _iso(feed[eid])
+                if fk != k:
+                    o["book_kickoff"], o["kickoff"] = k, fk
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+    walk(snap)
+
+
 def sharp_follow_step(bconn, conn, active, games, res, now):
     """SHARP FOLLOW LIST: simulated sharps' bigger side per spread/total, its tags and graded records."""
     from market_v4 import asof
@@ -357,6 +380,7 @@ function ageMin(iso){return iso?Math.max(0,(Date.now()-Date.parse(iso))/60000):I
 function freshness(iso){const a=ageMin(iso),p=D.freshness_policy;return a<=p.live_max_min?"LIVE":a<=p.delayed_max_min?"DELAYED":"STALE"}
 function fmtAge(m){if(!isFinite(m))return"never";if(m<90)return Math.round(m)+" min";if(m<48*60)return(m/60).toFixed(1)+" h";return(m/1440).toFixed(1)+" days"}
 function local(iso){if(!iso)return"–";const d=new Date(iso);return d.toLocaleString([], {weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}
+function ko(g){return local(g.kickoff)+(g.book_kickoff?" (time moved; sim book closed "+local(g.book_kickoff)+")":"")}
 const S=()=>D.sports[st.sport];
 function cfbGate(rowTop25){if(st.sport!=="cfb")return true;if(st.f.unfiltered)return true;return rowTop25===true}
 function upcoming(g){return Date.parse(g.kickoff)>Date.now()}
@@ -409,7 +433,7 @@ function perfLine(h){if(!h)return el("p",{class:"mute"},"No analysis yet.");
  const ci=h.closing_ev;return el("p",{},badge(h.verdict==="INSUFFICIENT DATA"?"INSUFFICIENT DATA":h.verdict,"INFO")," ",
   h.opportunities+" opportunities, "+h.close_observed+" with an observed close"+(ci&&ci.mean!=null?", mean closing EV "+pct(ci.mean)+" (95% CI "+pct(ci.lo)+" to "+pct(ci.hi)+")":"")+".")}
 R.odds=()=>{const s=S(),f=st.f,ms=f.market?[f.market]:["spreads","totals","h2h"];const rows=[];
- for(const g of games()){const tr=el("tr",{class:"game",on:{click:()=>openGame(g.event_id)}},el("td",{},gameHead(g),el("div",{class:"mute small"},local(g.kickoff))));
+ for(const g of games()){const tr=el("tr",{class:"game",on:{click:()=>openGame(g.event_id)}},el("td",{},gameHead(g),el("div",{class:"mute small"},ko(g))));
   for(const m of ms){const x=g.markets[m]||{};const sides=Object.keys(x.best||{});
    let txt;if(x.status!=="OK")txt=el("span",{class:"mute"},x.status||"–");else{
     txt=el("div",{},...sides.map(sd=>{let b=x.best[sd];if(f.book){const q=(x.books||{})[f.book];b=q&&q[sd]?{book:f.book,price:q[sd][0],point:q[sd][1],fresh:q.fresh}:null}
@@ -445,7 +469,7 @@ R.splits=()=>{const f=st.f,bk=S().book||{};const head=[card(el("h2",{},"Betting 
    if(row.status!=="OK"){rows.push(el("div",{class:"small mute"},MK[m]+": no modeled wagers yet"));continue}
    rows.push(el("div",{},el("h3",{},MK[m]," ",row.sample==="LOW"?badge("LOW SAMPLE","LOW"):null,el("span",{class:"mute small"}," "+row.tickets+" tickets, $"+Math.round(row.handle).toLocaleString()+" handle")),
     ...Object.entries(row.sides).map(([sd,v])=>el("div",{},el("b",{class:"small"},sd),splitBar(v,(g.bands[bm]||{})[sd])))))}
-  out.push(card(el("div",{class:"game",on:{click:()=>openGame(g.event_id)}},el("h3",{},badge("MODELED"),gameHead(g)),el("div",{class:"mute small"},local(g.kickoff))),...rows))}
+  out.push(card(el("div",{class:"game",on:{click:()=>openGame(g.event_id)}},el("h3",{},badge("MODELED"),gameHead(g)),el("div",{class:"mute small"},ko(g))),...rows))}
  return[...head,...(out.length?out:[card(el("p",{class:"mute"},"No modeled wagers on upcoming games yet. The synthetic book only trades while real prices are being collected."))])]};
 R.need=()=>{const bk=S().book||{};const head=[card(el("h2",{},"ArbitrEdge Need"),el("p",{class:"small"},badge("MODELED"),
  " The outcome the synthetic book's own liability most needs, computed exactly from its accepted wagers (P&L over every final score). It is a liability fact about simulated customers, NOT a prediction, NOT fading the public, and NOT a betting recommendation. Need is not betting value: it says nothing about whether a price is good. Whether betting the Need has any advantage is being tested, on paper, in the Need Tracker tab. Estimated value lives only in the EV Scanner, as unvalidated paper candidates."),ledgerLine(),filters({}))];
@@ -497,7 +521,7 @@ R.tracker=()=>{const T=D.need_tracker;const head=card(el("h2",{},badge("MODELED"
   const fails=Object.entries(q.checks).filter(([k,c])=>!c.pass).map(([k])=>CHECK[k]);const nm=sd=>sd==="home"?r.home:r.away;
   return el("div",{class:"game",style:"padding:8px 0;border-bottom:1px solid var(--line)",on:{click:()=>openGame(r.event_id)}},
    el("div",{},el("b",{},r.away+" @ "+r.home)," ",r.alignment==="ALIGNED"?badge("ALIGNED","INFO"):r.alignment==="DISAGREE"?badge("DISAGREE","LOW"):badge(r.alignment,"INFO")," ",q.qualified?badge("QUALIFIED","WATCH"):null),
-   el("div",{class:"mute small"},local(r.kickoff)+" · snapshot "+local(r.taken_at)),
+   el("div",{class:"mute small"},ko(r)+" · snapshot "+local(r.taken_at)),
    r.need_stability?stability(r.need_stability,nm):null,
    r.ledger_basis&&r.ledger_basis.reconstructed_spread_wagers?el("div",{class:"small mute"},r.ledger_basis.reconstructed_spread_wagers+" of "+(r.ledger_basis.reconstructed_spread_wagers+r.ledger_basis.prospective_spread_wagers)+" spread wagers reconstructed from historical observed odds (run opened "+local(r.ledger_basis.run_opened_at)+")"):null,
    el("div",{class:"small"},"Book needs: ",n.side?el("b",{},nm(n.side)+" "+ln(pk.line)+" "+am(pk.price)):"balanced",pk.price_book?" ("+pk.price_book+")":""," · liability "+money(n.liability)+" · swing "+money(n.swing)),
@@ -518,7 +542,7 @@ R.tracker=()=>{const T=D.need_tracker;const head=card(el("h2",{},badge("MODELED"
    card(brkTable(rep.by_largest_bettor_share,"All Need sides by largest-bettor share"),brkTable(rep.by_week_handle_percentile,"By weekly handle percentile"),brkTable(rep.by_sport,"By sport")),
    card(el("h3",{},"Sealed decisions ("+(st.sport==="nfl"?"NFL":"CFB")+")"),
     graded.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Need pick"),el("th",{},"Status"),el("th",{},"Result"))),
-     el("tbody",{},graded.map(x=>el("tr",{},el("td",{},x.away+" @ "+x.home,el("div",{class:"mute small"},local(x.kickoff))),
+     el("tbody",{},graded.map(x=>el("tr",{},el("td",{},x.away+" @ "+x.home,el("div",{class:"mute small"},ko(x))),
       el("td",{class:"small"},x.need_side?((x.need_side==="home"?x.home:x.away)+" "+ln(x.line)+" "+am(x.price)):"–",el("div",{class:"mute"},(x.qualified?"qualified · ":"")+(x.alignment||""))),
       el("td",{class:"small"},x.status,x.decision_status!=="OK"?el("div",{class:"mute"},x.decision_status):null),
       el("td",{class:"small"},x.status==="GRADED"?(x.away_score+"–"+x.home_score+" (away–home): "+x.ats+(x.units!=null?", "+(x.units>=0?"+":"")+x.units.toFixed(2)+"u":"")):"–")))))):el("p",{class:"mute"},"No sealed decisions yet."))]};
@@ -584,7 +608,7 @@ function sharpFollowCard(){const F=D.sharp_follow;const sp=st.sport;
   const recs=r.tags.map(t=>{const q=(R_[r.market]||{})[t];return L[t]+": "+(q?sfRec(q.before)+" before / "+sfRec(q.forward)+" since":"no record")});
   const mv=spMove(g,r.market,r.side,b,n);
   return el("div",{class:"card game",style:"margin:8px 0;cursor:pointer",on:{click:()=>openGame(r.event_id)}},
-   el("div",{class:"small mute"},r.away+" @ "+r.home+" · "+local(r.kickoff)),
+   el("div",{class:"small mute"},r.away+" @ "+r.home+" · "+ko(r)),
    el("div",{},el("b",{},MKN[r.market]+": follow "+follow)," ",...r.tags.filter(t=>t!=="ANY").map(t=>badge(L[t],"WATCH"))),
    el("div",{class:"small"},"Sharp $: "+sides.map(s=>nm(s)+" "+money(r.sharp_handle[s])+" ("+r.sharp_tickets[s]+" bets)").join(" / ")+" · "+r.sharp_bettors+" sharps · "+Math.round(100*r.sharp_share_on_side)+"% on the followed side"),
    el("div",{class:"small"},el("b",{},"Sharps got: "),spGot(g,r.market,r.side,b)),
@@ -625,13 +649,13 @@ function ofTier(g){if(g.status!=="OFFICIAL")return null;const f=(g.rules||[]).fi
  return g.tier==="PERFECT"?badge("PERFECT 6/6","OK"):el("span",{},badge("STANDARD 5/6","WATCH"),el("span",{class:"small"}," failed: "+f.join(", ")))}
 function ofCard(g,mk){return card(el("h3",{},badge(g.status==="EARLY"?"EARLY · indicates "+g.classification:g.status,OFFB[g.status]),g.status==="OFFICIAL"?badge("EXPERIMENTAL MODEL SIGNAL","WATCH"):null," "+g.away+" @ "+g.home),
  g.status==="OFFICIAL"?el("p",{},ofTier(g)):null,
- el("p",{},el("b",{},(mk==="total"?"Total Need: ":"Spread Need: ")+ofPick(g,mk))," · "+(g.score||"")+" rules · kickoff "+local(g.kickoff)),
+ el("p",{},el("b",{},(mk==="total"?"Total Need: ":"Spread Need: ")+ofPick(g,mk))," · "+(g.score||"")+" rules · kickoff "+ko(g)),
  el("p",{class:"small mute"},g.frozen?"Frozen in an immutable pre-kickoff record this build; the last record before kickoff decides.":(g.status==="EARLY"?"More than 24 hours before kickoff: provisional indication only, nothing frozen.":"Not frozen.")),ofRules(g))}
 function ofMarket(st,X){const mk=X.market,gs=X.games||[],n=k=>gs.filter(g=>g.status===k);const off=n("OFFICIAL"),wl=n("WATCHLIST"),ps=n("PASS"),ea=n("EARLY");
  const out=[card(el("h2",{},(mk==="total"?"Totals":"Spreads")+" · "+st),el("div",{class:"grid"},ofKpi(off.length,"Official ("+off.filter(g=>g.tier==="PERFECT").length+" perfect, "+off.filter(g=>g.tier==="STANDARD").length+" standard)"),ofKpi(wl.length,"Watchlist"),ofKpi(ps.length,"Pass"),ofKpi(ea.length,"more than 24 h away")))];
  out.push(...(off.length?off.map(g=>ofCard(g,mk)):[card(el("p",{},el("b",{},"0 Official "+(mk==="total"?"total":"spread")+" Needs")," on this slate right now."))]));
  if(wl.length)out.push(card(el("h3",{},"Watchlist ("+wl.length+")"),el("p",{class:"small mute"},"Both required rules and 2 of the other 4: not official.")),...wl.map(g=>ofCard(g,mk)));
- if(ps.length||ea.length)out.push(card(el("details",{},el("summary",{},"Pass ("+ps.length+") and more than 24 hours away ("+ea.length+")"),...[...ps,...ea].map(g=>el("div",{},el("p",{},badge(g.status==="EARLY"?"EARLY":"PASS","INFO")," "+g.away+" @ "+g.home+" · "+local(g.kickoff)+" · "+ofPick(g,mk)+" · "+(g.score||"")),el("p",{class:"small mute"},g.failed&&g.failed.length?"Fails: "+g.failed.join("; "):""))))));
+ if(ps.length||ea.length)out.push(card(el("details",{},el("summary",{},"Pass ("+ps.length+") and more than 24 hours away ("+ea.length+")"),...[...ps,...ea].map(g=>el("div",{},el("p",{},badge(g.status==="EARLY"?"EARLY":"PASS","INFO")," "+g.away+" @ "+g.home+" · "+ko(g)+" · "+ofPick(g,mk)+" · "+(g.score||"")),el("p",{class:"small mute"},g.failed&&g.failed.length?"Fails: "+g.failed.join("; "):""))))));
  return out}
 function ofRecord(ON,sp){const RS=(ON||{}).reports;if(!RS)return card(el("p",{},badge(((ON||{}).status)||"UNAVAILABLE","UNAVAILABLE")," "+(((ON||{}).reason)||"No Official Needs records yet.")));
  const line=x=>x.graded?x.wins+"-"+x.losses+"-"+x.pushes+", "+(x.units>=0?"+":"")+x.units.toFixed(2)+" units, ROI "+(x.roi_pct>=0?"+":"")+x.roi_pct.toFixed(1)+"%":"no graded selections yet";
@@ -641,7 +665,7 @@ function ofRecord(ON,sp){const RS=(ON||{}).reports;if(!RS)return card(el("p",{},
   return el("div",{},el("h3",{},(OFS[k]||k)+" · "+k),el("p",{},el("b",{},(o.selections||0)+" official: "),line(o)+(o.pending?" · "+o.pending+" awaiting result":"")),
    el("p",{class:"small mute"},"Watchlist (not official): "+(w.selections||0)+" sealed, "+line(w)+". "+(o.warning||"")+" Graded at the frozen line and price; 1 unit each; separate from C1–C4."),
    dq.length?el("p",{class:"small"},badge("DATA QUALITY","STALE")," "+dq.map(x=>x.away+" @ "+x.home+": sealed "+x.classification+" ("+x.data_quality+")").join(" · ")):null,
-   rows.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},...["Game","Selection","Qualification","Result"].map(h=>el("th",{},h)))),el("tbody",{},rows.map(r=>el("tr",{},el("td",{},r.away+" @ "+r.home,el("div",{class:"mute small"},local(r.kickoff))),
+   rows.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},...["Game","Selection","Qualification","Result"].map(h=>el("th",{},h)))),el("tbody",{},rows.map(r=>el("tr",{},el("td",{},r.away+" @ "+r.home,el("div",{class:"mute small"},ko(r))),
     el("td",{class:"small"},(r.market==="total"?String(r.side).toUpperCase()+" "+r.line:(r.team||r.side||"–")+" "+ln(r.line))+" "+am(r.price)+(r.price_book?" ("+r.price_book+")":"")),
     el("td",{class:"small mute"},(r.tier?r.tier+" "+(r.score||""):"v1 6/6")+(r.tier==="STANDARD"&&r.failed.length?" · failed: "+r.failed.join(", "):"")+" · "+r.minutes_before_kickoff+" min before kickoff"),
     el("td",{class:"small"},r.status==="GRADED"?r.away_score+"–"+r.home_score+" (away–home): "+r.ats+", "+(r.units>=0?"+":"")+r.units.toFixed(2)+"u":r.status)))))):null)}))}
@@ -669,7 +693,7 @@ R.ev=()=>{const f=st.f;const rows=(S().scanner||[]).filter(r=>cfbGate(r.top25)&&
  return[freshBanner(),cfbBanner(),card(el("h2",{},"EV scanner"),el("p",{class:"small"},badge("WATCH")," Estimated value, separate from the simulated sportsbook's Need. Prices that beat the market-maker consensus after vig removal (least favourable of three methods) and model uncertainty. The strategy is NOT validated: these are paper candidates, never official plays."+(stale?" Prices are not live: re-check before acting on anything.":"")),
   filters({market:1,book:1,strength:1}),
   el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Bet"),el("th",{},"Book"),el("th",{class:"num"},"Price"),el("th",{class:"num"},"EV (range)"))),
-   el("tbody",{},rows.map(r=>el("tr",{class:"game"+(stale?" dim":""),on:{click:()=>openGame(r.game_id)}},el("td",{},r.away+" @ "+r.home,el("div",{class:"mute small"},local(r.kickoff))),
+   el("tbody",{},rows.map(r=>el("tr",{class:"game"+(stale?" dim":""),on:{click:()=>openGame(r.game_id)}},el("td",{},r.away+" @ "+r.home,el("div",{class:"mute small"},ko(r))),
     el("td",{},MK[r.market]+" "+r.selection+(r.line!=null?" "+ln(r.line):"")),el("td",{},r.book),el("td",{class:"num"},am(r.american)),
     el("td",{class:"num"},pct(r.ev_per_unit),el("div",{class:"mute small"},r.ev_interval?pct(r.ev_interval[0])+"–"+pct(r.ev_interval[1]):""))))))),
   rows.length?null:el("p",{class:"mute"},"No candidates match."))]};
@@ -719,7 +743,7 @@ R.health=()=>{const c=D.collection;return[settleCard(),behaviourCard(),card(el("
 R.game=(id)=>{const g=gameById(id);if(!g)return[card(el("p",{},"Game not found (it may have kicked off)."),el("a",{href:"#odds"},"Back"))];
  const sp=Object.entries(D.sports).find(([k,s])=>(s.games||[]).includes(g));const s=sp[1];
  const bkg=((s.book||{}).games||[]).find(x=>x.event_id===id);
- const out=[el("p",{},el("a",{href:"#"+(st.prev||"odds")},"← Back")),card(el("h2",{},gameHead(g)),el("p",{class:"mute"},local(g.kickoff)+" · "+s.label+" · observed "+fmtAge(ageMin(s.observed_at))+" ago ",badge(freshness(s.observed_at))),
+ const out=[el("p",{},el("a",{href:"#"+(st.prev||"odds")},"← Back")),card(el("h2",{},gameHead(g)),el("p",{class:"mute"},ko(g)+" · "+s.label+" · observed "+fmtAge(ageMin(s.observed_at))+" ago ",badge(freshness(s.observed_at))),
   g.rankings?el("p",{class:"small"},g.rankings.status==="OK"?"AP poll week "+g.rankings.poll_week+" ("+g.rankings.season_type+"), fetched "+local(new Date(g.rankings.fetched_at*1000).toISOString())+", source "+g.rankings.source:
    [badge(g.rankings.status==="PENDING"?"PENDING":"UNAVAILABLE",g.rankings.status==="PENDING"?"WATCH":"UNAVAILABLE")," "+(g.rankings.reason||""),
     g.rankings.provisional?el("span",{class:"mute"}," Provisional (current poll week "+g.rankings.provisional.poll_week+"): "+g.away+" "+(g.rankings.provisional.away_rank?"#"+g.rankings.provisional.away_rank:"NR")+", "+g.home+" "+(g.rankings.provisional.home_rank?"#"+g.rankings.provisional.home_rank:"NR")+"."):null]):null)];
@@ -809,6 +833,10 @@ def main(argv=None):
         snap["official_needs"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
     with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
         json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))
+    try:                                   # display only; never stops the build
+        feed_kickoffs(snap, conn, now)
+    except Exception as e:                 # noqa: BLE001
+        print(f"::warning::feed kickoff correction skipped: {type(e).__name__}: {e}")
     snap = _clean(snap)
     bconn.close()
     with open(os.path.join(a.out, "site_snapshot.json"), "w") as fh:

@@ -96,13 +96,35 @@ def market_state(conn, event_id, market, T, max_age_s=DEFAULT_MAX_AGE_S, weights
             "sharp_books_on_line": sorted(k for k in quotes if k in weights)}
 
 
+def kickoffs(conn, sport=None, event_id=None, as_of=None):
+    """{event_id: (kickoff, home, away)} using the kickoff the feed reported in its LATEST fetch of each event
+    (optionally only fetches at or before `as_of`). The Odds API lists CFB games without a set time at a
+    placeholder (e.g. noon ET) and later moves them to the real time; the earliest-ever value is stale.
+    When books disagree within that fetch, the most common value wins (ties: the later one)."""
+    where, args = [], []
+    if sport is not None:
+        where.append("sport=?"); args.append(sport)
+    if event_id is not None:
+        where.append("event_id=?"); args.append(event_id)
+    if as_of is not None:
+        where.append("fetched_at<=?"); args.append(as_of)
+    w = (" WHERE " + " AND ".join(where)) if where else ""
+    sql = ("SELECT q.event_id, q.commence, q.home, q.away FROM mkt_quote q JOIN "
+           f"(SELECT event_id, MAX(fetched_at) AS f FROM mkt_quote{w} GROUP BY event_id) m "
+           "ON q.event_id=m.event_id AND q.fetched_at=m.f")
+    votes = {}
+    for eid, k, h, a in conn.execute(sql, args):
+        votes.setdefault(eid, Counter())[(k, h, a)] += 1
+    return {eid: max(c.items(), key=lambda kv: (kv[1], kv[0][0]))[0] for eid, c in votes.items()}
+
+
 def observed_close(conn, event_id, market, max_age_s=DEFAULT_MAX_AGE_S, **kw):
     """The market as last OBSERVED before kickoff, or None with a reason.
     Never substitutes a later or earlier price for an unobserved close."""
-    row = conn.execute("SELECT MIN(commence) FROM mkt_quote WHERE event_id=?", (event_id,)).fetchone()
-    if not row or row[0] is None:
+    ko = kickoffs(conn, event_id=event_id).get(event_id)
+    if ko is None:
         return None, "no quotes for event"
-    st = market_state(conn, event_id, market, row[0] - 1e-6, max_age_s, **kw)
+    st = market_state(conn, event_id, market, ko[0] - 1e-6, max_age_s, **kw)
     if st["status"] != "OK":
         return None, f"no fresh quote within {max_age_s // 60} min before kickoff ({st['status']})"
     return st, "observed"

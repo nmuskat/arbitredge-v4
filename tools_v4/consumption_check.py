@@ -36,9 +36,10 @@ def events_from_shards(shards_dir):
     from analysis_v4.actions_analyze import rebuild
     conn, _ = rebuild(sorted(glob.glob(os.path.join(shards_dir, "**", "quotes_*.jsonl.gz"), recursive=True)))
     out = {}
-    for sport, e, k, h, a in conn.execute("SELECT sport, event_id, MIN(commence), home, away FROM mkt_quote "
-                                          "GROUP BY event_id ORDER BY 3"):
-        out.setdefault(sport, []).append([e, k, h, a])
+    from market_v4.asof import kickoffs
+    sp = dict(conn.execute("SELECT DISTINCT event_id, sport FROM mkt_quote").fetchall())
+    for e, (k, h, a) in sorted(kickoffs(conn).items(), key=lambda kv: (kv[1][0], kv[0])):
+        out.setdefault(sp[e], []).append([e, k, h, a])
     return out
 
 

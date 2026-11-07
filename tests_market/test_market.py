@@ -256,3 +256,22 @@ def test_one_inconsistent_soft_book_does_not_poison_consensus():
     assert st["status"] == "OK" and st["consensus_basis"] == "market_makers"
     assert st["consensus_books"] == ["betonlineag", "pinnacle"] and "draftkings" in st["books"]
     assert st["best"]["home"] == ("draftkings", 115)        # still visible as a price to shop
+
+
+def test_kickoff_is_the_latest_reported_not_a_stale_placeholder():
+    """The feed first lists a CFB game at a placeholder time, then moves it: the latest report wins,
+    point in time when as_of is given, and observed_close uses the real kickoff."""
+    conn = store.connect()
+    eid, placeholder, real = "c" * 32, "2026-11-07T17:00:00Z", "2026-11-07T20:30:00Z"
+    t = ts("2026-11-07T12:00:00Z")
+    while t <= ts("2026-11-07T20:15:00Z"):
+        k = placeholder if t < ts("2026-11-07T14:00:00Z") else real
+        q, an = normalize.normalize(stamp([event(eid, "Ohio State Buckeyes", "Oregon Ducks", k, BOOKS)], t), iso(t))
+        store.ingest(conn, q, an, iso(t), "americanfootball_nfl", "odds", "fp")
+        t += 15 * 60
+    assert asof.kickoffs(conn)[eid][0] == ts(real)
+    assert asof.kickoffs(conn, as_of=ts("2026-11-07T13:00:00Z"))[eid][0] == ts(placeholder)
+    close, why = asof.observed_close(conn, eid, "spreads")
+    assert why == "observed"
+    from web_v4 import live
+    assert [e["kickoff"] for e in live.events(conn, "americanfootball_nfl", ts("2026-11-07T18:00:00Z"))] == [ts(real)]

@@ -56,8 +56,8 @@ def models(sport, nfl_params_path=NFL_PARAMS):
 
 
 def _events(conn, sport):
-    return [{"event_id": e, "kickoff": k, "home": h, "away": a} for e, k, h, a in conn.execute(
-        "SELECT event_id, MIN(commence), home, away FROM mkt_quote WHERE sport=? GROUP BY event_id", (sport,))]
+    return [{"event_id": e, "kickoff": k, "home": h, "away": a}
+            for e, (k, h, a) in sorted(asof.kickoffs(conn, sport=sport).items())]
 
 
 def find_opportunities(conn, sport, policy=ev.LIVE_POLICY, max_age_s=asof.DEFAULT_MAX_AGE_S):

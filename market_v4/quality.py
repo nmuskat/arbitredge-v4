@@ -39,10 +39,11 @@ def games_affected_by_gaps(conn, gaps):
 
 def stale_upcoming(conn, now, max_age_s):
     out = []
-    for eid, home, away, commence, last in conn.execute(
-            "SELECT event_id, home, away, MIN(commence), MAX(fetched_at) FROM mkt_quote WHERE fetched_at<=? "
-            "GROUP BY event_id HAVING MIN(commence)>?", (now, now)):
-        if now - last > max_age_s:
+    from market_v4.asof import kickoffs
+    ko = kickoffs(conn, as_of=now)
+    for eid, home, away, last in conn.execute(
+            "SELECT event_id, home, away, MAX(fetched_at) FROM mkt_quote WHERE fetched_at<=? GROUP BY event_id", (now,)):
+        if ko.get(eid, (0,))[0] > now and now - last > max_age_s:
             out.append({"kind": "stale_market", "event_id": eid, "home": home, "away": away,
                         "age_min": round((now - last) / 60, 1)})
     return out
