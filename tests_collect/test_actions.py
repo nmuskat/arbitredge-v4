@@ -1191,3 +1191,28 @@ def test_need_tracker_records_saved_before_publishing_never_overwritten_and_no_s
     assert "secrets." not in analyze
     nfl = [s for s in _yaml("odds-analyze.yml")["jobs"]["analyze"]["steps"] if "data_v4.results" in s.get("run", "")]
     assert len(nfl) == 1 and "--sport nfl" in nfl[0]["run"] and "--clobber" not in nfl[0]["run"]
+
+
+def test_site_inputs_retries_github_temporary_errors_but_not_missing_releases(tmp_path):
+    # 2026-11-07/09: three site builds failed on a single HTTP 500 from GitHub's release-asset download
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gh.real").write_text(FAKE_GH_SITE)
+    (bin_dir / "gh.real").chmod(0o755)
+    (bin_dir / "gh").write_text(r"""#!/bin/bash
+if [[ "$1 $2" == "release download" && "$*" == *odds-data-* ]]; then
+  [[ "$3" == --clobber ]] || { echo "retry must pass --clobber" >&2; exit 9; }
+  n=$(cat "$FLAKY" 2>/dev/null || echo 0); echo $((n+1)) > "$FLAKY"
+  (( n < 1 )) && { echo "HTTP 500 (https://api.github.com/x)" >&2; exit 1; }
+fi
+exec "$(dirname "$0")/gh.real" "$@"
+""")
+    (bin_dir / "gh").chmod(0o755)
+    env = dict(os.environ, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_TAGS="odds-data-2026-W44",
+               GITHUB_REPOSITORY="o/r", FLAKY=str(tmp_path / "flaky"))
+    r = subprocess.run(["bash", os.path.join(REPO, ".github", "scripts", "site_inputs.sh")], cwd=tmp_path, env=env,
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "GitHub temporary error (attempt 1 of 5)" in r.stderr
+    assert (tmp_path / "flaky").read_text().strip() == "2"            # failed once, succeeded on the retry
+    assert "no AP-poll snapshots yet" in r.stdout                      # a missing release (non-5xx) is not retried

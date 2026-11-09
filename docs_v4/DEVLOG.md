@@ -298,3 +298,14 @@ when the run opens. Its trading cutoff, Need/Official snapshots and seals use th
 ledger, replay-verified). This week, moved games stopped trading at the placeholder. The dashboard now shows
 the feed's time for upcoming games and notes "time moved; sim book closed <time>". A forward-only change
 (runs opened after a cutoff use the latest kickoff) is proposed, not built.
+
+## 2026-11-09 — Site build: retry GitHub's temporary download errors
+
+Three dashboard builds in three days (Nov 7 16:13Z, Nov 9 06:50Z and 16:48Z) failed because GitHub's
+API answered one release-asset download with HTTP 500. The collection itself succeeded each time; only
+the dashboard rebuild was lost (the 16:48Z one would have published Sunday's NFL grades).
+`.github/scripts/site_inputs.sh` now wraps `gh` so that temporary errors (HTTP 5xx, dropped connections,
+timeouts) are retried up to 5 times with 5/10/15/20 s pauses; downloads retry with `--clobber` so a partly
+written file is replaced. Every other failure (e.g. 404 for a release that does not exist yet, or an
+incomplete file count) behaves exactly as before. No credits, secrets, variables or data are affected.
+Owner approved the deploy ("Deploy").

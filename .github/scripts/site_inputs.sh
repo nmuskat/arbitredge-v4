@@ -3,6 +3,24 @@
 # every odds shard, the credit ledger, any AP-poll snapshots, and the synthetic-book ledger
 # (release v4-book: immutable files, one per advance of a weekly run).
 set -euo pipefail
+# GitHub's API sometimes answers a single request with a temporary server error (HTTP 5xx) or drops the
+# connection; one such blip used to fail the whole build. Retry those (and only those) a few times,
+# with growing pauses. Any other failure (e.g. 404 for a release that does not exist yet) returns at once,
+# exactly as before. Downloads retry with --clobber so a partly written file is replaced, never kept.
+gh() {
+  local attempt err rc
+  [[ "${1:-} ${2:-}" == "release download" ]] && set -- release download --clobber "${@:3}"
+  err=$(mktemp)
+  for attempt in 1 2 3 4 5; do
+    if command gh "$@" 2>"$err"; then rm -f -- "$err"; return 0; else rc=$?; fi
+    if (( attempt < 5 )) && grep -qiE 'HTTP 5[0-9][0-9]|connection reset|timeout|EOF|TLS handshake' "$err"; then
+      echo "GitHub temporary error (attempt $attempt of 5), retrying in $((attempt * 5)) s: $(head -c 300 "$err")" >&2
+      sleep $((attempt * 5))
+      continue
+    fi
+    cat "$err" >&2; rm -f -- "$err"; return "$rc"
+  done
+}
 mkdir -p shards state rankings book
 tags=$(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[].tag_name | select(startswith("odds-data-"))')
 [[ -n "$tags" ]] || { echo "no odds shards published yet" >&2; exit 1; }
