@@ -323,3 +323,29 @@ Snapshots go to release `odds-hist`, never to odds-data-*. Snapshot plan in `col
 (Wednesday anchor, daily 16:00 UTC, per kickoff cluster -3 h / -1 h / -10 min; CFB Top-25 by the week's AP
 poll). Estimate ~11,600 credits (CFB ~7,050, NFL ~4,560; earlier rough figure of ~7,650 was too low).
 Tests: tests_collect/test_backfill.py (13). Full suite: 587 passed, 22 skipped.
+
+## 2026-11-10 — Historical backfill run and season study
+
+Owner ran backfill-pilot (23 snapshots, 690 credits, provider-confirmed) and backfill-all (317 snapshots,
+9,510 credits, complete in one 9-minute run). Total 10,200 credits (estimate was ~11,600); allowance left 1,800.
+Replay (`tools_v4/backfill_replay.py`, same engine sportsbook_v5.r2 / params d3995c0c5534 / population as live):
+NFL weeks 1-7 (107 games) and CFB weeks 0-8 (184 Top-25 games with odds; week 0 had only one), 97,356
+simulated wagers, all settled on real final scores. Fix found while replaying: Labor Day Sunday/Monday CFB
+games made the live poll rule wait for the next poll and dropped the week; the replay ranks each game by its own
+week's poll. Fidelity: midweek snapshots daily (live: every few hours), so ~25-30% fewer early-week wagers.
+
+Book: +$898,439 on $10.44M handle (8.6% hold); NFL +$424,481 (7.0%), CFB +$473,958 (10.8%). Every customer
+type lost except two tiny ones; high-stakes recreational customers lost $500k. Simulated sharps LOST
+(NFL 234-302, CFB 383-413 on spreads/totals) although they beat the closing line on 366/536 and 484/796 bets.
+
+Study (`tools_v4/backfill_study.py`; 21 fixed situations x 7 slices, graded at the PICK-time (kickoff - 60 min)
+consensus line; DISCOVERY NFL wk 1-4 / CFB wk 0-4, TEST NFL wk 5-7 / CFB wk 5-8; "holds" = >=55% with >=25
+bets in discovery and > 52.4% in test):
+* Sharp vs Public card, bet the sharps (the planned Bet Window rule): 27-38-1 (42%). FAILS.
+* Held in both halves (5): NFL spreads fade the public 57-43-7; fade public 50-60% NFL spreads 31-24-5;
+  NFL spreads public on the favorite -> bet the dog 39-27-3; NFL totals with 90%+ sharp money 34-26.
+* Third check, the two live weeks (graded at the close): fade public NFL spreads 7-18-1; public-on-favorite
+  -> dog 3-13-1; NFL totals 90%+ sharp 4-6; favorite 7+ -> dog 2-5. None survives all three.
+Verdict: across 16 weeks no side-picking rule built from the simulated customers survives out of sample. The
+book's profit comes from the vig and a few large losing customers, not from a predictable side. The only
+positive real-data evidence remains line shopping (closing EV). No official plays (rule 6).

@@ -65,8 +65,38 @@ def _close_time(conn, gid, kick):
     return r[0] if r and r[0] is not None else None
 
 
+def select_games(live_conn, sport, ws, we, polls):
+    """The week's games as the live book would open them. CFB: AP Top-25 games under the poll of THAT week.
+    The per-week poll snapshots (collect_v4.backfill.poll_snapshots) hold exactly one poll each, so a game the
+    live rule calls PENDING (a Sunday/Monday game after the next Sunday release, e.g. Labor Day) is ranked by
+    its own week's poll: its provisional ranks are the right ones here."""
+    if sport == "nfl":
+        return LB.select_week(live_conn, sport, ws, we, we)
+    games = LB.week_games(live_conn, sport, ws, we, we)
+    keep, n = [], {"OK": 0, "PENDING": 0, "UNAVAILABLE": 0, "unranked": 0}
+    for g in games:
+        st = rankings.top25_status(g["home"], g["away"], g["kickoff"], polls)
+        if st["status"] == "PENDING":
+            pv = st["provisional"]
+            st = {"status": "OK", "home_rank": pv["home_rank"], "away_rank": pv["away_rank"],
+                  "poll_week": pv["poll_week"], "top25": pv["home_rank"] is not None or pv["away_rank"] is not None,
+                  "note": "ranked by its own week's poll (backfill replay)"}
+            n["PENDING"] += 1
+        elif st["status"] != "OK":
+            n["UNAVAILABLE"] += 1
+            continue
+        if st["top25"]:
+            g["rankings"] = st
+            keep.append(g)
+            n["OK"] += 1
+        else:
+            n["unranked"] += 1
+    return keep, {"status": "OK" if games else "NO_GAMES", "rule": "AP Top-25 games only (poll of that week)",
+                  "candidates": len(games), "included": len(keep), "detail": n}
+
+
 def replay_week(book_conn, live_conn, sport, ws, we, polls, docs, settlements):
-    games, cov = LB.select_week(live_conn, sport, ws, we, we, polls if sport == "cfb" else None)
+    games, cov = select_games(live_conn, sport, ws, we, polls)
     out = {"sport": sport, "window": [B.iso(ws), B.iso(we)], "coverage": cov, "games": [], "wagers": 0}
     if not games:
         return out, []
@@ -94,6 +124,8 @@ def replay_week(book_conn, live_conn, sport, ws, we, polls, docs, settlements):
         pick_t = kick - PICK_BEFORE_S
         at_pick = [w for w in ws_ if to_epoch(w["accepted_at"]) <= pick_t]
         close_t = _close_time(live_conn, gid, kick)
+        if close_t is not None and kick - close_t > 2 * 3600:
+            close_t = None                       # no snapshot within 2 h of kickoff: close NOT observed
         r = res.get((sport, gid))
         out["games"].append({
             "event_id": gid, "home": g["home"], "away": g["away"], "kickoff": B.iso(kick),
