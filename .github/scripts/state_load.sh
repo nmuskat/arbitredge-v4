@@ -21,7 +21,7 @@ if ! grep -qx "ledger.jsonl" <<<"$assets"; then
   fi
   echo "ledger.jsonl not present yet (first run)"
 fi
-for f in ledger.jsonl collector_state.json; do
+for f in ledger.jsonl collector_state.json backfill_state.json; do   # backfill_state: one-time historical backfill progress
   if grep -qx "$f" <<<"$assets"; then
     gh release download v4-state -p "$f" -D state --clobber      # any download failure fails the job
   fi

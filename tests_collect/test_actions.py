@@ -403,7 +403,7 @@ def _workflow_vars(wf="odds-collect.yml"):
 
 
 def test_workflow_variable_list_is_what_we_test():
-    assert set(_workflow_vars()) == {"V4_LIVE", "V4_MONTHLY_CAP", "V4_DAILY_CAP", "V4_TIER"}
+    assert set(_workflow_vars()) == {"V4_LIVE", "V4_MONTHLY_CAP", "V4_DAILY_CAP", "V4_TIER", "V4_BACKFILL_BUDGET"}
 
 
 def _main_like_workflow(tmp_path, monkeypatch, overrides, live="on"):

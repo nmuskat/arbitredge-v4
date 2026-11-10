@@ -99,6 +99,28 @@ def caps_from_env(env):
             "v3_floor_remaining": max(num("V4_V3_FLOOR", 2000), 2000)}     # the floor can be raised, never lowered
 
 
+def exclude_backfill(gw, caps, now):
+    """Live collection's monthly and 24 h caps apply to LIVE spending only: credits spent by the owner-started
+    one-time historical backfill (collect_v4/backfill.py, separate allowance) are added back, so the backfill
+    can never starve live collection and live collection's own allowance is exactly what it was before.
+    Nothing changes until the backfill has spent something."""
+    import dataclasses
+    from credits import month_start
+    from collect_v4.backfill import BACKFILL_START, epoch
+    q = ("SELECT COALESCE(SUM(COALESCE(actual_cost, est_cost)),0) FROM credit_ledger "
+         "WHERE ts>=? AND endpoint LIKE 'historical%'")
+    since = epoch(BACKFILL_START)
+    month = gw.conn.execute(q, (max(since, month_start(now)),)).fetchone()[0]
+    day = gw.conn.execute(q, (max(since, now - 86400),)).fetchone()[0]
+    if not (month or day):
+        return caps
+    caps = dict(caps, v4_monthly_cap=caps["v4_monthly_cap"] + month, v4_daily_cap=caps["v4_daily_cap"] + day,
+                backfill_added_back={"month": month, "day": day})
+    gw.gate.budget = dataclasses.replace(gw.gate.budget, v4_monthly_cap=caps["v4_monthly_cap"],
+                                         v4_daily_cap=caps["v4_daily_cap"])
+    return caps
+
+
 def load_ledger(gw, path):
     if not os.path.exists(path):
         return 0
@@ -160,7 +182,7 @@ def run(state_in, out, env=os.environ, clock=time.time, opener=None, tier=None, 
         return summary
     gw = og.Gateway(cfg, key, clock=clock, opener=opener)
     summary["ledger_rows_loaded"] = load_ledger(gw, os.path.join(state_in, "ledger.jsonl"))
-    summary["caps"] = caps
+    summary["caps"] = caps = exclude_backfill(gw, caps, clock())
     state_path = os.path.join(state_in, "collector_state.json")
     state = json.load(open(state_path)) if os.path.exists(state_path) else {}
 

@@ -16,6 +16,7 @@ The owner (nmuskat) has no coding background. You do the engineering, testing an
    - The owner approved a V4 cap of 6,000/month, starting with a test budget of 500/month (60/day, 10 per request).
    - The caps come from repository variables (`V4_MONTHLY_CAP`, default 500; the code hard-limits it to 6,000). Recommend raising it only after the test phase shows provider-reported costs matching estimates and V3's floor untouched. The owner changes the variable.
    - Report every budget change to the owner. Never weaken the gateway's caps, V3 floor or breaker.
+   - **One-time historical backfill allowance** (owner-approved 2026-11-10): up to 12,000 credits, separate from the live caps, expiring 2026-12-01 (`collect_v4/backfill.py`, `docs_v4/BACKFILL.md`). Usable amount = the owner's variable `V4_BACKFILL_BUDGET`. Only the owner starts it (odds-collect → Run workflow → backfill-pilot / backfill-all). Never start it, raise it or extend it yourself.
 4. **No paid services or subscriptions.** No new hosting.
 5. **Never fabricate data.** Missing quotes, closes or results are reported as unavailable. Demo/simulated data is always labelled.
 6. **No official plays** until a strategy meets `docs_v4/V4_REBUILD_PLAN.md` §G. Default decision: NO BET.

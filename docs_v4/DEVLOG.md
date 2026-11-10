@@ -309,3 +309,17 @@ timeouts) are retried up to 5 times with 5/10/15/20 s pauses; downloads retry wi
 written file is replaced. Every other failure (e.g. 404 for a release that does not exist yet, or an
 incomplete file count) behaves exactly as before. No credits, secrets, variables or data are affected.
 Owner approved the deploy ("Deploy").
+
+## 2026-11-10 — One-time historical backfill (built; not run)
+
+Owner approved replaying the synthetic book on the whole season (NFL weeks 1-7, CFB weeks 0-8) with
+historical odds, and approved going beyond the 6,000/month ceiling for it. Implemented as a SEPARATE
+one-time allowance (12,000 credits max, expires 2026-12-01, usable amount = owner variable
+`V4_BACKFILL_BUDGET`) instead of raising the live ceiling: live caps are unchanged and backfill spend is
+added back for live collection (`actions_run.exclude_backfill`). Owner-started only: odds-collect
+workflow_dispatch input `mode` = backfill-pilot / backfill-all (`collect_v4/backfill_run.py`); same gateway,
+preflight, V3 floor, breaker and ledger; per-request ceiling 30 (one 3-market historical snapshot).
+Snapshots go to release `odds-hist`, never to odds-data-*. Snapshot plan in `collect_v4/backfill.py`
+(Wednesday anchor, daily 16:00 UTC, per kickoff cluster -3 h / -1 h / -10 min; CFB Top-25 by the week's AP
+poll). Estimate ~11,600 credits (CFB ~7,050, NFL ~4,560; earlier rough figure of ~7,650 was too low).
+Tests: tests_collect/test_backfill.py (13). Full suite: 587 passed, 22 skipped.
