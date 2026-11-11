@@ -44,7 +44,7 @@ def settle(w, final):
     return r, (0.0 if r == "push" else profit_on_win(w["stake"], w["accepted_price"]) if r == "win" else -w["stake"])
 
 
-def run_season(live, polls, finals, cfg, seed=0, sports=("nfl", "cfb")):
+def run_season(live, polls, finals, cfg, seed=0, sports=("nfl", "cfb"), rekey=None, record=False):
     out = []
     for sport in sports:
         book = sqlite3.connect(":memory:")
@@ -55,7 +55,7 @@ def run_season(live, polls, finals, cfg, seed=0, sports=("nfl", "cfb")):
             if not games:
                 continue
             run, pop, snap = open_week(book, live, sport, ws, we, polls, games, snap)
-            wagers, info = run_week(run, pop, snap, LB._market(live, sport), cfg, seed)
+            wagers, info = run_week(run, pop, snap, LB._market(live, sport), cfg, seed, rekey=rekey, record=record)
             pnl = {}
             for w in wagers:
                 f = finals.get((sport, w["canonical_game_id"]))

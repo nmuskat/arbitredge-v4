@@ -31,6 +31,13 @@ CONFIGS = {
     "C": {"label": "V4 + customer limits and risk management", "price": False, "risk": True, "margin": False},
     "D": {"label": "V4 + reduced margin (3.5% overround)", "price": False, "risk": False, "margin": True},
     "E": {"label": "V4 + B + C + D", "price": True, "risk": True, "margin": True},
+    # ---- realism audit corrections (v4r1); each switch is a separate, classified change
+    "R_SHARP": {"label": "V4 + sharp EV rule (customer behaviour correction)", "price": False, "risk": False,
+                "margin": False, "sharp_ev": True},
+    "R_MAXWIN": {"label": "V4 + max-win limit (risk management improvement)", "price": False, "risk": False,
+                 "margin": False, "max_win": True},
+    "R": {"label": "V4r1 = V4 + sharp EV rule + max-win limit", "price": False, "risk": False, "margin": False,
+          "sharp_ev": True, "max_win": True},
 }
 SEEDS = (0, 1, 2)
 HORIZONS_H = (48, 24, 6, 1)

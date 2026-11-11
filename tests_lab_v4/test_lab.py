@@ -117,3 +117,47 @@ def test_closed_side_refuses_wagers():
         r.add("g", "spread", "home", -3.0, -110.0, 4000.0, i)
     assert r.closed.get(("g", "spread")) == "home" and any(x["action"] == "CLOSE" for x in r.log)
     assert r.shade[("g", "spread")] > 0
+
+
+# ---------------------------------------------------------------- v4r1 realism corrections
+def test_max_win_cap_only_limits_plus_money():
+    from lab_v4.runner import max_win_cap
+    acc = {"price": 3000.0, "stake": 2000.0, "detail": {}}
+    out, why = max_win_cap(dict(acc, detail={}), "HIGH_STAKES_REC")
+    assert why == "accepted" and out["stake"] == 333.0 and out["detail"]["max_win_capped"]   # 333 x 30 <= 10,000
+    out, _ = max_win_cap({"price": -500.0, "stake": 9000.0, "detail": {}}, "HIGH_STAKES_REC")
+    assert out["stake"] == 9000.0                                                             # favourites unaffected
+    out, why = max_win_cap({"price": 300000.0, "stake": 50.0, "detail": {}}, "REC_CASUAL")   # cap 3.33 < 5
+    assert out is None and why == "max_win_limit"                                              # cap below the minimum
+
+
+def test_devig_methods():
+    from lab_v4.runner import _devig
+    assert abs(_devig(-110, -110, "proportional") - 0.5) < 1e-9 and abs(_devig(-110, -110, "power") - 0.5) < 1e-6
+    # long shot: power de-vig gives the long shot LESS probability than proportional (favourite-long-shot bias)
+    assert _devig(3000, -10000, "power") < _devig(3000, -10000, "proportional")
+
+
+def test_sharp_ev_rule_takes_only_positive_ev(week):
+    live, book, run, pop, snap = week
+    cfg = dict(CONFIGS["R_SHARP"])
+    wagers, _ = run_week(run, pop, snap, LB._market(live, "nfl"), cfg, 0, record=True)
+    sh = [w for w in wagers if w["respected"]]
+    for w in sh:
+        assert w["edge_prob"] is not None and w["edge_prob"] >= 0.015 - 1e-9     # EV vs maker no-vig fair at the minute
+        assert (w["edge_points"] or 0) == 0.0
+
+
+def test_corrections_leave_recreational_decisions_unchanged(week):
+    """Common random numbers: R_MAXWIN changes only stakes of plus-money wagers above the cap."""
+    live, book, run, pop, snap = week
+    a, _ = run_week(run, pop, snap, LB._market(live, "nfl"), CONFIGS["A"], 0)
+    m, _ = run_week(run, pop, snap, LB._market(live, "nfl"), CONFIGS["R_MAXWIN"], 0)
+    ka = {w["wager_id"]: w for w in a}
+    for w in m:
+        if w["wager_id"] in ka:
+            x = ka[w["wager_id"]]
+            assert (w["side"], w["accepted_price"]) == (x["side"], x["accepted_price"])
+            assert w["stake"] <= x["stake"]
+            if w["stake"] < x["stake"]:
+                assert w["accepted_price"] > 0

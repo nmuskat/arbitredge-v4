@@ -397,3 +397,22 @@ over 670 game-markets. Findings:
 Recommendation: keep V4 as production. Optional realism fixes need approval: kickoff-ramp limits, showing hold at
 fair, the CFB moneyline audit and a sharp archetype review. Do not lower the margin. At most one NFL-spread NEED
 prospective test (draft, not frozen). Details: `docs_v4/V4_NEED_LAB.md`.
+
+## 2026-11-11 — V4 realism audit (research branch `research/v4-realism`; nothing deployed)
+
+Production verified: 8c003b8, sportsbook_v5.r2.
+
+Ledger reconciliation:
+- replay: 146,205 wagers, 0 mismatches;
+- production: 52,338 settlement records, 0-cent differences;
+- no accounting bug.
+
+Findings:
+- CFB moneyline 26.2% is customer selection into long shots plus outcome variance (expected hold 1.5–10.5% by
+  de-vig method; z ≈ 1.0).
+- V4 sharps buy −EV prices because the rule ignores juice: EV at decision −2.2% NFL / −1.9% CFB.
+- High-stakes customers (3.7% of customers, 56.5% of handle) decide NEED direction: re-randomising only them leaves
+  39% agreement.
+
+V4r1 corrections in development: sharp EV rule and max-win limit. Margin and other limits unchanged; robustness
+measure added. Details: `docs_v4/V4_REALISM_AUDIT.md`.

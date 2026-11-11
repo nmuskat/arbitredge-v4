@@ -156,22 +156,30 @@ def fair_cover(view, sport, gid, market, side, line, ref_t):
     return pw / max(1e-9, 1 - pp)
 
 
-def run_week(run, pop, snap, market, cfg, seed=0, until=None):
+def run_week(run, pop, snap, market, cfg, seed=0, until=None, rekey=None, record=False):
     """run: engine.load_run(...) dict; pop: population; snap: {bettor_index: week-open bankroll}.
-    Returns (wagers, info). Configuration A with seed 0 reproduces engine.advance exactly (tested)."""
+    Returns (wagers, info). Configuration A with seed 0 reproduces engine.advance exactly (tested).
+    rekey: with seed > 0, re-key ONLY these archetypes (others keep the production key) -- variance decomposition.
+    record: also store each wager's decision-time market-maker fair probability, the customer's own decision detail
+    and bettor uid (audit only; never used by any decision)."""
     from sportsbook_v4 import customers_v5
     slate = run["slate"]
     sport = slate.sport
     ws, we = to_epoch(slate.window_start), to_epoch(slate.window_end)
     until_e = we if until is None else min(until, we)
-    rng_key = run["rng_key"] if seed == 0 else sha256_hex("lab_seed", run["rng_key"], seed)
+    base_key = run["rng_key"]
+    alt_key = base_key if seed == 0 else sha256_hex("lab_seed", base_key, seed)
+
+    def key_for(arch_name):
+        return alt_key if (rekey is None or arch_name in rekey) else base_key
+    rng_key = alt_key
     staked, stats_cache, events, own = {}, {}, [], {}
     for b in pop["bettors"]:
         b, arch, active, _ = customers_v5.effective(b, snap[b["bettor_index"]], ws)
         if not active:
             continue
         own[b["bettor_index"]] = arch
-        for seq, t in enumerate(E.bettor_arrivals(rng_key, b, ws, we, stats_cache, arch)):
+        for seq, t in enumerate(E.bettor_arrivals(key_for(b["archetype"]), b, ws, we, stats_cache, arch)):
             if ws < t <= until_e:
                 events.append((t, b["bettor_index"], seq, b))
     events.sort(key=lambda e: (e[0], e[1], e[2]))
@@ -182,15 +190,19 @@ def run_week(run, pop, snap, market, cfg, seed=0, until=None):
     kick = {g.canonical_game_id: to_epoch(g.commence_time) for g in games}
     gran = BOOK["decision_time_granularity_seconds"]
     seen = {}
+    info_passes = {}
     facts = NoFacts()
-    with risk_hook(risk, seen):
+    with risk_hook(risk, seen), sharp_hook(cfg.get("sharp_ev", False), sport):
         for t, _, seq, b in events:
             arch = own[b["bettor_index"]]
-            acc, reason = E._decide(rng_key, b, seq, t, games, view, facts, staked, book_state, arch=arch)
+            rk = key_for(b["archetype"])
+            acc, reason = E._decide(rk, b, seq, t, games, view, facts, staked, book_state, arch=arch)
             if acc is not None:
                 acc["overround"] = overround(seen.get(acc["game"].canonical_game_id, {}).get(acc["market"]), acc["market"])
             if acc is not None and cfg["price"] and not arch["is_sharp"]:
-                acc, reason = _price_gate(acc, b, arch, view, sport, t - (t % gran), rng_key, seq)
+                acc, reason = _price_gate(acc, b, arch, view, sport, t - (t % gran), rk, seq)
+            if acc is not None and cfg.get("max_win"):
+                acc, reason = max_win_cap(acc, b["archetype"])
             if acc is not None and cfg["risk"]:
                 if risk.closed.get((acc["game"].canonical_game_id, acc["market"])) == acc["side"]:
                     acc, reason = None, "limit_side_closed"     # the book refuses the heavy side (prices unchanged)
@@ -198,6 +210,9 @@ def run_week(run, pop, snap, market, cfg, seed=0, until=None):
                     acc, reason = _stake_cap(acc, sport, arch, kick, t)
             if acc is None:
                 passes[reason] = passes.get(reason, 0) + 1
+                if record:
+                    pa = info_passes.setdefault(b["archetype"], {})
+                    pa[reason] = pa.get(reason, 0) + 1
                 continue
             staked[b["bettor_index"]] = staked.get(b["bettor_index"], 0.0) + acc["stake"]
             if "book_base" in acc["detail"]:
@@ -213,8 +228,19 @@ def run_week(run, pop, snap, market, cfg, seed=0, until=None):
                 "stake": acc["stake"], "accepted_at": from_epoch(t), "t": t, "respected": bool(arch["is_sharp"]),
                 "book_mode": acc["detail"].get("book_mode"), "overround": acc.get("overround"),
                 "p_fair": acc.get("p_fair")})
+            if record:
+                d = acc["detail"]
+                wagers[-1].update(
+                    bettor_uid=b["bettor_uid"], bankroll=snap[b["bettor_index"]],
+                    p_fair_decision=fair_cover(view, sport, g.canonical_game_id, acc["market"], acc["side"], acc["line"],
+                                               t - (t % gran)),
+                    edge_points=d.get("edge_points"), edge_prob=d.get("edge_prob"), edge_units=d.get("edge_units"),
+                    p_side=d.get("p_home") if acc["side"] == "home" else (1 - d["p_home"]) if "p_home" in d and acc["side"] == "away"
+                    else d.get("p_over") if acc["side"] == "over" else (1 - d["p_over"]) if "p_over" in d else None)
     info = {"passes": passes, "events": len(events), "risk_log": risk.log if risk else [],
-            "reference_mode_wagers": sum(1 for w in wagers if w["book_mode"] == "reference")}
+            "reference_mode_wagers": sum(1 for w in wagers if w["book_mode"] == "reference"),
+            "passes_by_archetype": info_passes, "active_by_archetype": dict(__import__("collections").Counter(
+                b["archetype"] for b in pop["bettors"] if b["bettor_index"] in own))}
     return wagers, info
 
 
@@ -247,4 +273,103 @@ def _stake_cap(acc, sport, arch, kick, t):
     if stake < BOOK["min_wager"]:
         return None, "limit_below_minimum"
     acc["stake"] = stake
+    return acc, "accepted"
+
+
+# ------------------------------------------------------------------------------------------------ realism corrections (v4r1)
+def _devig(ph, pa, method):
+    a, b = implied_probability(ph), implied_probability(pa)
+    if method == "proportional":
+        return a / (a + b)
+    lo, hi = 1.0, 5.0                                    # power de-vig: a^k + b^k = 1
+    for _ in range(50):
+        k = (lo + hi) / 2
+        lo, hi = (k, hi) if a ** k + b ** k > 1 else (lo, k)
+    return a ** k
+
+
+def sharp_pick_ev(arch, open_games, view, ref_t, sport):
+    """CUSTOMER BEHAVIOUR CORRECTION. A respected customer bets the side whose BOOK price has the highest expected
+    value against the market makers' no-vig fair at the SAME minute (no later information), and only if that EV is
+    at least arch["edge_threshold_prob"] (V4's own 1.5% threshold, now applied to EV instead of raw points).
+    Spreads/totals: push- and key-number-aware normalisation (need_v6). Moneyline: EV must clear the threshold under
+    BOTH proportional and power de-vig (robust to the de-vig model). Same return shape as engine._sharp_pick."""
+    best = None
+    thr = arch["edge_threshold_prob"]
+    for g, offers in open_games:
+        refs = view.offers(g.canonical_game_id, ref_t, books=BOOK["reference_books"])
+        for market in ("spread", "total", "moneyline"):
+            offer, ref = offers.get(market), refs.get(market)
+            if offer is None or ref is None:
+                continue
+            for side in E.SIDES[market]:
+                price = E._price_of(market, offer, side)
+                if price is None or implied_probability(price) > E._max_prob(arch, market):
+                    continue
+                win = profit_on_win(1.0, price)
+                if market == "moneyline":
+                    if ref.get("home_price") is None or ref.get("away_price") is None:
+                        continue
+                    evs = []
+                    for mth in ("proportional", "power"):
+                        ph = _devig(ref["home_price"], ref["away_price"], mth)
+                        p = ph if side == "home" else 1 - ph
+                        evs.append(p * win - (1 - p))
+                    ev = min(evs)
+                else:
+                    line = E._line_of(market, offer, side)
+                    nz = normalizer(sport, market)
+                    ref_mu = _ref_mu(nz, market, ref)
+                    if ref_mu is None:
+                        continue
+                    pw, pp = nz.prob_at(ref_mu, side, line)
+                    ev = pw * win - (1 - pw - pp)
+                if ev < thr:
+                    continue
+                units = ev / thr
+                key = (units, g.canonical_game_id, market, side)
+                if best is None or key > best[0]:
+                    best = (key, g, market, offer, side, {"edge_points": 0.0, "edge_prob": round(ev, 6),
+                                                          "edge_units": round(units, 6), "ev_vs_maker_fair": round(ev, 6),
+                                                          "ref_books": ref.get("books")})
+    return best
+
+
+def _ref_mu(nz, market, ref):
+    if market == "spread":
+        if None in (ref.get("home_spread"), ref.get("home_price"), ref.get("away_price")):
+            return None
+        z = nz.quote("home", ref["home_spread"], ref["home_price"], "away", -ref["home_spread"], ref["away_price"])
+    else:
+        if None in (ref.get("total"), ref.get("over_price"), ref.get("under_price")):
+            return None
+        z = nz.quote("over", ref["total"], ref["over_price"], "under", ref["total"], ref["under_price"])
+    return None if z is None else z["mu"]
+
+
+@contextlib.contextmanager
+def sharp_hook(enabled, sport):
+    orig = E._sharp_pick
+    if enabled:
+        E._sharp_pick = lambda arch, open_games, view, ref_t: sharp_pick_ev(arch, open_games, view, ref_t, sport)
+    try:
+        yield
+    finally:
+        E._sharp_pick = orig
+
+
+def max_win_cap(acc, archetype):
+    """RISK MANAGEMENT IMPROVEMENT. Standard 'to win' limit: a wager may not win more than the customer's existing
+    V4 wager limit (10,000; SHARP 3,000). Only plus-money prices are affected (a minus price never wins more than
+    the stake)."""
+    limit = BOOK["max_wager_by_archetype"].get(archetype, BOOK["max_wager_default"])
+    if acc["price"] <= 0:
+        return acc, "accepted"
+    cap = limit * 100.0 / acc["price"]
+    if acc["stake"] > cap:
+        stake = float(math.floor(cap))
+        if stake < BOOK["min_wager"]:
+            return None, "max_win_limit"
+        acc["stake"] = stake
+        acc["detail"]["max_win_capped"] = True
     return acc, "accepted"
