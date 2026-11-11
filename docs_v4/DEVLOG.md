@@ -380,3 +380,20 @@ The prospective spec is frozen: CONFIG 622c296b99ce, spec hash in `docs_v4/V7_PR
 - retail moved slightly toward SIGNAL sides (+0.08 pt) but the pros moved more toward retail (−0.18);
 - CLV vs consensus close −1.9% (SHOP baseline −1.7%); record 29-34-2;
 - no betting value; nothing tuned. Details: `docs_v4/V7_MARKET_INTEL.md`.
+
+## 2026-11-11 — V4 controlled NEED investigation (research branch `research/v4-need-lab`)
+
+Production verified: `v4-dev` 8c003b8, engine sportsbook_v5.r2, no v6/V7 code or flags in production, no runs on the
+dev branches. The lab re-runs the unchanged engine in memory (configuration A identical to production bet-for-bet).
+
+Configurations B (price sensitivity), C (limits/risk), D (3.5% margin) and E (all three) were each run for 3 seeds
+over 670 game-markets. Findings:
+- NEED side agrees across seeds of the same engine only 38–43% of the time;
+- NEED CLV equals betting both sides (−1.8% to −1.9%) in every configuration;
+- NEED changes do not precede market moves (46–48%);
+- realized-hold differences between configurations are within seed noise;
+- V4 sharps lose money (defect); CFB moneyline realized hold is 26–35% (audit needed).
+
+Recommendation: keep V4 as production. Optional realism fixes need approval: kickoff-ramp limits, showing hold at
+fair, the CFB moneyline audit and a sharp archetype review. Do not lower the margin. At most one NFL-spread NEED
+prospective test (draft, not frozen). Details: `docs_v4/V4_NEED_LAB.md`.
