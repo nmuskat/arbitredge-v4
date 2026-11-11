@@ -71,6 +71,26 @@ jobs:
               --title "V4 Book Need Tracker: $tag (do not delete)" --notes "Immutable MODELED research records."
             gh release upload "$tag" "${files[@]}"
           done
+      - name: CF1 CFB line-follow tracker (research records; new files only, never overwritten)
+        # Owner-approved 2026-11-11. Frozen rule (cf1/tracker.py RULE_HASH 4723d320...): write-once pre-kickoff
+        # research records to release v4-cf1. No API calls; never places, recommends or shows a bet.
+        # A failure here never blocks the site.
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          mkdir -p cf1_new
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v4-cf1" --jq '.assets[].name' > cf1_existing.txt 2>/dev/null \
+            || : > cf1_existing.txt
+          python3 -m cf1.tracker record --shards shards --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --out cf1_new \
+            --existing cf1_existing.txt
+          files=(cf1_new/cf1_*.json)
+          (( ${#files[@]} )) || { echo "no new CF1 records"; exit 0; }
+          gh release view v4-cf1 >/dev/null 2>&1 || gh release create v4-cf1 --prerelease \
+            --title "CF1 CFB line-follow tracker (do not delete)" --notes "Immutable pre-kickoff research records (frozen rule)."
+          gh release upload v4-cf1 "${files[@]}"
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}

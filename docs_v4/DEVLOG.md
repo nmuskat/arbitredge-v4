@@ -349,3 +349,27 @@ bets in discovery and > 52.4% in test):
 Verdict: across 16 weeks no side-picking rule built from the simulated customers survives out of sample. The
 book's profit comes from the vig and a few large losing customers, not from a predictable side. The only
 positive real-data evidence remains line shopping (closing EV). No official plays (rule 6).
+
+## 2026-11-11 — CF1 CFB line-follow tracker (owner-approved; research records only)
+
+- **What:** owner approved adding a frozen prospective tracker to the live site build.
+- **Code:** `cf1/tracker.py` (self-contained; `cf1/normalize.py` copied unchanged from research `need_v6/normalize.py`).
+- **Rule (RULE_HASH 4723d320…):**
+  - CFB spreads and totals;
+  - consensus fair line moved ≥ 1.0 pt from the first collected snapshot to the last snapshot ≤ kickoff − 1 h
+    (≤ 3 h old);
+  - record the side it moved toward at the best price in that snapshot.
+- **Records:** write-once pre-kickoff records in release `v4-cf1`, from the site-build step "CF1 …"
+  (continue-on-error; no API calls; never places, recommends or shows a bet).
+- **Equivalence check:** the production copy reproduces the research module decision-for-decision on all 1,540
+  CFB game-markets in the development store (628 identical signals).
+- **Development evidence (EXPLORATORY, already-studied 2026 data):**
+  - 334-282-4, ROI +5.1% (95% CI −2.3% to +12.3%; p = 0.10);
+  - closing value −1.75%;
+  - not significant after multiple testing.
+- **Judgement after the bowl season (≥ 150 signals):**
+  - abandon if ROI ≤ 0% or closing value ≤ −2%;
+  - "promising" if one-sided p < 0.05;
+  - validated only after a second season.
+- **Live-era volume:** 52 and 88 signals in ISO weeks 44–45.
+- **Tests:** 592 passed, 22 skipped (required suite + tests_cf1).
