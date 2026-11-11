@@ -1,0 +1,380 @@
+{
+ "comparison": {
+  "independence": [
+   "NEED and SIMS share no inputs, but NEED's direction is mechanical: customers back favourites (NYG) so NEED leans to the underdog; the total NEED is set by 5 high-stakes Under bets and flips without them.",
+   "Desk and SIMS both use 2026 play-by-play (partly shared inputs) yet disagree on the spread."
+  ],
+  "research_selection": {
+   "spread": "PASS",
+   "total": "PASS"
+  },
+  "spread": {
+   "financial_need": "WASHINGTON (book needs WAS; customers on NYG)",
+   "sims": "WASHINGTON (+2.5 covers 55.5%)",
+   "trading_desk": "NEW YORK LEAN"
+  },
+  "total": {
+   "financial_need": "OVER (fragile)",
+   "sims": "OVER (41: 52.5% / 44.0% / push 3.5%)",
+   "trading_desk": "NO POSITION"
+  },
+  "why_pass": "Spread: desk and SIMS disagree; the NEED/SIMS agreement is not independent evidence. Total: only NEED (fragile) and a small SIMS lean exist; the desk has no position. No component has validated predictive value."
+ },
+ "financial_need": {
+  "notes": [
+   "NEED is the synthetic book's liability, not real sportsbook liability; it will keep changing until kickoff.",
+   "Stability: production run reproduced exactly (seed 0 = production bet for bet), 20 more independent random seeds, same quotes and bankrolls."
+  ],
+  "source": "production ledger (release v4-book), every accepted wager on this game through 2026-11-11T13:13:10Z",
+  "spread": {
+   "book_pnl_if_NYG_covers_all": -16513.45,
+   "book_pnl_if_WAS_covers_all": 18360.36,
+   "handle": 27901.0,
+   "handle_by_archetype": {
+    "HIGH_STAKES_REC": {
+     "away": 542.0,
+     "home": 16916.0
+    },
+    "NARRATIVE_CHASER": {
+     "away": 831.0,
+     "home": 1009.0
+    },
+    "REC_CASUAL": {
+     "away": 2338.0,
+     "home": 4714.0
+    },
+    "SHARP": {
+     "away": 703.0
+    },
+    "TEAM_LOYAL": {
+     "away": 218.0,
+     "home": 135.0
+    },
+    "UNDERDOG_CONTRARIAN": {
+     "away": 318.0,
+     "home": 177.0
+    }
+   },
+   "high_stakes": {
+    "bets": 14,
+    "handle": 17458.0,
+    "on_NYG": 13
+   },
+   "need_side": "WAS (away)",
+   "sharp": {
+    "bets": 1,
+    "handle": 703.0,
+    "side": "WAS +2.5"
+   },
+   "stability_21_independent_runs": {
+    "NYG": 5,
+    "WAS": 16
+   },
+   "survives_removing_5_largest": true,
+   "survives_removing_all_high_stakes": true,
+   "swing": 34873.81,
+   "tickets": 301
+  },
+  "total": {
+   "book_pnl_if_over_all": 8237.3,
+   "book_pnl_if_under_all": -6842.23,
+   "handle": 16507.0,
+   "handle_by_archetype": {
+    "HIGH_STAKES_REC": {
+     "under": 7699.0
+    },
+    "NARRATIVE_CHASER": {
+     "over": 1752.0,
+     "under": 783.0
+    },
+    "REC_CASUAL": {
+     "over": 2469.0,
+     "under": 1612.0
+    },
+    "SHARP": {
+     "under": 1769.0
+    },
+    "TEAM_LOYAL": {
+     "over": 114.0,
+     "under": 208.0
+    },
+    "UNDERDOG_CONTRARIAN": {
+     "over": 46.0,
+     "under": 55.0
+    }
+   },
+   "high_stakes": {
+    "bets": 5,
+    "handle": 7699.0,
+    "on_under": 5
+   },
+   "need_side": "OVER",
+   "sharp": {
+    "bets": 2,
+    "handle": 1769.0,
+    "side": "UNDER"
+   },
+   "stability_21_independent_runs": {
+    "OVER": 17,
+    "UNDER": 4
+   },
+   "survives_removing_5_largest": false,
+   "swing": 15079.53,
+   "tickets": 171
+  }
+ },
+ "format": "arbitredge_tnf_pilot_v1",
+ "frozen_at_utc": "2026-11-11T16:02:54Z",
+ "game": {
+  "context": {
+   "coaches": {
+    "NYG": "John Harbaugh",
+    "WAS": "Dan Quinn"
+   },
+   "division_game": true,
+   "rest_days": {
+    "NYG": 4,
+    "WAS": 4
+   }
+  },
+  "event_id_v4": "74d39e19225caf211ad2c8eb4110179f",
+  "game_id_sims": "2026_10_WAS_NYG",
+  "kickoff_utc": "2026-11-13T01:15:00Z",
+  "label": "Washington Commanders @ New York Giants",
+  "nfl_week": 10,
+  "venue": "MetLife Stadium (outdoors)"
+ },
+ "production": {
+  "branch": "v4-dev",
+  "commit": "8c003b8",
+  "data_complete_through": "2026-11-11T13:13:10Z",
+  "engine": "sportsbook_v5.r2",
+  "params_hash": "d3995c0c55342bba",
+  "run_id": "14605149fa17ca2077f36bc4ac72fe2d20d4cf997a762b74da570e8eecfd27e4",
+  "site_snapshot_built": "2026-11-11T13:14:20Z"
+ },
+ "reference_market": {
+  "books": {
+   "spread": {
+    "betmgm": [
+     -2.5,
+     -110,
+     -108
+    ],
+    "betonlineag": [
+     -2.5,
+     -112,
+     -108
+    ],
+    "betrivers": [
+     -2.0,
+     -113,
+     -108
+    ],
+    "draftkings": [
+     -2.5,
+     -110,
+     -110
+    ],
+    "espnbet": [
+     -2.5,
+     -110,
+     -110
+    ],
+    "fanatics": [
+     -2.5,
+     -110,
+     -110
+    ],
+    "fanduel": [
+     -1.5,
+     -120,
+     100
+    ],
+    "lowvig": [
+     -2.5,
+     -107,
+     -103
+    ],
+    "pinnacle": [
+     -2.5,
+     -107,
+     -105
+    ],
+    "williamhill_us": [
+     -2.5,
+     -107,
+     -113
+    ]
+   },
+   "total": {
+    "betmgm": [
+     41.0,
+     -110,
+     -108
+    ],
+    "betonlineag": [
+     41.0,
+     -110,
+     -110
+    ],
+    "betrivers": [
+     41.0,
+     -113,
+     -108
+    ],
+    "draftkings": [
+     41.5,
+     -105,
+     -115
+    ],
+    "espnbet": [
+     40.5,
+     -120,
+     100
+    ],
+    "fanatics": [
+     41.0,
+     -110,
+     -110
+    ],
+    "fanduel": [
+     41.5,
+     100,
+     -120
+    ],
+    "lowvig": [
+     41.0,
+     -107,
+     -107
+    ],
+    "pinnacle": [
+     41.0,
+     -108,
+     -108
+    ],
+    "williamhill_us": [
+     41.0,
+     -114,
+     -107
+    ]
+   }
+  },
+  "fetched_at": "2026-11-11T13:13:10Z",
+  "spread": {
+   "opened": "NYG -1.5 (2026-11-09)",
+   "pinnacle": "NYG -2.5 -107 / WAS +2.5 -105",
+   "pinnacle_fair_home_margin": 1.8,
+   "reference_line": "NYG -2.5",
+   "retail_fair_home_margin": 1.73
+  },
+  "total": {
+   "opened": "43.5 (2026-11-09)",
+   "pinnacle": "41 -108/-108",
+   "pinnacle_fair_total": 41.52,
+   "reference_line": 41.0
+  }
+ },
+ "sha256_of_record_without_this_field": "9efbc48eed6ae5260a1c55e502f99545ff42389b0111e2a820b5a3fff48ffddc",
+ "sims": {
+  "at_reference_lines": {
+   "NYG -2.5": {
+    "NYG_covers": 0.4454,
+    "WAS_covers": 0.5546,
+    "push": 0.0
+   },
+   "total 41": {
+    "over": 0.5246,
+    "push": 0.035,
+    "under": 0.4404
+   },
+   "total 41.5 (SIMS feed line)": {
+    "over": 0.5246,
+    "under": 0.4754
+   }
+  },
+  "commit": "2c9086c",
+  "created_at": "2026-11-11T16:01:06+00:00",
+  "data_cutoff": "2026-11-09",
+  "fair_spread": {
+   "home_line": 0.5,
+   "label": "NYG +0.5"
+  },
+  "fair_total": 42.5,
+  "key_uncertainty": [
+   "Week-10 designations not published: by SIMS's rule, players who missed recent games play only at observed return rates (NYG Skattebo 39%, T. Johnson 23%, C. Jones 30%, N. Harris 30%; WAS Burks 39%) despite full practice for several.",
+   "McCarthy assumed to start (hip).",
+   "Weather not modelled.",
+   "SIMS NFL accuracy has been worse than the market in held-out sets (docs/ACCURACY_REPORT.md)."
+  ],
+  "margin_home": {
+   "mean": -0.38,
+   "p10": -16.0,
+   "p50": -1.0,
+   "p90": 15.0
+  },
+  "mean_score": {
+   "NYG": 21.24,
+   "WAS": 21.62
+  },
+  "median_score": {
+   "NYG": 21.0,
+   "WAS": 21.0
+  },
+  "model_fingerprint": "350c0c2b6858d738",
+  "model_version": "1.7.2",
+  "n_sims": 10000,
+  "payload_sha256": "ff4f5e74ed00e0eb15b50188b9aa3cd2ffd3b600287bbbc57cde7ca12dd21cfb",
+  "predicted_winner": "WAS",
+  "repo": "nmuskat/arbitredge-sims",
+  "representative_score": {
+   "NYG": 20,
+   "WAS": 23
+  },
+  "run": "local research rerun (forecast #1 in a fresh local database built from free nflverse data); NOT an official SIMS-ledger forecast",
+  "seed": 239480049622238,
+  "total": {
+   "mean": 42.87,
+   "p10": 26.0,
+   "p50": 43.0,
+   "p90": 60.0
+  },
+  "win_prob": {
+   "NYG": 0.488,
+   "WAS": 0.5039,
+   "tie": 0.0081
+  }
+ },
+ "trading_desk": {
+  "evidence_uncertain": [
+   "NYG QB McCarthy hip injury from week 9: reported via search results (TSN, WJLA, Bleacher Report summaries) that the Giants feel 'fairly good'/'confident' he plays; source pages could not be opened from this session (not verified).",
+   "Week 10 game designations (Out/Doubtful/Questionable) not yet published at freeze time.",
+   "Weather: forecast sources blocked from this session; UNAVAILABLE (not estimated).",
+   "No pressure/coverage charting; offensive/defensive line matchup only by sack and run-stuff proxies."
+  ],
+  "evidence_verified": [
+   "2026 weeks 1-9 play-by-play (nflverse): NYG offense EPA/play +0.003 (15th), defense -0.030 (11th), defensive success rate 7th; WAS offense -0.029 (20th), defense +0.024 (20th), defensive success rate 26th.",
+   "Weeks 6-9: NYG defense -0.131 EPA/play allowed, offense +0.038; WAS offense -0.053, defense -0.002.",
+   "NYG sacks allowed per dropback 8.9% (27th); WAS 6.4% (20th). WAS giveaways 0.63/game (2nd fewest) and takeaways 1.5/game (5th) - turnover rates are historically unstable.",
+   "Pace: plays per game WAS 61.5, NYG 64.9 (league 61.5).",
+   "QB 2026: WAS J. Daniels 195 dropbacks, EPA/db -0.017; NYG J. McCarthy 74 dropbacks, EPA/db +0.139 (small sample), NYG also used J. Winston (-0.085) and J. Dart.",
+   "Week 10 practice report (nflverse injuries): both QBs full participation; WAS C Lucas Patrick and TE Colson Yankoff did not participate; WR Treylon Burks limited; NYG RB Cam Skattebo, WR Malik Nabers, WR Charlie Jones, TE Theo Johnson, T Andrew Thomas full; LB Abdul Carter, LB Malik Harrison, CB Colton Hood limited.",
+   "Roster status (nflverse, reserve lists): WAS without WR Terry McLaurin, T Laremy Tunsil, DT Daron Payne; NYG without Brian Burns, Tremaine Edmunds, QB Jaxson Dart.",
+   "Both teams on 4 days' rest (Thursday after Sunday); division game; week 5 meeting ended 27-27.",
+   "Market moved NYG -1.5 -> -2.5 and total 43.5 -> 41 between 2026-11-09 and 2026-11-11."
+  ],
+  "independence": "Built from 2026 play-by-play, injury/practice data, roster status and public reporting only. Did NOT see Financial NEED or SIMS output.",
+  "limitations": [
+   "The desk's method is not validated; earlier ArbitrEdge work found team-strength models less accurate than the market.",
+   "No probability is attached because none is calibrated."
+  ],
+  "reasoning": "Opponent-unadjusted efficiency and recent form favour New York by more than the ~1.8-point market fair, and Washington is missing its top WR and left tackle. Against that: 8-game samples, NYG's QB changes and McCarthy's hip, NYG's poor pass protection, and the market already moved toward New York. The total evidence is mixed (strong recent NYG defence and weak WAS offence vs the 27-27 first meeting and an already-lowered total), so no position.",
+  "spread": {
+   "position": "NEW YORK LEAN",
+   "strength": "weak; no validated predictive advantage"
+  },
+  "total": {
+   "position": "NO POSITION"
+  }
+ }
+}
