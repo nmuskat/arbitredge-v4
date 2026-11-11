@@ -270,10 +270,19 @@ GAMEDAY_PROFILES = {
 }
 
 
-def install_gameday_profiles():
+@contextlib.contextmanager
+def gameday_profiles():
+    """Make the game-day timing profiles visible ONLY while arrival times are drawn (the population's
+    params_hash covers TIMING_PROFILES, so they must not stay installed)."""
     from sportsbook_v4.params import TIMING_PROFILES
-    for k, v in GAMEDAY_PROFILES.items():
-        TIMING_PROFILES.setdefault(k, v)          # research process only; production params file untouched
+    added = [k for k in GAMEDAY_PROFILES if k not in TIMING_PROFILES]
+    for k in added:
+        TIMING_PROFILES[k] = GAMEDAY_PROFILES[k]
+    try:
+        yield
+    finally:
+        for k in added:
+            TIMING_PROFILES.pop(k, None)
 
 
 def volume(b, arch, active, sport, week_start):

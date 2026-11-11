@@ -185,14 +185,17 @@ def run_week(run, pop, snap, market, cfg, seed=0, until=None, rekey=None, record
         b, arch, active, _ = customers_v5.effective(b, snap[b["bettor_index"]], ws)
         if cfg.get("volume"):
             from lab_v4 import behavior_v2 as BVV
-            BVV.install_gameday_profiles()
             b, arch, active, _reg = BVV.volume(b, arch, active, sport, ws)
         if not active:
             continue
         if v2:
             b, arch, ind2[b["bettor_index"]] = BV2.adjust(b, arch, cfg.get("profile"))
         own[b["bettor_index"]] = arch
-        for seq, t in enumerate(E.bettor_arrivals(key_for(b["archetype"]), b, ws, we, stats_cache, arch)):
+        gp = __import__("lab_v4.behavior_v2", fromlist=["x"]).gameday_profiles() if cfg.get("volume") \
+            else contextlib.nullcontext()
+        with gp:
+            arrivals = E.bettor_arrivals(key_for(b["archetype"]), b, ws, we, stats_cache, arch)
+        for seq, t in enumerate(arrivals):
             if ws < t <= until_e:
                 events.append((t, b["bettor_index"], seq, b))
     events.sort(key=lambda e: (e[0], e[1], e[2]))
