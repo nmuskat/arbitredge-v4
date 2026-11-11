@@ -471,7 +471,23 @@ R.splits=()=>{const f=st.f,bk=S().book||{};const head=[card(el("h2",{},"Betting 
     ...Object.entries(row.sides).map(([sd,v])=>el("div",{},el("b",{class:"small"},sd),splitBar(v,(g.bands[bm]||{})[sd])))))}
   out.push(card(el("div",{class:"game",on:{click:()=>openGame(g.event_id)}},el("h3",{},badge("MODELED"),gameHead(g)),el("div",{class:"mute small"},ko(g))),...rows))}
  return[...head,...(out.length?out:[card(el("p",{class:"mute"},"No modeled wagers on upcoming games yet. The synthetic book only trades while real prices are being collected."))])]};
-R.need=()=>{const bk=S().book||{};const head=[card(el("h2",{},"ArbitrEdge Need"),el("p",{class:"small"},badge("MODELED"),
+const v6money=x=>x==null?"-":(x<0?"-$":"$")+Math.abs(Math.round(x)).toLocaleString();
+const v6panel=()=>{const V=D.need_v6;if(!V)return[];if(V.status!=="OK")return[card(el("h2",{},"ArbitrEdge NEED v6"),el("p",{class:"small mute"},"Unavailable: "+(V.reason||V.status)))];
+ const B=(V.sports||{})[st.sport]||{};const out=[card(el("h2",{},badge("MODELED"),"ArbitrEdge NEED (v6 trading desk)"),
+  el("p",{class:"small"},"Synthetic sportsbook with a modeled trading desk ("+V.version+", assumptions "+V.config_hash+"). FINANCIAL NEED = the outcome the synthetic book's accepted wagers most need. TRADING DESK NEED = a position the modeled desk deliberately chose to hold (risk acceptance; no validated informational edge), else NONE. MARKET-MAKER INFERENCE = observable pricing only; any professional book's actual NEED is UNKNOWN. The headline follows policy "+V.policy+" and always names its source. Not real sportsbook liability. Not a bet recommendation."),
+  el("p",{class:"small mute"},"Data through "+(B.data_through||"-")+" · "+(B.wagers||0)+" modeled wagers this week · "+(B.bankroll_basis||"")))];
+ const val=(V.validation||{}).by_type||{};const vr=k=>{const x=val[k];return x?(x.record+" ("+x.selections+" selections, "+x.none+" NONE, ROI at frozen price "+(x.roi_at_frozen_price==null?"-":(100*x.roi_at_frozen_price).toFixed(1)+"%")+")"):"no frozen records yet"};
+ out.push(card(el("h3",{},"Validation (prospective frozen records only)"),el("div",{class:"small"},"ARBITREDGE NEED: "+vr("official")),el("div",{class:"small"},"FINANCIAL NEED: "+vr("financial")),el("div",{class:"small"},"TRADING DESK NEED: "+vr("desk")),el("div",{class:"small mute"},"Records are small samples; a NEED is the book's position, not betting value."+((V.validation||{}).excluded_late_written?" "+V.validation.excluded_late_written+" records written after a final could exist are kept but not counted.":""))));
+ for(const c of (B.cards||[])){const a=c.arbitredge_need,f=c.financial_need,t=c.trading_desk_need,m=c.market_maker_inference,b=c.book;
+  out.push(card(el("div",{class:"game"},el("h3",{},c.away+" @ "+c.home+" · "+(c.market==="spread"?"Spread":"Total")),el("div",{class:"mute small"},local(c.kickoff))),
+   el("div",{},el("b",{},"ARBITREDGE NEED: "),el("b",{},a.text),a.source==="NONE"?null:" ",a.source==="NONE"?null:badge(a.source,a.source==="TRADING DESK"?"OK":"LOW"),a.price!=null?el("span",{class:"small mute"}," at "+(a.price>0?"+":"")+a.price):null),
+   el("div",{class:"small mute"},"Rule "+a.rule),
+   el("div",{class:"small"},el("b",{},"FINANCIAL NEED: "),f.text+" · "+f.status+" · swing "+v6money(f.swing)+" · handle "+v6money(f.handle)+" · worst case "+v6money(f.worst_case)+(f.expected_pnl_at_fair!=null?" · expected book P&L at fair "+v6money(f.expected_pnl_at_fair):"")),
+   el("div",{class:"small"},el("b",{},"TRADING DESK NEED: "),t.text+" · "+(t.action||"-")+(t.rationale?" · "+t.rationale:"")),
+   el("div",{class:"small"},el("b",{},"MARKET-MAKER INFERENCE: "),(m.observed||m.status||"-")+" · pricing opinion "+(m.pricing_opinion_side||"UNKNOWN")+" · professional NEED UNKNOWN"),
+   el("div",{class:"small mute"},"Book: posted "+(b.posted_line==null?"-":b.posted_line)+" · risk used "+Math.round(100*(b.risk_used||0))+"% of "+v6money(b.game_limit)+(b.closed_sides&&b.closed_sides.length?" · closed: "+b.closed_sides.join(", "):""))))}
+ if(!(B.cards||[]).length)out.push(card(el("p",{class:"mute"},"No upcoming game-markets with a v6 book yet.")));return out};
+R.need=()=>{const bk=S().book||{};const head=[...v6panel(),card(el("h2",{},"ArbitrEdge Need"),el("p",{class:"small"},badge("MODELED"),
  " The outcome the synthetic book's own liability most needs, computed exactly from its accepted wagers (P&L over every final score). It is a liability fact about simulated customers, NOT a prediction, NOT fading the public, and NOT a betting recommendation. Need is not betting value: it says nothing about whether a price is good. Whether betting the Need has any advantage is being tested, on paper, in the Need Tracker tab. Estimated value lives only in the EV Scanner, as unvalidated paper candidates."),ledgerLine(),filters({}))];
  const b=bookBlock();if(b)return[...head,b];const out=[];
  for(const g of bookGames()){const n=g.need;if(!n){continue}const sp=n.spread||{},to=n.total||{},ml=n.moneyline||{};
@@ -831,6 +847,12 @@ def main(argv=None):
         for sp in SPORTS:
             (snap["sports"][sp].get("book") or {}).pop("official_snapshots", None)
         snap["official_needs"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
+    if os.environ.get("NEED_V6") == "on":   # v6 NEED engine: OFF unless explicitly enabled (owner approval)
+        try:
+            from need_v6 import site as NEED_V6
+            NEED_V6.step(snap, conn, load_rankings(a.rankings_dir), now, a.results_dir, a.need_dir, a.need_out)
+        except Exception as e:             # noqa: BLE001 -- never stops the build
+            snap["need_v6"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
     with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
         json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))
     try:                                   # display only; never stops the build

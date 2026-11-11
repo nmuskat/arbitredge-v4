@@ -55,6 +55,7 @@ fetch_all() {   # $1 = release tag, $2 = asset pattern, $3 = destination; absent
 for wk in "$(date -u +%G-W%V)" "$(date -u -d '7 days ago' +%G-W%V)"; do
   fetch_all "v4-need-$wk" 'need_*.json.gz' need '^need_'
   fetch_all "v4-need-$wk" 'official_snap_*.json.gz' need '^official_snap_'      # Official Needs records (experimental)
+  fetch_all "v4-need-$wk" 'v6need_*.json.gz' need '^v6need_'                   # NEED v6 frozen records (write-once check)
 done
 fetch_all v4-need-decisions 'decisions_*.json.gz' need '^decisions_'
 fetch_all v4-need-decisions 'official_dec_*.json.gz' need '^official_dec_'
