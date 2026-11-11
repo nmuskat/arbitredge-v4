@@ -38,6 +38,13 @@ CONFIGS = {
                  "margin": False, "max_win": True},
     "R": {"label": "V4r1 = V4 + sharp EV rule + max-win limit", "price": False, "risk": False, "margin": False,
           "sharp_ev": True, "max_win": True},
+    # ---- bettor behaviour overhaul (V4b2; research only; see lab_v4/behavior_v2.py)
+    "B2_20K": {"label": "V4b2 revised behaviour, 20,000 customers", "price": False, "risk": False, "margin": False,
+               "sharp_ev": True, "max_win": True, "v2": True, "pop_frac": 1.0},
+    "B2_10K": {"label": "V4b2 revised behaviour, 10,000 customers (fixed subset)", "price": False, "risk": False,
+               "margin": False, "sharp_ev": True, "max_win": True, "v2": True, "pop_frac": 0.5},
+    "B2_5K": {"label": "V4b2 revised behaviour, 5,000 customers (fixed subset)", "price": False, "risk": False,
+              "margin": False, "sharp_ev": True, "max_win": True, "v2": True, "pop_frac": 0.25},
 }
 SEEDS = (0, 1, 2)
 HORIZONS_H = (48, 24, 6, 1)

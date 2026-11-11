@@ -20,7 +20,15 @@ def build(market_db, rankings, results, config, seed, rekey=None, cfg=None):
     polls = B.poll_snapshots(load_polls(rankings))
     gl = game_list(live, polls)
     finals = load_finals(rankings, results, gl)
-    weeks = run_season(live, polls, finals, cfg or CONFIGS[config], seed, rekey=rekey, record=True)
+    c = cfg or CONFIGS[config]
+    facts = None
+    if c.get("v2"):
+        from intel_v7.history import games as store_games
+        from lab_v4.behavior_v2 import RealFacts
+        allg = [(s, e, k, h, a) for s in ("nfl", "cfb") for e, k, h, a in store_games(live, s)]
+        allf = load_finals(rankings, results, allg)          # finals only ever used for EARLIER games' form
+        facts = {s: RealFacts(s, allg, allf) for s in ("nfl", "cfb")}
+    weeks = run_season(live, polls, finals, c, seed, rekey=rekey, record=True, facts=facts)
     return {"weeks": weeks, "finals": finals, "games": gl, "config": config, "seed": seed}
 
 

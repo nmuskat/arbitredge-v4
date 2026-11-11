@@ -156,7 +156,7 @@ def fair_cover(view, sport, gid, market, side, line, ref_t):
     return pw / max(1e-9, 1 - pp)
 
 
-def run_week(run, pop, snap, market, cfg, seed=0, until=None, rekey=None, record=False):
+def run_week(run, pop, snap, market, cfg, seed=0, until=None, rekey=None, record=False, facts_src=None):
     """run: engine.load_run(...) dict; pop: population; snap: {bettor_index: week-open bankroll}.
     Returns (wagers, info). Configuration A with seed 0 reproduces engine.advance exactly (tested).
     rekey: with seed > 0, re-key ONLY these archetypes (others keep the production key) -- variance decomposition.
@@ -174,10 +174,19 @@ def run_week(run, pop, snap, market, cfg, seed=0, until=None, rekey=None, record
         return alt_key if (rekey is None or arch_name in rekey) else base_key
     rng_key = alt_key
     staked, stats_cache, events, own = {}, {}, [], {}
+    v2 = cfg.get("v2", False)
+    ind2 = {}
+    if v2:
+        from lab_v4 import behavior_v2 as BV2
     for b in pop["bettors"]:
+        if cfg.get("pop_frac", 1.0) < 1.0 and \
+                random.Random(seed_int("v4b2_subsample", b["bettor_uid"])).random() >= cfg["pop_frac"]:
+            continue                                            # population-size experiment: a fixed subset
         b, arch, active, _ = customers_v5.effective(b, snap[b["bettor_index"]], ws)
         if not active:
             continue
+        if v2:
+            b, arch, ind2[b["bettor_index"]] = BV2.adjust(b, arch)
         own[b["bettor_index"]] = arch
         for seq, t in enumerate(E.bettor_arrivals(key_for(b["archetype"]), b, ws, we, stats_cache, arch)):
             if ws < t <= until_e:
@@ -191,8 +200,9 @@ def run_week(run, pop, snap, market, cfg, seed=0, until=None, rekey=None, record
     gran = BOOK["decision_time_granularity_seconds"]
     seen = {}
     info_passes = {}
-    facts = NoFacts()
-    with risk_hook(risk, seen), sharp_hook(cfg.get("sharp_ev", False), sport):
+    facts = facts_src if (v2 and facts_src is not None) else NoFacts()
+    nh = BV2.narrative_hook(E) if v2 else contextlib.nullcontext()
+    with risk_hook(risk, seen), sharp_hook(cfg.get("sharp_ev", False), sport), nh:
         for t, _, seq, b in events:
             arch = own[b["bettor_index"]]
             rk = key_for(b["archetype"])
@@ -201,6 +211,9 @@ def run_week(run, pop, snap, market, cfg, seed=0, until=None, rekey=None, record
                 acc["overround"] = overround(seen.get(acc["game"].canonical_game_id, {}).get(acc["market"]), acc["market"])
             if acc is not None and cfg["price"] and not arch["is_sharp"]:
                 acc, reason = _price_gate(acc, b, arch, view, sport, t - (t % gran), rk, seq)
+            if acc is not None and v2 and not arch["is_sharp"]:
+                acc, reason = _v2_gate(acc, b, arch, ind2[b["bettor_index"]], view, sport, t - (t % gran), rk, seq,
+                                       staked)
             if acc is not None and cfg.get("max_win"):
                 acc, reason = max_win_cap(acc, b["archetype"])
             if acc is not None and cfg["risk"]:
@@ -242,6 +255,35 @@ def run_week(run, pop, snap, market, cfg, seed=0, until=None, rekey=None, record
             "passes_by_archetype": info_passes, "active_by_archetype": dict(__import__("collections").Counter(
                 b["archetype"] for b in pop["bettors"] if b["bettor_index"] in own))}
     return wagers, info
+
+
+def _v2_gate(acc, b, arch, ind, view, sport, ref_t, rng_key, seq, staked):
+    """V4b2: underdog-size participation, price-aware acceptance, impulse stakes (own random streams)."""
+    from lab_v4 import behavior_v2 as BV2
+    rng = random.Random(seed_int("v4b2_gate", rng_key, b["bettor_uid"], seq))
+    u_dog, u_price, u_imp, u_mult = rng.random(), rng.random(), rng.random(), rng.random()
+    g, m, side = acc["game"], acc["market"], acc["side"]
+    name = b["archetype"]
+    is_dog = (m == "spread" and (acc["line"] or 0) > 0) or (m == "moneyline" and acc["price"] > 0)
+    if name == "UNDERDOG_CONTRARIAN" and is_dog and u_dog >= BV2.dog_participation(m, acc):
+        return None, "dog_too_small"
+    pf = fair_cover(view, sport, g.canonical_game_id, m, side, acc["line"], ref_t)
+    ev = None if pf is None else pf * profit_on_win(1.0, acc["price"]) - (1 - pf)
+    loyal = b["traits"].get("loyal_team")
+    own = loyal is not None and m != "total" and loyal == (g.home_team_id if side == "home" else g.away_team_id)
+    ok, reason = BV2.price_accept(name, ind, ev, own, u_price)
+    if not ok:
+        return None, reason
+    mult = BV2.impulse_multiplier(ind, u_imp, u_mult) if name != "SELECTIVE_PRICE_SENSITIVE" else 1.0
+    if mult > 1.0:
+        limit = BOOK["max_wager_by_archetype"].get(name, BOOK["max_wager_default"])
+        budget = b["bankroll"] * arch["weekly_risk_fraction"] - staked.get(b["bettor_index"], 0.0)
+        acc["stake"] = float(math.floor(max(acc["stake"], min(acc["stake"] * mult, limit, budget))))
+        acc["detail"]["impulse_mult"] = round(mult, 3)
+    acc["detail"]["ev_at_maker_fair"] = None if ev is None else round(ev, 5)
+    if pf is not None:
+        acc["p_fair"] = round(pf, 5)
+    return acc, "accepted"
 
 
 def _price_gate(acc, b, arch, view, sport, ref_t, rng_key, seq):
