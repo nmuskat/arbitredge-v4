@@ -253,3 +253,40 @@ def narrative_hook(E):
         yield
     finally:
         E._recreational_pick = orig
+
+
+# ------------------------------------------------------------------------------------------------ game-day regulars
+# Owner-specified realism (2026-11-11): most recreational bettors bet 3-4 games on the main game day every week
+# (Saturday for CFB, Sunday for NFL). A FIXED share of each recreational customer becomes a "regular" (persistent,
+# drawn from the customer's id). Side choice, stakes and prices are unchanged; only frequency and timing change.
+VOLUME = {"regular_share": 0.60, "regular_groups": ("REC_CASUAL", "NARRATIVE_CHASER", "TEAM_LOYAL",
+                                                    "UNDERDOG_CONTRARIAN", "HIGH_STAKES_REC"),
+          "arrivals_per_week": (3.5, 5.0),        # uniform per regular; ~3-4 placed bets after normal passes
+          "p_active": 0.90}
+_HOURS = [(0, 8, 0.05), (8, 12, 0.80), (12, 18, 1.00), (18, 24, 0.70)]
+GAMEDAY_PROFILES = {
+    "gameday_sat": {"weekday": [0.02, 0.02, 0.02, 0.05, 0.10, 1.00, 0.05], "hours": _HOURS},   # CFB Saturday
+    "gameday_sun": {"weekday": [0.12, 0.02, 0.02, 0.12, 0.03, 0.05, 1.00], "hours": _HOURS},   # NFL Sun (+TNF/MNF)
+}
+
+
+def install_gameday_profiles():
+    from sportsbook_v4.params import TIMING_PROFILES
+    for k, v in GAMEDAY_PROFILES.items():
+        TIMING_PROFILES.setdefault(k, v)          # research process only; production params file untouched
+
+
+def volume(b, arch, active, sport, week_start):
+    """(b, arch, active, is_regular) for the game-day-regular experiment."""
+    if b["archetype"] not in VOLUME["regular_groups"]:
+        return b, arch, active, False
+    rng = random.Random(seed_int("v4vol_regular", b["bettor_uid"]))
+    if rng.random() >= VOLUME["regular_share"]:
+        return b, arch, active, False
+    lo, hi = VOLUME["arrivals_per_week"]
+    tr = dict(b["traits"], arrivals_per_week=rng.uniform(lo, hi))
+    arch = dict(arch, timing="gameday_sat" if sport == "cfb" else "gameday_sun")
+    arch["timing_key"] = (arch["timing"], 0.0)
+    busted = b["bankroll"] < 10.0
+    act = (not busted) and random.Random(seed_int("v4vol_active", b["bettor_uid"], int(week_start))).random() < VOLUME["p_active"]
+    return dict(b, traits=tr), arch, act, True

@@ -52,6 +52,10 @@ CONFIGS = {
                    "max_win": True, "v2": True, "pop_frac": 1.0, "profile": "emotion"},
     "TB_PRICE": {"label": "Price-aware book", "price": False, "risk": False, "margin": False, "sharp_ev": True,
                  "max_win": True, "v2": True, "pop_frac": 1.0, "profile": "price"},
+    # ---- game-day regulars (owner-specified frequency realism): production behaviour + 60% of recreational
+    #      customers betting ~3-4 games on the main game day every week
+    "VOL": {"label": "Production behaviour + game-day regulars", "price": False, "risk": False, "margin": False,
+            "volume": True},
 }
 SEEDS = (0, 1, 2)
 HORIZONS_H = (48, 24, 6, 1)

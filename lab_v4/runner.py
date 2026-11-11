@@ -183,6 +183,10 @@ def run_week(run, pop, snap, market, cfg, seed=0, until=None, rekey=None, record
                 random.Random(seed_int("v4b2_subsample", b["bettor_uid"])).random() >= cfg["pop_frac"]:
             continue                                            # population-size experiment: a fixed subset
         b, arch, active, _ = customers_v5.effective(b, snap[b["bettor_index"]], ws)
+        if cfg.get("volume"):
+            from lab_v4 import behavior_v2 as BVV
+            BVV.install_gameday_profiles()
+            b, arch, active, _reg = BVV.volume(b, arch, active, sport, ws)
         if not active:
             continue
         if v2:
