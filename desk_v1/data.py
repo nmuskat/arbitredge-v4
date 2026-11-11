@@ -97,3 +97,14 @@ def plays(sport, raw, season):
 
 def games(sport, raw, season):
     return nfl_games(raw, season) if sport == "nfl" else cfb_games(raw, season)
+
+
+def cfb_schedule(raw, season):
+    """Scheduled CFB games (including games not yet played) from the free cfbfastR schedule file; scores NaN when
+    not completed. Used only to identify an upcoming game's week, teams and neutral site."""
+    sc = pd.read_parquet(os.path.join(raw, f"cfb_schedules_{season}.parquet"))
+    return pd.DataFrame({"game_id": sc.game_id.astype(str).values, "season": season, "week": sc.week.astype(int).values,
+                         "home": sc.home_team.values, "away": sc.away_team.values,
+                         "home_pts": sc.home_points.values, "away_pts": sc.away_points.values,
+                         "neutral": sc.neutral_site.fillna(False).astype(bool).values,
+                         "kickoff_utc": pd.to_datetime(sc.start_date, utc=True).values})

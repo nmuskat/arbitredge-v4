@@ -1,0 +1,21 @@
+{
+ "decision": "NO POSITION",
+ "decision_time_note": "latest collected snapshot at record time (spec: kickoff - 90 min; no T-90 job on this research branch)",
+ "event_id": "1daaf8ba9d71d56b9657b450f3df7861",
+ "football_only_mu_diagnostic": 17.311199994683157,
+ "format": "desk_v1_prospective_v1",
+ "game": "Boston College Eagles @ Notre Dame Fighting Irish",
+ "kickoff": "2026-11-14T20:30:00.000000Z",
+ "market": "spread",
+ "market_basis": "pinnacle",
+ "mu_desk": 28.923448790954687,
+ "mu_mkt": 28.923448790954687,
+ "params_sha256": "7f0682a532416cf5d7e0d57d96f7452aac45a7f390d5608532670a09b69fa7cc",
+ "prior_games": 9,
+ "reason": "w = 0 (frozen)",
+ "record_sha256": "9dc3ca1fa2f9e3fb3005a4e1127e8799be7638edf91aabc2aa9ea68b68a98961",
+ "recorded_at": "2026-11-11T13:13:10.000000Z",
+ "snapshot_at": "2026-11-11T13:13:10.000000Z",
+ "spec_sha256": "ad82a0af379ec592cd37dc50304f14a562fe9bd08308a6e880d204197d188c34",
+ "sport": "cfb"
+}
