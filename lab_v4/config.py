@@ -56,6 +56,8 @@ CONFIGS = {
     #      customers betting ~3-4 games on the main game day every week
     "VOL": {"label": "Production behaviour + game-day regulars", "price": False, "risk": False, "margin": False,
             "volume": True},
+    "VOL2": {"label": "Production behaviour + game-day regulars who bet BOTH sports (CFB Sat, NFL Sun)",
+             "price": False, "risk": False, "margin": False, "volume": True, "two_sport": True},
 }
 SEEDS = (0, 1, 2)
 HORIZONS_H = (48, 24, 6, 1)
