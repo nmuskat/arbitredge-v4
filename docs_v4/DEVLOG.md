@@ -416,3 +416,13 @@ Findings:
 
 V4r1 corrections in development: sharp EV rule and max-win limit. Margin and other limits unchanged; robustness
 measure added. Details: `docs_v4/V4_REALISM_AUDIT.md`.
+
+## 2026-11-11 — Individual bettor FADE/TAIL study (research branch `research/v4-bettors`)
+
+17,181 bettor IDs, 146,205 wagers; per-bettor reconciliation to the ledger.
+- Empirical-Bayes between-bettor skill variance τ² = 0; odd/even-week repeatability ≈ 0.
+- Walk-forward with groups frozen on earlier weeks only, graded at best real prices (opposite side at its own
+  price): top 10% tail −2.5% NFL / −6.8% CFB; bottom 10% fade −3.6% / −1.3%.
+- 0 of 112 out-of-sample tests survive FDR in any of 3 seeds or in V4r1; seed sign agreement 27/112 (chance).
+
+Verdict: NO EVIDENCE. Details: `docs_v4/V4_BETTOR_FADE_TAIL.md`.
