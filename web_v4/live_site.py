@@ -471,6 +471,37 @@ R.splits=()=>{const f=st.f,bk=S().book||{};const head=[card(el("h2",{},"Betting 
     ...Object.entries(row.sides).map(([sd,v])=>el("div",{},el("b",{class:"small"},sd),splitBar(v,(g.bands[bm]||{})[sd])))))}
   out.push(card(el("div",{class:"game",on:{click:()=>openGame(g.event_id)}},el("h3",{},badge("MODELED"),gameHead(g)),el("div",{class:"mute small"},ko(g))),...rows))}
  return[...head,...(out.length?out:[card(el("p",{class:"mute"},"No modeled wagers on upcoming games yet. The synthetic book only trades while real prices are being collected."))])]};
+const v7f=x=>x==null?"-":(typeof x==="object"?JSON.stringify(x):String(x));
+const v7line=(c,mu)=>mu==null?"-":(c.market==="spread"?c.home+" "+(-mu>0?"+":"")+(-mu).toFixed(1):"total "+mu.toFixed(1));
+const v7pr=p=>p==null?"-":(p>0?"+":"")+p;
+const v7panel=()=>{const V=D.intel_v7;if(!V)return[];if(V.status!=="OK")return[card(el("h2",{},"Professional Market NEED Signal"),el("p",{class:"small mute"},"Unavailable: "+(V.reason||V.status)))];
+ const B=(V.sports||{})[st.sport]||{};const cs=B.cards||[];const sig=cs.filter(c=>c.signal_or_pass==="SIGNAL"),pass=cs.filter(c=>c.signal_or_pass!=="SIGNAL");
+ const out=[card(el("h2",{},badge("OBSERVED"),"1 · Professional Market NEED Signal"),
+  el("p",{class:"small"},el("b",{},"ACTUAL BOOK LIABILITY: UNKNOWN. "),"Inferred only from real, observed odds: which side professional pricing (Pinnacle; the BetOnline group counted once) rates higher than the retail books. A pricing lean is not a confirmed sportsbook NEED and not a bet recommendation. PROFESSIONAL PRICING INFERENCE = a lean with at least moderate evidence; OBSERVED MARKET DISAGREEMENT = a difference only. Everything else is PASS. Validation status: unvalidated ("+V.version+", rules "+V.config_hash+")."),
+  el("p",{class:"small mute"},"Data through "+(B.data_through||"-")+" · "+sig.length+" signals, "+pass.length+" PASS"))];
+ const val=((V.validation||{}).by_type)||{};const vs=val.SIGNAL;
+ out.push(card(el("h3",{},"Prospective record (frozen final-pregame cards only)"),el("div",{class:"small"},"SIGNAL: "+(vs?vs.record+" ("+vs.records+" records, ROI "+(vs.roi==null?"-":(100*vs.roi).toFixed(1)+"%")+", mean CLV vs consensus close "+(vs.mean_clv_consensus_close==null?"-":(100*vs.mean_clv_consensus_close).toFixed(1)+"%")+")":"no frozen records yet")),el("div",{class:"small mute"},"Development history is not shown as a record: 2026 games were already studied.")));
+ for(const c of sig){const bp=c.best_observed_executable_price,dv=c.divergence||{},ar=c.active_resistance||{},kn=c.key_number_analysis||{},mc=c.market_convergence||{},fr=c.quote_freshness||{};
+  const row=(k,v)=>el("div",{class:"small"},el("b",{},k+": "),v);
+  out.push(card(el("div",{class:"game"},el("h3",{},c.game+" · "+(c.market==="spread"?"Spread":"Total")),el("div",{class:"mute small"},local(c.kickoff))),
+   el("div",{},el("b",{},c.market_need_signal)," ",badge(c.evidence_strength,c.evidence_strength==="STRONG"?"OK":"LOW")),
+   row("PROFESSIONAL PRICING SIDE",c.professional_pricing_side),
+   row("EVIDENCE",(c.evidence||[]).map(e=>e.module+" → "+e.side).join("; ")||"-"),
+   row("PROFESSIONAL PRICE",(dv.pro_basis||"-")+" no-vig fair line "+v7line(c,dv.pro_mu)),
+   row("RETAIL CONSENSUS","no-vig fair line "+v7line(c,dv.retail_mu)+" from "+(dv.retail_n||0)+" books (spread ± "+v7f(dv.retail_dispersion_pts)+") · difference "+Math.abs(dv.gap_pts||0).toFixed(2)+" pts"),
+   row("KEY-NUMBER ANALYSIS",kn.status+(kn.reason?" · "+kn.reason:"")),
+   row("ACTIVE RESISTANCE",ar.status+(ar.reason?" · "+ar.reason:"")),
+   row("MARKET CONVERGENCE",mc.status+(mc.retail_toward_pro!=null?" · retail→pro "+mc.retail_toward_pro+", pro→retail "+mc.pro_toward_retail+" ("+mc.games+" prior games)":"")),
+   row("QUOTE FRESHNESS",fr.status+" · fetch "+(fr.age_min==null?"-":fr.age_min+" min old")),
+   row("CONFLICTING EVIDENCE",Array.isArray(c.conflicting_evidence)?c.conflicting_evidence.join("; "):c.conflicting_evidence),
+   row("ACTUAL BOOK LIABILITY","UNKNOWN"),
+   row("BEST OBSERVED EXECUTABLE PRICE",bp?bp.book+" "+bp.point+" at "+v7pr(bp.price)+" (EV vs professional fair "+(100*bp.ev_vs_pro_fair).toFixed(1)+"%; may have moved since)":"-"),
+   row("VALIDATION STATUS",c.validation_status),row("SIGNAL OR PASS",c.signal_or_pass)))}
+ if(pass.length)out.push(card(el("details",{},el("summary",{class:"small"},"PASS ("+pass.length+" game-markets): weak, conflicting, stale or no material difference"),
+  ...pass.map(c=>el("div",{class:"small"},c.game+" · "+c.market+" · "+c.headline_type+" · "+(c.pass_reason||"")+" · liability UNKNOWN")))));
+ if(!cs.length)out.push(card(el("p",{class:"mute"},"No upcoming game-markets with professional and retail quotes yet.")));
+ out.push(card(el("p",{class:"small mute"},"Below: 2 · FINANCIAL NEED (our synthetic sportsbook's liability)"+(D.need_v6?" and 3 · TRADING DESK STATUS (our simulated desk)":"")+". These are separate from the professional market signal and are never combined with it.")));
+ return out};
 const v6money=x=>x==null?"-":(x<0?"-$":"$")+Math.abs(Math.round(x)).toLocaleString();
 const v6panel=()=>{const V=D.need_v6;if(!V)return[];if(V.status!=="OK")return[card(el("h2",{},"ArbitrEdge NEED v6"),el("p",{class:"small mute"},"Unavailable: "+(V.reason||V.status)))];
  const B=(V.sports||{})[st.sport]||{};const out=[card(el("h2",{},badge("MODELED"),"ArbitrEdge NEED (v6 trading desk)"),
@@ -488,7 +519,7 @@ const v6panel=()=>{const V=D.need_v6;if(!V)return[];if(V.status!=="OK")return[ca
    el("div",{class:"small"},el("b",{},"MARKET-MAKER INFERENCE: "),(m.observed||m.status||"-")+" · pricing opinion "+(m.pricing_opinion_side||"UNKNOWN")+" · professional NEED UNKNOWN"),
    el("div",{class:"small mute"},"Book: posted "+(b.posted_line==null?"-":b.posted_line)+" · risk used "+Math.round(100*(b.risk_used||0))+"% of "+v6money(b.game_limit)+(b.closed_sides&&b.closed_sides.length?" · closed: "+b.closed_sides.join(", "):""))))}
  if(!(B.cards||[]).length)out.push(card(el("p",{class:"mute"},"No upcoming game-markets with a v6 book yet.")));return out};
-R.need=()=>{const bk=S().book||{};const head=[...v6panel(),card(el("h2",{},"ArbitrEdge Need"),el("p",{class:"small"},badge("MODELED"),
+R.need=()=>{const bk=S().book||{};const head=[...v7panel(),...v6panel(),card(el("h2",{},"ArbitrEdge Need"),el("p",{class:"small"},badge("MODELED"),
  " The outcome the synthetic book's own liability most needs, computed exactly from its accepted wagers (P&L over every final score). It is a liability fact about simulated customers, NOT a prediction, NOT fading the public, and NOT a betting recommendation. Need is not betting value: it says nothing about whether a price is good. Whether betting the Need has any advantage is being tested, on paper, in the Need Tracker tab. Estimated value lives only in the EV Scanner, as unvalidated paper candidates."),ledgerLine(),filters({}))];
  const b=bookBlock();if(b)return[...head,b];const out=[];
  for(const g of bookGames()){const n=g.need;if(!n){continue}const sp=n.spread||{},to=n.total||{},ml=n.moneyline||{};
@@ -854,6 +885,12 @@ def main(argv=None):
             NEED_V6.step(snap, conn, load_rankings(a.rankings_dir), now, a.results_dir, a.need_dir, a.need_out)
         except Exception as e:             # noqa: BLE001 -- never stops the build
             snap["need_v6"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
+    if os.environ.get("V7_INTEL") == "on":  # V7 professional market intelligence: OFF unless enabled (owner approval)
+        try:
+            from intel_v7 import site as INTEL_V7
+            INTEL_V7.step(snap, conn, load_rankings(a.rankings_dir), now, a.results_dir, a.need_dir, a.need_out)
+        except Exception as e:             # noqa: BLE001 -- never stops the build
+            snap["intel_v7"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
     with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
         json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))
     try:                                   # display only; never stops the build

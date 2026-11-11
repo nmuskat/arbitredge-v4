@@ -365,3 +365,18 @@ Owner asked why Trading Desk NEED matched Financial NEED on 67/67 and why every 
   EXPOSURE TOLERANCE field, policy financial_first_v2 (v1 selectable), fair cover probability on cards plus
   wins-vs-fair in validation, SIM_SEED separated from VERSION. Replay identical to v6.0 in wagers, P&L and Financial NEED.
   Details: docs_v4/NEED_V6_AUDIT.md.
+
+## 2026-11-11 — V7 professional market intelligence (development; nothing deployed)
+
+Branch `dev/v7-market-intel` (on v6.1). New analytical layer `intel_v7` over the real odds:
+- audit, modules A divergence / B active resistance / C key numbers / D walk-forward convergence;
+- E classifier with SIGNAL/PASS; site panel behind `V7_INTEL`;
+- write-once `v7intel_*` final pregame records.
+
+The prospective spec is frozen: CONFIG 622c296b99ce, spec hash in `docs_v4/V7_PROSPECTIVE_SPEC.md`; the evaluator
+`intel_v7/prospective.py` was written before any outcome.
+
+2026 development evaluation (1,654 game-markets, 68 SIGNAL):
+- retail moved slightly toward SIGNAL sides (+0.08 pt) but the pros moved more toward retail (−0.18);
+- CLV vs consensus close −1.9% (SHOP baseline −1.7%); record 29-34-2;
+- no betting value; nothing tuned. Details: `docs_v4/V7_MARKET_INTEL.md`.
