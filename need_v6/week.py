@@ -9,7 +9,7 @@ customers are skipped exactly as in the live V5 engine.
 
 import sqlite3
 
-from need_v6 import VERSION
+from need_v6 import SIM_SEED
 from need_v6 import engine as V6
 from need_v6 import need as NEED
 from sportsbook_v4 import customers_v5
@@ -64,7 +64,7 @@ def run(conn, sport, ws, we, polls, bankrolls=None, until=None, replay=False):
         c, arch, active, _ind = customers_v5.effective(b, bank, ws)
         if active:
             custs.append((c, arch))
-    rng_key = sha256_hex(VERSION, pid, sport, ws, we)
+    rng_key = sha256_hex(SIM_SEED, pid, sport, ws, we)
     gmap = {g.canonical_game_id: g for g in games}
 
     def card_fn(k, t, gm, desk, exposure, wagers, game):

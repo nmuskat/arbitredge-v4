@@ -73,7 +73,8 @@ def grade_record(rec, final):
     """{type: {side, point, price, result, units}} for official / financial / desk at the frozen terms."""
     c = rec["card"]
     out = {}
-    for typ, blk in (("official", c["arbitredge_need"]), ("financial", c["financial_need"]), ("desk", c["trading_desk_need"])):
+    for typ, blk in (("official", c["arbitredge_need"]), ("financial", c["financial_need"]), ("desk", c["trading_desk_need"]),
+                     ("tolerance", c.get("exposure_tolerance") or {})):
         side = blk.get("side")
         if side is None:
             out[typ] = None
@@ -89,7 +90,8 @@ def grade_record(rec, final):
         hs, as_ = final
         r = ST.wager_result(side, point, hs - as_) if c["market"] == "spread" else ST.total_result(side, point, hs + as_)
         units = 0.0 if r == "push" else (profit_on_win(1.0, price) if r == "win" else -1.0) if price else None
-        out[typ] = {"side": side, "point": point, "price": price, "result": r, "units": units}
+        out[typ] = {"side": side, "point": point, "price": price, "result": r, "units": units,
+                    "fair_cover_prob": (c.get("fair_cover_prob") or {}).get(side)}
     return out
 
 
@@ -105,7 +107,7 @@ def validation(records, finals):
         g = grade_record(rec, finals.get((rec["sport"], c["event_id"])))
         for typ, x in g.items():
             a = agg.setdefault(typ, {"game_markets": 0, "selections": 0, "none": 0, "w": 0, "l": 0, "p": 0,
-                                     "units": 0.0, "risk": 0, "pending": 0})
+                                     "units": 0.0, "risk": 0, "pending": 0, "expected_wins_at_fair": 0.0})
             a["game_markets"] += 1
             if x is None:
                 a["none"] += 1
@@ -115,6 +117,8 @@ def validation(records, finals):
                 a["pending"] += 1
                 continue
             a[{"win": "w", "loss": "l", "push": "p"}[x["result"]]] += 1
+            if x["result"] != "push" and x.get("fair_cover_prob") is not None:
+                a["expected_wins_at_fair"] += x["fair_cover_prob"]
             if x["units"] is not None and x["result"] != "push":
                 a["units"] += x["units"]
                 a["risk"] += 1
@@ -122,5 +126,6 @@ def validation(records, finals):
         a["record"] = f"{a['w']}-{a['l']}-{a['p']}"
         a["roi_at_frozen_price"] = round(a["units"] / a["risk"], 4) if a["risk"] else None
         a["units"] = round(a["units"], 3)
+        a["expected_wins_at_fair"] = round(a["expected_wins_at_fair"], 2)
     agg["excluded_late_written"] = late
     return agg

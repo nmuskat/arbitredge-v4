@@ -288,3 +288,51 @@ def test_seeded_random_scores_conservation(sim):
         sc = {"ev1": (rng.randint(0, 45), rng.randint(0, 45)), "ev2": (rng.randint(0, 45), rng.randint(0, 45))}
         cust, book = _settle(sim["wagers"], sc)
         assert book == pytest.approx(-math.fsum(cust.values()), abs=1e-6)
+
+
+# ---------------------------------------------------------------- v6.1 audit: informed-position gate
+def test_no_validated_signal_means_no_trading_desk_need(sim):
+    assert CONFIG["validated_signals"] == [] and CONFIG["official_policy"] == "financial_first_v2"
+    for c in list(sim["cards_latest"].values()) + list(sim["cards_frozen"].values()):
+        if not c:
+            continue
+        t = c["trading_desk_need"]
+        assert t["side"] is None and t["text"] == "NONE" and t["informed"]["status"] == "NONE"
+        assert "no validated independent information" in t["informed"]["basis"]
+        assert c["arbitredge_need"]["source"] != "TRADING DESK"
+
+
+def test_tolerated_exposure_is_always_the_financial_need_side(sim):
+    """Audit finding, as an invariant: ACCEPT EXPOSURE's direction is inherited, never chosen."""
+    seen = 0
+    for c in list(sim["cards_latest"].values()) + list(sim["cards_frozen"].values()):
+        if c and c["exposure_tolerance"]["side"]:
+            seen += 1
+            assert c["exposure_tolerance"]["side"] == c["financial_need"]["side"]
+            assert c["exposure_tolerance"]["direction_source"].startswith("inherited from Financial NEED")
+    for log in sim["decisions"].values():
+        assert all(d["action"] != "ACCEPT EXPOSURE" or d["desk_need"] for d in log)
+
+
+def test_fair_cover_prob_is_a_probability(sim):
+    for c in sim["cards_latest"].values():
+        if c:
+            for v in c["fair_cover_prob"].values():
+                assert v is None or 0.0 < v < 1.0
+
+
+def test_v1_policy_still_selectable(two_games, customers, monkeypatch):
+    monkeypatch.setitem(CONFIG, "official_policy", "desk_material_first_v1")
+    db, g = two_games
+    r = run(db, g, customers)
+    for c in r["cards_frozen"].values():
+        t, tol = c["trading_desk_need"], c["exposure_tolerance"]
+        assert t["side"] == tol["side"]                      # v1: the desk NEED is the tolerated side
+        if tol["side"] and tol["material"]:
+            assert c["arbitredge_need"]["source"] == "TRADING DESK"
+
+
+def test_signal_gate_refuses_unimplemented_signal(monkeypatch):
+    monkeypatch.setitem(CONFIG, "validated_signals", ["someone_added_this"])
+    with pytest.raises(NotImplementedError):
+        NEED.informed_position(None, {"status": "OK"}, {})

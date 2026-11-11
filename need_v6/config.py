@@ -50,7 +50,14 @@ CONFIG = {
 
     # ---------------------------------------------------------------- markets
     "markets": ["spread", "total"],  # v6 scope: NEEDs for spreads and totals (moneyline customers re-weighted)
-    "official_policy": "desk_material_first_v1",
+    # ---------------------------------------------------------------- official policy and independent information
+    # financial_first_v2 (v6.1 default): the headline is a TRADING DESK NEED only for an INFORMED directional position,
+    # i.e. one backed by an independent signal listed in validated_signals; otherwise FINANCIAL if material, else
+    # NONE. desk_material_first_v1 (v6.0) is kept selectable; under it, liability tolerance was labelled a desk NEED.
+    "official_policy": "financial_first_v2",
+    # Independent signals that have passed PROSPECTIVE validation. Empty: the 2026 audit found none (engine C model,
+    # market-maker disagreement, injuries, line moves: see docs_v4/NEED_V6_AUDIT.md). Only the owner adds one.
+    "validated_signals": [],
 }
 
 CONFIG_HASH = hashlib.sha256(json.dumps(CONFIG, sort_keys=True).encode()).hexdigest()[:12]

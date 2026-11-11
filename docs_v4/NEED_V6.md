@@ -1,5 +1,11 @@
 # ArbitrEdge NEED engine v6 (`need_v6`): DEVELOPMENT, not deployed
 
+> **v6.1 (branch `dev/need-engine-v6.1`, 2026-11-11 audit):** Trading Desk NEED now means an *informed* position
+> backed by a validated independent signal. None exists, so it is NONE. The desk's ACCEPT EXPOSURE side is shown
+> as EXPOSURE TOLERANCE, always equal to the Financial NEED side. Official policy is `financial_first_v2`.
+> Wagers, prices and Financial NEED are identical to v6.0. See `docs_v4/NEED_V6_AUDIT.md`. The text below
+> describes v6.0.
+
 Status: built and tested on branch `dev/need-engine-v6`. **Nothing here is live.** Production is unchanged until the
 owner approves the steps in §7. Everything is MODELED: a synthetic sportsbook with simulated customers. No NEED is
 a real sportsbook's liability, and no NEED is a bet recommendation (rule 6: default NO BET).

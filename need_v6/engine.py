@@ -12,7 +12,7 @@ Freeze: the card at the last desk decision at or before kickoff - FREEZE_BEFORE_
 
 import heapq
 
-from need_v6 import VERSION
+from need_v6 import SIM_SEED, VERSION
 from need_v6 import customers as C
 from need_v6.book import Exposure
 from need_v6.config import CONFIG, CONFIG_HASH
@@ -91,7 +91,7 @@ def simulate(conn, sport, games, customers, ws, we, rng_key, until=None, card_fn
         k = (g.canonical_game_id, acc["market"])
         staked[cust["bettor_index"]] = staked.get(cust["bettor_index"], 0.0) + acc["stake"]
         expo[k].add(acc["side"], acc["point"], acc["price"], acc["stake"])
-        w = {"wager_id": sha256_hex(VERSION, rng_key, cust["bettor_uid"], b)[:40], "bettor_index": cust["bettor_index"],
+        w = {"wager_id": sha256_hex(SIM_SEED, rng_key, cust["bettor_uid"], b)[:40], "bettor_index": cust["bettor_index"],
              "bettor_uid": cust["bettor_uid"], "archetype": cust["archetype"], "event_id": g.canonical_game_id,
              "sport": sport, "market": acc["market"], "side": acc["side"],
              "accepted_line": float(acc["point"]),

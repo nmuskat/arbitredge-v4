@@ -110,7 +110,7 @@ def run(market_db, rankings_dir, results_dir, sports=("nfl", "cfb")):
                 rec = {"sport": sport, "week_start": r["window"][0], "card": c, "final": None if not fr else
                        {"home": fr["home_score"], "away": fr["away_score"]}, "grades": {}}
                 for typ, blk in (("official", c["arbitredge_need"]), ("financial", c["financial_need"]),
-                                 ("desk", c["trading_desk_need"])):
+                                 ("desk", c["trading_desk_need"]), ("tolerance", c.get("exposure_tolerance") or {})):
                     side = blk.get("side")
                     if side is None:
                         rec["grades"][typ] = None
@@ -122,6 +122,7 @@ def run(market_db, rankings_dir, results_dir, sports=("nfl", "cfb")):
                     price = off.get("price") or -110.0
                     g = grade(c["market"], side, point, price, fr["home_score"], fr["away_score"]) if fr else None
                     rec["grades"][typ] = {"side": side, "point": point, "price": price,
+                                          "fair_cover_prob": (c.get("fair_cover_prob") or {}).get(side),
                                           "result": g["result"] if g else "NO_RESULT", "units": g["units"] if g else None,
                                           "clv": clv(conn, sport, k[0], c["market"], kick, side, point, price)}
                 out["frozen"].append(rec)
@@ -130,7 +131,7 @@ def run(market_db, rankings_dir, results_dir, sports=("nfl", "cfb")):
 
 def summarize(rep):
     s = {}
-    for typ in ("official", "financial", "desk"):
+    for typ in ("official", "financial", "desk", "tolerance"):
         for sp in ("nfl", "cfb", "all"):
             for m in ("spread", "total", "all"):
                 rows = [f for f in rep["frozen"] if (sp == "all" or f["sport"] == sp) and (m == "all" or f["card"]["market"] == m)]
@@ -139,12 +140,15 @@ def summarize(rep):
                 w = sum(g["result"] == "win" for g in gr); l_ = sum(g["result"] == "loss" for g in gr)
                 clvs = [g["clv"] for g in gs if g.get("clv") is not None]
                 risk = sum(1 for g in gr if g["result"] != "push")
+                expw = sum(g["fair_cover_prob"] for g in gr if g["result"] != "push" and g.get("fair_cover_prob") is not None)
                 s[f"{typ}|{sp}|{m}"] = {"game_markets": len(rows), "selections": len(gs), "none": len(rows) - len(gs),
                                         "record": f"{w}-{l_}-{len(gr) - w - l_}",
                                         "win_pct": round(w / (w + l_), 3) if w + l_ else None,
                                         "roi_at_frozen_price": round(sum(g["units"] for g in gr) / risk, 4) if risk else None,
                                         "mean_clv": round(sum(clvs) / len(clvs), 4) if clvs else None,
-                                        "no_result": len(gs) - len(gr)}
+                                        "no_result": len(gs) - len(gr),
+                                        # the information test: actual wins vs wins the market makers' fair expected
+                                        "wins_minus_fair_expected": round(w - expw, 2) if risk else None}
     both = [f for f in rep["frozen"] if f["grades"].get("financial") and f["grades"].get("desk")]
     s["agreement"] = {"both_present": len(both),
                       "same_side": sum(f["grades"]["financial"]["side"] == f["grades"]["desk"]["side"] for f in both),

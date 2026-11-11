@@ -11,5 +11,8 @@ DEVELOPMENT VERSION. Runs ALONGSIDE the live sportsbook_v5 engine and never writ
 Everything is MODELED. Nothing here is real sportsbook liability or a betting recommendation.
 """
 
-VERSION = "need_v6.0"
+VERSION = "need_v6.1"   # 6.1: informed-position gate (audit 2026-11-11); 6.0 kept on branch dev/need-engine-v6
+# Simulation seed: kept separate from VERSION so a labelling/policy release does not reshuffle simulated customers.
+# Change it only for a deliberate new random draw (and say so).
+SIM_SEED = "need_v6.0"
 LABEL = "MODELED (synthetic sportsbook + trading desk on real odds; not real sportsbook liability; not a bet recommendation)"

@@ -349,3 +349,19 @@ bets in discovery and > 52.4% in test):
 Verdict: across 16 weeks no side-picking rule built from the simulated customers survives out of sample. The
 book's profit comes from the vig and a few large losing customers, not from a predictable side. The only
 positive real-data evidence remains line shopping (closing EV). No official plays (rule 6).
+
+## 2026-11-11 — NEED v6 audit (development; nothing deployed)
+
+Owner asked why Trading Desk NEED matched Financial NEED on 67/67 and why every NEED's ROI was negative.
+- 67/67 is by construction: desk.py takes the side with the better clean-cover P&L, which is the Financial NEED.
+  The v6.0 desk only tolerates liability; with fair = Pinnacle it has no pricing opinion and no rule can produce
+  another direction.
+- Negative ROI is the book's margin: every NEED is graded at the book's own price (CLV −4.2% in every slice).
+  Information test (wins vs fair expectation at the close): Financial −23 over 625 (z −1.84); no slice reliably
+  positive. Re-seeding the customers moves it to −10.
+- No validated independent signal: engine C model, market-maker disagreement (n 56, z +0.45), cadence-limited
+  leadership; no injury feed or splits.
+- v6.1 on `dev/need-engine-v6.1`: informed-position gate (Trading Desk NEED = NONE until a validated signal),
+  EXPOSURE TOLERANCE field, policy financial_first_v2 (v1 selectable), fair cover probability on cards plus
+  wins-vs-fair in validation, SIM_SEED separated from VERSION. Replay identical to v6.0 in wagers, P&L and Financial NEED.
+  Details: docs_v4/NEED_V6_AUDIT.md.

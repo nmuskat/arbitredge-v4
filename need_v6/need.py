@@ -6,11 +6,17 @@ FINANCIAL NEED      outcome that maximises the synthetic book's P&L from wagers 
                     expected book P&L under the fair outcome distribution.
 MARKET-MAKER INFER. observable pricing of Pinnacle vs recreational books (normalised); pricing_opinion_side when
                     readable; candidate_need_side is ALWAYS "UNKNOWN" (odds do not reveal a book's liability).
-TRADING DESK NEED   the side the modelled desk deliberately chose to be exposed toward (ACCEPT EXPOSURE), else NONE.
-ARBITREDGE NEED     official headline, policy `desk_material_first_v1` (deterministic, documented):
-                      1. Trading Desk NEED exists (ACCEPT EXPOSURE) and its position is MATERIAL -> source TRADING DESK
-                      2. else Financial NEED is MATERIAL                                       -> source FINANCIAL
-                      3. else                                                                   -> NONE
+TRADING DESK NEED   an INFORMED directional position: a side the desk wants because a validated independent signal
+                    says so. None is validated (CONFIG validated_signals is empty), so it is NONE with that reason.
+EXPOSURE TOLERANCE  the desk's ACCEPT EXPOSURE decision: it keeps the liability customers created instead of
+                    balancing it. Its direction is INHERITED from the Financial NEED by construction (desk.py takes
+                    the side with the better clean-cover P&L), so it is never presented as an opinion.
+ARBITREDGE NEED     official headline, policy CONFIG official_policy:
+                    financial_first_v2 (default)
+                      1. material INFORMED desk position        -> source TRADING DESK (impossible until a signal is validated)
+                      2. else Financial NEED is MATERIAL        -> source FINANCIAL
+                      3. else                                   -> NONE
+                    desk_material_first_v1 (v6.0, kept for comparison): rule 1 used the tolerated side.
                     The source is always printed; one type is never silently substituted for another.
 None of these is real sportsbook liability or a betting recommendation.
 """
@@ -82,15 +88,36 @@ def market_maker(gm, ms):
     return out
 
 
+def informed_position(gm, ms, decision):
+    """The desk's INFORMED directional position. Requires an independent signal in CONFIG validated_signals; none is
+    validated, so this always returns NONE and says why. (Hook for a future, prospectively validated signal.)"""
+    if not CONFIG["validated_signals"]:
+        return {"side": None, "status": "NONE",
+                "basis": "no validated independent information: desk fair = market makers' price; engine C model, "
+                         "market-maker disagreement and line moves showed no edge; no injury feed"}
+    raise NotImplementedError("a validated signal must be implemented and reviewed before it is listed")
+
+
+def fair_cover(gm, ms, side, point):
+    """No-push probability that `side` covers `point` under the market makers' fair at this observation."""
+    if point is None or ms.get("status") != "OK":
+        return None
+    pw, pp = gm.fair_prob(ms["fair_mu"], side, point)
+    return round(pw / max(1e-9, 1 - pp), 5)
+
+
 def card(k, t, gm, desk, exposure, wagers, game, names):
     ms = gm.state(t)
     market = gm.market
     fin = financial(wagers, market, exposure, gm, ms)
     d = desk.decision
     offers = desk.offers(ms.get("fair_mu")) if ms.get("status") == "OK" else {}
-    desk_side = d.get("desk_need")
-    desk_material = desk_side is not None and d.get("swing", 0) >= max(CONFIG["materiality_abs"],
-                                                                      CONFIG["materiality_share"] * exposure.handle)
+    tol_side = d.get("desk_need")                 # ACCEPT EXPOSURE side = Financial NEED side, by construction
+    tol_material = tol_side is not None and d.get("swing", 0) >= max(CONFIG["materiality_abs"],
+                                                                    CONFIG["materiality_share"] * exposure.handle)
+    informed = informed_position(gm, ms, d)
+    v1 = CONFIG["official_policy"] == "desk_material_first_v1"
+    desk_side, desk_material = (tol_side, tol_material) if v1 else (informed["side"], informed["side"] is not None)
     a, b = SIDES[market]
 
     def pt_of(side):
@@ -101,7 +128,8 @@ def card(k, t, gm, desk, exposure, wagers, game, names):
         return gm.side_point(side, desk.line)
 
     if desk_side and desk_material:
-        off_side, source, rule = desk_side, "TRADING DESK", "1: deliberate desk position (ACCEPT EXPOSURE), material"
+        off_side, source, rule = desk_side, "TRADING DESK", ("1: deliberate desk position (ACCEPT EXPOSURE), material" if v1
+                                                             else "1: material informed desk position (validated signal)")
     elif fin["status"] == "MATERIAL":
         off_side, source, rule = fin["side"], "FINANCIAL", "2: no material desk position; material financial NEED"
     else:
@@ -120,8 +148,14 @@ def card(k, t, gm, desk, exposure, wagers, game, names):
                               if desk_side else "NONE", "action": d.get("action"), "rationale": d.get("rationale"),
                               "decided_at": from_epoch(d["at"]) if d.get("at") else None,
                               "risk_used": d.get("risk_used"), "uncertainty_pts": d.get("uncertainty_pts"),
-                              "material": desk_material,
-                              "basis": "risk acceptance (no validated informational edge)" if desk_side else None},
+                              "material": desk_material, "informed": informed,
+                              "basis": ("risk acceptance (no validated informational edge)" if v1 else informed["basis"])
+                              if desk_side else None},
+        "exposure_tolerance": {"side": tol_side, "text": side_text(market, tol_side, pt_of(tol_side), names)
+                               if tol_side else "NONE", "material": tol_material, "action": d.get("action"),
+                               "direction_source": "inherited from Financial NEED (liability tolerance, not an opinion)"
+                               if tol_side else None},
+        "fair_cover_prob": {s: fair_cover(gm, ms, s, pt_of(s)) for s in (a, b)},
         "market_maker_inference": market_maker(gm, ms),
         "book": {"posted_line": desk.line, "offers": {s: {"point": v[0], "price": v[1]} for s, v in offers.items()},
                  "closed_sides": sorted(desk.closed), "handle": round(exposure.handle, 2),

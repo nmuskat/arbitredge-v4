@@ -176,3 +176,10 @@ def test_v6_records_never_collide_with_need_tracker_files(tmp_path):
     FZ.write_new({("ev1", "spread"): card()}, "nfl", None, str(tmp_path), KICK1 + 60)
     assert NT.load(str(tmp_path), "need_*.json.gz") == []
     assert "v6need_*.json.gz" in open(".github/scripts/site_inputs.sh").read()
+
+
+def test_validation_reports_wins_vs_fair_expectation():
+    c = dict(card(), fair_cover_prob={"home": 0.6, "away": 0.4})
+    v = FZ.validation([{"sport": "nfl", "written_before_final": True, "card": c}], {("nfl", "ev1"): (24, 20)})
+    assert v["financial"]["expected_wins_at_fair"] == pytest.approx(0.6) and v["financial"]["w"] == 1
+    assert v["tolerance"]["none"] == 1          # old-format card without exposure_tolerance -> NONE, no crash
