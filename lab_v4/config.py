@@ -45,6 +45,13 @@ CONFIGS = {
                "margin": False, "sharp_ev": True, "max_win": True, "v2": True, "pop_frac": 0.5},
     "B2_5K": {"label": "V4b2 revised behaviour, 5,000 customers (fixed subset)", "price": False, "risk": False,
               "margin": False, "sharp_ev": True, "max_win": True, "v2": True, "pop_frac": 0.25},
+    # ---- three-book experiment (research only): three alternative 20,000-customer populations on V4b2
+    "TB_PUBLIC": {"label": "Public-heavy book", "price": False, "risk": False, "margin": False, "sharp_ev": True,
+                  "max_win": True, "v2": True, "pop_frac": 1.0, "profile": "public"},
+    "TB_EMOTION": {"label": "Emotion-driven book", "price": False, "risk": False, "margin": False, "sharp_ev": True,
+                   "max_win": True, "v2": True, "pop_frac": 1.0, "profile": "emotion"},
+    "TB_PRICE": {"label": "Price-aware book", "price": False, "risk": False, "margin": False, "sharp_ev": True,
+                 "max_win": True, "v2": True, "pop_frac": 1.0, "profile": "price"},
 }
 SEEDS = (0, 1, 2)
 HORIZONS_H = (48, 24, 6, 1)

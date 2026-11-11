@@ -186,7 +186,7 @@ def run_week(run, pop, snap, market, cfg, seed=0, until=None, rekey=None, record
         if not active:
             continue
         if v2:
-            b, arch, ind2[b["bettor_index"]] = BV2.adjust(b, arch)
+            b, arch, ind2[b["bettor_index"]] = BV2.adjust(b, arch, cfg.get("profile"))
         own[b["bettor_index"]] = arch
         for seq, t in enumerate(E.bettor_arrivals(key_for(b["archetype"]), b, ws, we, stats_cache, arch)):
             if ws < t <= until_e:

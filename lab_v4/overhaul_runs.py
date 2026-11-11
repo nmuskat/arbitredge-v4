@@ -11,7 +11,8 @@ import pickle
 
 from lab_v4.ledger import build
 
-JOBS = [(c, s, f"{c}_s{s}") for c in ("B2_20K", "B2_10K", "B2_5K") for s in (0, 1, 2)]
+JOBS = [(c, s, f"{c}_s{s}") for c in ("B2_20K", "B2_10K", "B2_5K", "TB_PUBLIC", "TB_EMOTION", "TB_PRICE")
+        for s in (0, 1, 2)]
 
 
 def one(args):

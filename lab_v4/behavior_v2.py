@@ -67,8 +67,44 @@ def ind2(customer):
             "narr_mult": math.exp(rng.gauss(math.log(V2["narr_recency_mult"][0]), V2["narr_recency_mult"][1]))}
 
 
-def adjust(b, arch):
+# Three alternative sportsbook populations (three-book experiment). Fixed a priori; multipliers on V4b2 behaviour.
+PROFILES = {
+    "public": {"fav_add": 0.50, "over_add": 0.40, "popularity_mult": 2.0, "tv_mult": 2.0, "primetime_mult": 1.5,
+               "recency_mult": 1.5, "loyalty_mult": 1.0, "tol_mult": 1.0, "sens_mult": 1.0, "impulse_mult": 1.0,
+               "shop_all": False},
+    "emotion": {"fav_add": 0.0, "over_add": 0.0, "popularity_mult": 1.0, "tv_mult": 1.0, "primetime_mult": 1.0,
+                "recency_mult": 2.5, "loyalty_mult": 1.75, "tol_mult": 1.5, "sens_mult": 0.6, "impulse_mult": 2.5,
+                "shop_all": False},
+    "price": {"fav_add": 0.0, "over_add": 0.0, "popularity_mult": 1.0, "tv_mult": 1.0, "primetime_mult": 1.0,
+              "recency_mult": 1.0, "loyalty_mult": 1.0, "tol_mult": 0.5, "sens_mult": 2.0, "impulse_mult": 0.25,
+              "shop_all": True},
+}
+
+
+def adjust(b, arch, profile=None):
     """Apply the group mechanisms to the customer's own (customers_v5) parameters. Returns (b, arch, ind)."""
+    b, arch, ind = _adjust(b, arch)
+    P = PROFILES.get(profile)
+    if not P or arch["is_sharp"]:
+        return b, arch, ind
+    tr = dict(b["traits"])
+    tr["fav_pref"] += P["fav_add"]
+    tr["over_pref"] = tr.get("over_pref", 0.0) + P["over_add"]
+    tr["popularity_weight"] *= P["popularity_mult"]
+    tr["recency_weight"] *= P["recency_mult"]
+    arch["national_tv_weight"] *= P["tv_mult"]
+    arch["primetime_weight"] *= P["primetime_mult"]
+    arch["loyalty"] = arch["loyalty"] * P["loyalty_mult"]
+    if P["shop_all"]:
+        arch["shops"] = True
+        arch.setdefault("shop_line_tolerance", 0.5)
+        arch.setdefault("shop_prob_tolerance", 0.015)
+    ind = dict(ind, tolerance=ind["tolerance"] * P["tol_mult"], sensitivity=ind["sensitivity"] * P["sens_mult"],
+               impulse_p=min(1.0, ind["impulse_p"] * P["impulse_mult"]))
+    return dict(b, traits=tr), arch, ind
+
+
+def _adjust(b, arch):
     ind = ind2(b)
     tr = dict(b["traits"])
     arch = dict(arch)
