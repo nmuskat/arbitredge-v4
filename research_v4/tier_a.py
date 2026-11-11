@@ -159,17 +159,19 @@ def _res_event(e, m, b, run, ts, ev):
                 "moved its number" if changed else "quote unchanged")
     # PRICING OPINION: b rates the higher-mu side (home/over) stronger than the market if dev > 0
     opinion_side = favours(m, dev)
-    # CANDIDATE NEED: b's price is cheaper for the OTHER side, so it takes that side's money and would need
-    # opinion_side to win -- IF the deviation is deliberate. Identifiable only if active (quote changed while
-    # deviating) and the book is a market maker; stale (unchanged) or recreational deviations -> UNKNOWN.
+    # NEED: a pricing deviation -- even an active, deliberate one -- does NOT identify the outcome the book wants to
+    # need (owner rule, 2026-11-11). candidate_need_side is UNKNOWN unless independent evidence of the book's
+    # financial position exists, and no such evidence exists in odds data. `identifiable` now means only that the
+    # PRICING-OPINION direction is readable (active market-maker deviation), not that a NEED is known.
     active = changed
     identifiable = active and b in MAKERS
     hyp = ("H5 stale-consistent" if not active else
            "H2/H4-consistent (informed or deliberate)" if b in MAKERS else "recreational deviation (H1/H5)")
     return {"e": e, "m": m, "book": b, "t_first": t_first, "t_last": t_last, "fetches": len(run),
             "dev_mu": round(dev, 2), "observed": observed, "on_key": on_key,
-            "opinion_side": opinion_side, "candidate_need": opinion_side if identifiable else "UNKNOWN",
-            "identifiable": identifiable, "hypothesis": hyp}
+            "pricing_opinion_side": opinion_side if identifiable else "UNKNOWN",
+            "candidate_need_side": "UNKNOWN", "opinion_readable": identifiable, "identifiable": identifiable,
+            "hypothesis": hyp}
 
 
 # ---------------------------------------------------------------- shared: decision & close helpers
