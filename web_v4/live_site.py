@@ -293,6 +293,52 @@ def sharp_follow_step(bconn, conn, active, games, res, now):
     return SF.report(gs, by_game, res, close_line, _iso(now))
 
 
+def splits_step(snap, conn, rankings_snaps, results_dir, now, splits_dir=None, splits_out=None):
+    """PUBLIC SPLITS PLAYS (splits_v4): seal play decisions for snapshots that have none yet (write-once files), then
+    show every sealed play with its result. Display/record only; an error is shown and never stops the build."""
+    try:
+        from data_v4 import rankings as _RK
+        from data_v4 import results as _RS
+        from splits_v4 import plays as _P
+        snaps_f = sorted(glob.glob(os.path.join(splits_dir, "**", "splits_*.json"), recursive=True)) if splits_dir else []
+        sealed = {os.path.basename(p)[len("plays_"):]: p for p in
+                  glob.glob(os.path.join(splits_dir, "**", "plays_*.json"), recursive=True)} if splits_dir else {}
+        records, new = [], 0
+        for p in snaps_f:
+            name = os.path.basename(p)[len("splits_"):]
+            if name in sealed:
+                records += json.load(open(sealed[name]))["records"]
+                continue
+            doc = json.load(open(p))
+            top = {e["event_id"]: (None if e["sport"] != "cfb" else
+                                   (lambda st: st["top25"] if st["status"] == "OK" else None)(
+                                       _RK.top25_status(e["home"], e["away"], e["kickoff"], rankings_snaps)))
+                   for e in doc["events"]}
+            recs = _P.decide(doc, conn, top)
+            records += recs
+            if splits_out:
+                os.makedirs(splits_out, exist_ok=True)
+                with open(os.path.join(splits_out, "plays_" + name), "w") as fh:
+                    json.dump({"rule": _P.RULE, "snapshot": os.path.basename(p), "sealed_at": _iso(now), "records": recs},
+                              fh, separators=(",", ":"), sort_keys=True)
+                new += 1
+        latest = max(records, key=lambda r: r["taken_at"])["taken_at"] if records else None
+        gl = [{"sport": r["sport"], "event_id": r["event_id"], "home": r["game"].split(" @ ")[1],
+               "away": r["game"].split(" @ ")[0], "kickoff": _iso(r["kickoff"])} for r in records]
+        latest_rank = max((x for x in rankings_snaps if x.get("teams")), key=lambda x: x["fetched_at"], default=None)
+        docs = _RS.load(results_dir) if results_dir else []
+        finals = {k[1]: (v["home_score"], v["away_score"]) for k, v in
+                  _RS.match(gl, docs, _RK.TeamMatcher(latest_rank["teams"]) if latest_rank else None).items()}
+        for r in records:
+            r["final"] = list(finals[r["event_id"]]) if r["event_id"] in finals else None
+            r["graded"] = _P.grade(r, finals.get(r["event_id"]))
+            r["kickoff_iso"] = _iso(r["kickoff"])
+        snap["splits_plays"] = {"status": "OK", "rule": _P.RULE, "records": records, "sealed_this_build": new,
+                                "snapshots": len(snaps_f), "latest_snapshot": _iso(latest) if latest else None}
+    except Exception as e:                 # noqa: BLE001
+        snap["splits_plays"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
+
+
 def book_moves_step(snap, conn, rankings_snaps, results_dir, now):
     """PINNACLE & CIRCA line moves with an INFERRED need side (analysis_v4/book_moves.py). Display only; an error
     is shown on the tab and never stops the build."""
@@ -428,7 +474,7 @@ const SECTIONS=[["overview","Overview"],["odds","Odds Board"],["splits","Betting
 ["tracker","Need Tracker"],["official","Official Needs"],["sharp","Sharp Money"],["moves","Pinnacle & Circa"],["ev","EV Scanner"],["sims","SIMS"],["performance","Performance"],["health","Health"]];
 const MK={spreads:"Spread",totals:"Total",h2h:"Moneyline"};const BMK={spread:"spreads",total:"totals",moneyline:"h2h"};
 const st={sport:"nfl",sec:"overview",game:null,f:{q:"",market:"",book:"",date:"",strength:"0",fresh:"all",unfiltered:false}};
-try{const s=localStorage.getItem("v4sport");if(s==="nfl"||s==="cfb")st.sport=s}catch(e){}
+try{const s=localStorage.getItem("v4sport");if(s==="nfl"||s==="cfb")st.sport=s;st.more=!!localStorage.getItem("v4more")}catch(e){}
 function el(tag,attrs,...kids){const e=document.createElement(tag);for(const[k,v]of Object.entries(attrs||{})){
  if(k==="class")e.className=v;else if(k==="on")for(const[ev,fn]of Object.entries(v))e.addEventListener(ev,fn);else e.setAttribute(k,v)}
  for(const k of kids.flat()){if(k==null||k===false)continue;e.append(k instanceof Node?k:document.createTextNode(String(k)))}return e}
@@ -841,6 +887,35 @@ R.mi=()=>{const M=D.market_intel||{};if(M.status!=="OK")return[card(el("h2",{},"
   el("div",{class:"mi2"},shp("Spread",sp,["home","away"]),shp("Totals",tt,["over","under"])))})]};
 const AG={rule:"v3",cut:"T-1h",src:"genuine",market:"spread",cat:"",show:false};
 const AGCAT={STRONG_AGREEMENT:"Strong agreement",MODERATE_AGREEMENT:"Moderate agreement",DISAGREEMENT:"Disagreement",NO_SHARP_CONSENSUS:"No sharp consensus",MARKET_NEED_ONLY:"NEED only (no sharp wagers)",SHARP_ONLY:"Sharps only (no NEED)",NO_SIGNAL:"No signal",ALL_NEED:"All NEED picks (any sharp position)"};
+R.plays=()=>{const P=D.splits_plays||{};const hd=card(el("h2",{},"Plays ",badge("EXPERIMENTAL")),
+  el("p",{},"One idea, tested honestly: when the public is heavy on one side (65%+ of bets across DraftKings, ScoresAndOdds/SportsBettingDime and BetMGM) but Pinnacle and Circa refuse to move toward it, play the other side. Checked once per slate, about 1 hour before kickoff. Every pick is frozen when made and graded after the game. These are tracked picks, not official plays: the site's default stays NO BET until this record proves itself."),
+  el("p",{class:"small mute"},"STRONG = Pinnacle moved against the public. HOLD = Pinnacle didn't move. Not proven profitable yet: judge it by the record below after a few weekends. Rule "+(P.rule||"")+"."));
+ if(P.status!=="OK")return[hd,card(el("p",{class:"mute"},"Unavailable: "+(P.reason||P.status||"not built")))];
+ const rs=P.records||[],plays=rs.filter(r=>r.status==="PICK"),now=Date.now()/1000;
+ const tm=(r,side)=>{const[a,h]=r.game.split(" @ ");return side==="home"?h:side==="away"?a:side==="over"?"Over":"Under"};
+ const pl=r=>{const p=r.play;return tm(r,p.side)+" "+(r.market==="spread"?ln(p.line):p.line)+" "+am(p.price)+" ("+p.book+")"};
+ const tally=xs=>{const g=xs.filter(r=>r.graded);const w=g.filter(r=>r.graded.result==="W").length,l=g.filter(r=>r.graded.result==="L").length,pu=g.length-w-l,u=g.reduce((a,r)=>a+r.graded.units,0);
+  return{n:g.length,txt:g.length?w+"-"+l+(pu?"-"+pu:"")+"  ·  "+(u>=0?"+":"")+u.toFixed(2)+" units  ·  ROI "+(u/g.length*100>=0?"+":"")+(u/g.length*100).toFixed(1)+"%":"no graded plays yet"}};
+ const row=(t,xs)=>{const x=tally(xs);return el("tr",{},el("td",{},t),el("td",{class:"num"},String(xs.length)),el("td",{},x.txt))};
+ const rec=card(el("h3",{},"Record"),el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},""),el("th",{class:"num"},"Plays"),el("th",{},"Result"))),
+  el("tbody",{},row("All plays",plays),row("NFL",plays.filter(r=>r.sport==="nfl")),row("College (Top-25)",plays.filter(r=>r.sport==="cfb")),
+   row("Spreads",plays.filter(r=>r.market==="spread")),row("Totals",plays.filter(r=>r.market==="total")),
+   row("STRONG",plays.filter(r=>r.play.strength==="STRONG")),row("HOLD",plays.filter(r=>r.play.strength==="HOLD"))))),
+  el("p",{class:"small mute"},"Snapshots taken: "+(P.snapshots||0)+(P.latest_snapshot?" · latest "+local(P.latest_snapshot):"")+". 1 unit risked per play at the recorded price."));
+ const why=r=>(r.why_public||"")+" · Pinnacle "+((r.pinnacle||{}).status||"–").toLowerCase()+" · Circa "+((r.circa||{}).status||"n/a").toLowerCase();
+ const src=r=>(r.sources||[]).map(x=>x.label+" "+Math.round(x.bets[r.public_side]||0)+"%").join(" · ");
+ const up=plays.filter(r=>r.kickoff>now).sort((a,b)=>a.kickoff-b.kickoff),done=plays.filter(r=>r.kickoff<=now).sort((a,b)=>b.kickoff-a.kickoff);
+ const upCard=card(el("h3",{},"Upcoming plays ("+up.length+")"),up.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Kickoff"),el("th",{},"Game"),el("th",{},"Play"),el("th",{},"Strength"),el("th",{class:"hide-s"},"Public (bets %)"))),
+  el("tbody",{},...up.map(r=>el("tr",{},el("td",{class:"small"},local(r.kickoff_iso)),el("td",{},r.game),el("td",{},el("b",{},pl(r))),el("td",{},r.play.strength),el("td",{class:"small hide-s"},src(r))))))):
+  el("p",{class:"mute"},"No plays for upcoming games right now. Snapshots are taken about 1 hour before each slate."));
+ const res=r=>!r.graded?el("span",{class:"mute"},r.final?"–":"awaiting score"):el("span",{class:r.graded.result==="W"?"pos":r.graded.result==="L"?"neg":""},r.graded.result+" "+(r.graded.units>=0?"+":"")+r.graded.units.toFixed(2));
+ const doneCard=card(el("h3",{},"Results ("+done.length+")"),done.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Date"),el("th",{},"Game"),el("th",{},"Play"),el("th",{class:"num"},"Final (away–home)"),el("th",{},"Result"))),
+  el("tbody",{},...done.map(r=>el("tr",{},el("td",{class:"small"},(r.kickoff_iso||"").slice(5,10)),el("td",{},r.game),el("td",{},pl(r)+" · "+r.play.strength),el("td",{class:"num"},r.final?r.final[1]+"–"+r.final[0]:"–"),el("td",{},res(r))))))):
+  el("p",{class:"mute"},"No completed plays yet."));
+ const checked=rs.slice().sort((a,b)=>b.taken_at-a.taken_at).slice(0,60);
+ const chk=el("details",{},el("summary",{},"Every game checked (latest 60), and why it was or wasn't a play"),el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Game"),el("th",{},"Market"),el("th",{},"Decision"),el("th",{},"Why"))),
+  el("tbody",{},...checked.map(r=>el("tr",{},el("td",{},r.game),el("td",{},r.market),el("td",{},r.status==="PICK"?el("b",{},pl(r)):r.status),el("td",{class:"small"},r.status==="PICK"?why(r):(r.reason||"")+(r.public_side?" · "+why(r):""))))))));
+ return[hd,upCard,rec,doneCard,card(chk)]};
 const BMV={show:{}};
 R.moves=()=>{const B=D.book_moves||{};if(B.status!=="OK")return[card(el("h2",{},"Pinnacle & Circa line moves"),el("p",{class:"mute"},"Unavailable: "+(B.reason||B.status||"not built")))];
  const gs=(B.games||[]).filter(g=>g.sport===st.sport);const BK=B.books||{};
@@ -899,10 +974,13 @@ function shp(t,x,sides){const s=x.sharp||{},a=x.agreement||{};const pc=v=>v==nul
   el("p",{class:"small"},"Synthetic sharp tickets "+(s.tickets||0)+" from "+(s.bettors||0)+" bettors · tickets "+sides.map(k=>k+" "+pc((s.ticket_pct||{})[k])).join(" / ")+
    " · simulated handle "+sides.map(k=>k+" "+pc((s.handle_pct||{})[k])).join(" / ")+" · largest wager "+pc(s.largest_wager_share)+" of sharp handle · lean "+(s.direction||"none")+(s.strength?" ("+s.strength+")":"")),
   el("p",{class:"small mute"},(s.label||"SIMULATED")+(s.book_simulated_through?" · book simulated through "+s.book_simulated_through:"")+(s.last_at?" · last sharp wager "+s.last_at:"")))}
-function render(){const h=location.hash.slice(1);let sec=h||"overview",gid=null;if(h.startsWith("game/")){gid=h.slice(5);sec="game"}
- if(sec!=="game"&&!R[sec])sec="overview";if(sec!=="game")st.prev=sec;st.sec=sec;
+function render(){const h=location.hash.slice(1);let sec=h||"plays",gid=null;if(h.startsWith("game/")){gid=h.slice(5);sec="game"}
+ if(sec!=="game"&&!R[sec])sec="plays";if(sec!=="game")st.prev=sec;st.sec=sec;
  for(const b of document.querySelectorAll("#sport button"))b.classList.toggle("on",b.dataset.s===st.sport);
- const nav=document.getElementById("nav");nav.replaceChildren(...SECTIONS.concat(SECTIONS_MI).map(([k,t])=>el("a",{href:"#"+k,class:k===sec?"on":""},t)));
+ const nav=document.getElementById("nav");const showMore=st.more||(sec!=="plays"&&sec!=="game");
+ nav.replaceChildren(el("a",{href:"#plays",class:sec==="plays"?"on":""},"Plays"),
+  ...(showMore?SECTIONS.concat(SECTIONS_MI).map(([k,t])=>el("a",{href:"#"+k,class:k===sec?"on":""},t)):[]),
+  el("a",{href:"javascript:void 0",class:"small",on:{click:()=>{st.more=!showMore;try{localStorage.setItem("v4more",st.more?"1":"")}catch(e){}if(!st.more&&sec!=="plays")location.hash="plays";else render()}}},showMore?"Hide research tabs":"Research tabs ▸"));
  const s=S();const f=freshness(s.observed_at);document.getElementById("fresh").replaceChildren(badge(f),el("span",{class:"mute"},s.observed_at?fmtAge(ageMin(s.observed_at))+" old":"no data"));
  const main=document.getElementById("main");const y=window.scrollY;main.replaceChildren(...(sec==="game"?R.game(gid):R[sec]()).filter(Boolean));
  if(document.activeElement&&document.activeElement.type==="search"){}else window.scrollTo(0,y)}
@@ -936,6 +1014,8 @@ def main(argv=None):
     ap.add_argument("--sensitivity-cache", default=None, help="previous build's variant splits (v4-site, optional)")
     ap.add_argument("--line-shop-cache", default=None,
                     help="previous build's line-shopping scan cache (v4-site, optional; performance only)")
+    ap.add_argument("--splits-dir", default=None, help="public-splits snapshots and sealed plays (release v4-splits)")
+    ap.add_argument("--splits-out", default=None, help="where to write play records sealed by this build")
     ap.add_argument("--mi-out", default=None, help="market-intelligence records created by this build (if enabled)")
     ap.add_argument("--mi-existing", default=None, help="names of saved market-intelligence records (one per line)")
     a = ap.parse_args(argv)
@@ -978,6 +1058,7 @@ def main(argv=None):
             (snap["sports"][sp].get("book") or {}).pop("official_snapshots", None)
         snap["official_needs"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
     book_moves_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, now)
+    splits_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, now, a.splits_dir, a.splits_out)
     market_intel_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, now, a.mi_out, a.mi_existing, bconn)
     with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
         json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))

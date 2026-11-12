@@ -61,6 +61,10 @@ fetch_all v4-need-decisions 'official_dec_*.json.gz' need '^official_dec_'
 fetch_all v4-results 'results_*.json.gz' results '^results_'
 mkdir -p settle
 fetch_all v4-settlement 'settle_*.json.gz' settle '^settle_'
+# public betting splits snapshots and sealed plays (release v4-splits; absent until the first slate)
+mkdir -p splits
+fetch_all v4-splits 'splits_*.json' splits '^splits_'
+fetch_all v4-splits 'plays_*.json' splits '^plays_'
 # previous build's sensitivity replays (a cache, not a record): reused for up to 3 h; absent = recompute
 mkdir -p prev
 gh release download v4-site -p sensitivity_cache.json -D prev 2>/dev/null || echo "no sensitivity cache yet"

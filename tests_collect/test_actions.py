@@ -246,7 +246,8 @@ def test_secret_only_in_collect_and_verify_steps_and_never_on_pull_requests():
 def test_actions_pinned_and_permissions_minimal(wf):
     text = _wf(wf)
     for ref in re.findall(r"uses: ([^\s]+)", text):
-        assert re.fullmatch(r"actions/checkout@[0-9a-f]{40}", ref) or ref == "./.github/workflows/site-build.yml", ref
+        assert re.fullmatch(r"actions/checkout@[0-9a-f]{40}", ref) or ref in ("./.github/workflows/site-build.yml",
+                                                                             "./.github/workflows/splits-collect.yml"), ref
     assert "permissions:\n  contents: read" in text
     assert "persist-credentials: false" in text
     assert re.search(r"cancel-in-progress: false", text) and "group: v4-odds-state" in text
@@ -508,7 +509,12 @@ def test_site_build_workflow_has_only_cloudflare_secrets_and_is_pinned():
 def test_site_job_runs_only_after_new_data_and_gets_no_secrets(wf, need, output):
     site = _yaml(wf)["jobs"]["site"]
     assert site["uses"] == "./.github/workflows/site-build.yml"
-    assert site["needs"] == need and site["if"] == f"needs.{need}.outputs.{output} == 'true'"
+    if wf == "odds-collect.yml":      # also after a public-splits snapshot (2026-11-12), only when collection succeeded
+        assert site["needs"] == [need, "splits"]
+        assert site["if"] == (f"always() && needs.{need}.result == 'success' && (needs.{need}.outputs.{output} == 'true' "
+                              "|| needs.splits.result == 'success')")
+    else:
+        assert site["needs"] == need and site["if"] == f"needs.{need}.outputs.{output} == 'true'"
     assert site["secrets"] == {"CLOUDFLARE_API_TOKEN": "${{ secrets.CLOUDFLARE_API_TOKEN }}",
                                "CLOUDFLARE_ACCOUNT_ID": "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"}   # never 'inherit'
     assert not re.search(r"secrets:\s*inherit", _wf(wf))
@@ -546,7 +552,7 @@ case "$1" in
       *official_*) echo "${FAKE_OFF:-0}"; exit 0 ;;          # Official Needs records (counted by their own pattern)
       *releases/tags/v4-book*) [[ -n "${FAKE_BOOK:-}" ]] || exit 1; echo "${FAKE_BOOK%%:*}"; exit 0 ;;
       *releases/tags/v4-need-decisions*) [[ -n "${FAKE_DEC:-}" ]] || exit 1; echo "${FAKE_DEC%%:*}"; exit 0 ;;
-      *releases/tags/v4-need-*|*releases/tags/v4-results*|*releases/tags/v4-settlement*) exit 1 ;;
+      *releases/tags/v4-need-*|*releases/tags/v4-results*|*releases/tags/v4-settlement*|*releases/tags/v4-splits*) exit 1 ;;
       *) printf '%s\n' $FAKE_TAGS; exit 0 ;;
     esac ;;
   release)

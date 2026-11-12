@@ -1,0 +1,58 @@
+# ArbitrEdge V4 -- public betting splits snapshot, once per slate ~1 h before its first kickoff (owner-approved 2026-11-12).
+# Reads six public websites (DraftKings Network, ScoresAndOdds, SportsBettingDime, BetMGM's public-betting panel,
+# WagerTalk, Covers). NO secrets, NO Odds API calls. Started by odds-collect when splits_v4.slates says a slate is due
+# (or by hand for a test). Output: one immutable file per run in release v4-splits (never modified or deleted).
+name: splits-collect
+on:
+  workflow_call:
+    inputs:
+      slate:
+        type: string
+        required: true
+      timing:
+        type: string
+        required: false
+        default: ON_TIME
+  workflow_dispatch:
+    inputs:
+      slate:
+        description: "slate start (epoch seconds, UTC)"
+        required: true
+      timing:
+        description: "label"
+        required: false
+        default: MANUAL
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    permissions:
+      contents: write           # release assets only (v4-splits); no code changes
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
+        with:
+          persist-credentials: false
+      - name: Take the splits snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLATE: ${{ inputs.slate }}
+          TIMING: ${{ inputs.timing }}
+        run: |
+          [[ "$SLATE" =~ ^[0-9]+$ ]] || { echo "bad slate '$SLATE'"; exit 1; }
+          [[ "$TIMING" =~ ^[A-Za-z_]+$ ]] || TIMING=ON_TIME
+          mkdir -p st splits_new
+          gh release download v4-state -p collector_state.json -D st
+          python3 -m splits_v4.snapshot --state st/collector_state.json --slate "$SLATE" --timing "${TIMING//_/ }" --out splits_new
+      - name: Save the snapshot (new file only, never overwritten)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          files=(splits_new/splits_*.json)
+          (( ${#files[@]} )) || { echo "no snapshot written"; exit 1; }
+          gh release view v4-splits >/dev/null 2>&1 || gh release create v4-splits --prerelease \
+            --title "Public betting splits snapshots and plays (do not delete)" \
+            --notes "Immutable: one splits snapshot per slate (~1 h before kickoff) and the sealed play decisions."
+          gh release upload v4-splits "${files[@]}"

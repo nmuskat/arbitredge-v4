@@ -423,3 +423,26 @@ positive real-data evidence remains line shopping (closing EV). No official play
   - Small samples; no edge shown yet.
 - **Tests:** 4 new tests in `tests_v4/test_book_moves.py`.
 - **Update (same day):** the first collection with `circasports` (2026-11-12T15:40Z) returned no Circa prices for either sport, while all 9 other books returned prices. `lowvig` is restored as agreed. The tab keeps its Circa rows, which show "no prices yet".
+
+## 2026-11-12 — Public betting splits "Plays" (owner-approved, including the sites' terms risk; private use)
+
+- **Owner's idea:** "if our betting splits show high public bets and Circa and Pinnacle aren't moving or respecting that action, then we have a bet."
+- **Sources:** six sites read (`splits_v4/sources.py`, stdlib only, no keys). They reduce to three independent real-money sources:
+  - DraftKings (WagerTalk republishes the same numbers);
+  - the ScoresAndOdds / SportsBettingDime feed (identical bets % on every game compared);
+  - BetMGM (bets % only).
+  - Covers is free contest picks: shown, never counted.
+  - WagerTalk also supplies Circa's current spread and total.
+- **Timing:** once per slate, about 1 h before its first kickoff.
+  - `splits_v4/slates.py` decides inside each collection run (free kickoff list) and flags the slate when it is 50–75 min away.
+  - A separate job with NO secrets (`splits-collect.yml`) takes the snapshot into release `v4-splits` (immutable).
+  - The site then rebuilds.
+- **Rule** `splits_fade.v1`, fixed before any result:
+  - **Public side:** average bets ≥ 65%, with at least 2 sources ≥ 60%.
+  - **No play** if Pinnacle moved ≥ 0.25 point-equivalents toward the public side, or Circa's number moved ≥ 0.5 toward it from the opener.
+  - **Otherwise:** play the other side at the best real price in our feed. STRONG means Pinnacle moved against the public; HOLD means it didn't move.
+  - **Scope:** CFB plays count only for AP Top-25 games.
+  - **Records:** plays are sealed write-once (`plays_*.json`) and graded at the recorded number and price.
+- **Website:** "Plays" is now the landing page (upcoming plays, record, results, every game checked). All earlier tabs are behind "Research tabs".
+- **First real snapshot test** (today's pages): every site read and matched tonight's games. Tomorrow's 11 AM college slate matched 14 of 14 games on SportsBettingDime.
+- **Tests:** `tests_splits` (16 tests); workflow tests updated.
