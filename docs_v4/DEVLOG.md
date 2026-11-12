@@ -399,3 +399,12 @@ positive real-data evidence remains line shopping (closing EV). No official play
   - CF1 ran normally (no eligible cutoff yet). The synthetic book was OK for both sports. Deploy succeeded.
   - The published Performance figures equal a from-scratch recompute on the same 260 shards, for both NFL and CFB.
 - **Job time limit:** it stays at 20 minutes. Return it to 10 after several warm production builds show the same headroom.
+
+## 2026-11-12 — Original ArbitrEdge Market Intelligence merged into production (owner request)
+
+- **Merged:** `research/mi-integration` into `v4-dev` (41678dd). It includes the 2026 Market NEED × synthetic sharp agreement records: 1,534 game rows with complete W-L-P, units, ROI and CLV, frozen from `original_v3/agreement.py`, EXPLORATORY.
+- **Tab switch:** the tab appears once the owner sets the repository variable `MARKET_INTEL` to `on`. This session cannot set GitHub variables.
+- **Recorder:** `MARKET_INTEL_RECORD` stays off.
+- **Local build** on 265 production shards: Market Intelligence step 7.6 s, whole page 2m07s.
+- **Production build** 43232081326 (MI still off): success; line-shop cache warm; book OK for NFL and CFB; CF1 ran.
+- **Tests:** required suite + tests_cf1 + tests_market_intel: 618 passed, 22 skipped.
