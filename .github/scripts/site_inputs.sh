@@ -64,4 +64,14 @@ fetch_all v4-settlement 'settle_*.json.gz' settle '^settle_'
 # previous build's sensitivity replays (a cache, not a record): reused for up to 3 h; absent = recompute
 mkdir -p prev
 gh release download v4-site -p sensitivity_cache.json -D prev 2>/dev/null || echo "no sensitivity cache yet"
+# line-shopping scan cache (performance only): absent or unreadable = full calculation, same numbers.
+# The stamp lets Publish refuse to overwrite a cache another build saved in the meantime.
+gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v4-site" \
+  --jq '[.assets[] | select(.name == "line_shop_cache.json.gz") | .updated_at][0] // ""' > prev/line_shop_cache.stamp 2>/dev/null \
+  || : > prev/line_shop_cache.stamp
+if [[ -s prev/line_shop_cache.stamp ]]; then
+  gh release download v4-site -p line_shop_cache.json.gz -D prev 2>/dev/null || echo "line-shop cache download failed: full calculation"
+else
+  echo "no line-shop cache yet: full calculation"
+fi
 echo "shards: $(find shards -name 'quotes_*.jsonl.gz' | wc -l), rankings snapshots: $(find rankings -name 'rankings_*.json' | wc -l), ledger files: $(find book -name 'book_*.json.gz' | wc -l), need files: $(find need -name '*.json.gz' | wc -l), results files: $(find results -name 'results_*' | wc -l)"

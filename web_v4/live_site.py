@@ -71,7 +71,7 @@ def _clean(o):
 
 
 def build_snapshot(conn, ledger_rows, snaps, now, book_conn=None, bettors=10_000, commit=None, book_in=None,
-                   book_out=None, sensitivity_cache=None, settlements=None):
+                   book_out=None, sensitivity_cache=None, settlements=None, line_shop_cache=None):
     """Everything the page shows, from the market store as of `now`."""
     out = {"schema": SCHEMA, "generated_at": _iso(now), "commit": commit, "freshness_policy": FRESH,
            "sports": {}, "collection": live.collection_health(conn, ledger_rows, now),
@@ -87,7 +87,7 @@ def build_snapshot(conn, ledger_rows, snaps, now, book_conn=None, bettors=10_000
     latest_snap = max(snaps, key=lambda s: s["fetched_at"]) if snaps else None
     for sport, key in SPORTS.items():
         b = live.board(conn, key, now)
-        rows, hist = live.scanner_rows(conn, key, now)
+        rows, hist = live.scanner_rows(conn, key, now, cache=line_shop_cache)
         sharp = live.sharp_rows(conn, key, now)
         s = {"key": key, "label": "NFL" if sport == "nfl" else "College football (AP Top-25)",
              "observed_at": b["observed_at"], "games": b["games"], "scanner": rows, "sharp": sharp,
@@ -795,6 +795,8 @@ def main(argv=None):
     ap.add_argument("--need-out", default=None, help="where to write Need-tracker files created by this build")
     ap.add_argument("--settle-dir", default=None, help="saved wager settlements (release v4-settlement)")
     ap.add_argument("--sensitivity-cache", default=None, help="previous build's variant splits (v4-site, optional)")
+    ap.add_argument("--line-shop-cache", default=None,
+                    help="previous build's line-shopping scan cache (v4-site, optional; performance only)")
     a = ap.parse_args(argv)
     now = _epoch(a.now) if a.now else time.time()
     if a.live_db:
@@ -819,8 +821,11 @@ def main(argv=None):
         prior_settlements = _NT.load(a.settle_dir, "settle_*.json.gz") if a.settle_dir else []
     except _NT.TrackerIntegrityError:
         prior_settlements = []
+    from analysis_v4.line_shop_cache import LineShopCache
+    ls_cache = LineShopCache(a.line_shop_cache)       # missing/corrupt/old -> full calculation (same numbers)
     snap = build_snapshot(conn, ledger_rows, load_rankings(a.rankings_dir), now, bconn, a.bettors, book_in=a.book_dir,
                           book_out=a.book_out, sensitivity_cache=cache, settlements=prior_settlements,
+                          line_shop_cache=ls_cache,
                           commit=(os.environ.get("GITHUB_SHA") or "")[:7] or None)
     snap["shards"] = n_shards
     tracker_step(snap, load_rankings(a.rankings_dir), now, a.need_dir, a.results_dir, a.need_out, conn)
@@ -833,6 +838,10 @@ def main(argv=None):
         snap["official_needs"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
     with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
         json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))
+    ls_cache.save(os.path.join(a.out, "line_shop_cache.json.gz"))
+    print(f"line-shop cache: {ls_cache.load_status}; " + "; ".join(
+        f"{sp}: {st['status']}, reused {st['reused']}, computed {st['computed']}, invalidated {st['invalidated']}, "
+        f"spot-checked {st['spot_checked']}" for sp, st in ls_cache.stats.items()))
     try:                                   # display only; never stops the build
         feed_kickoffs(snap, conn, now)
     except Exception as e:                 # noqa: BLE001

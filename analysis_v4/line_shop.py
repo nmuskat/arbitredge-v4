@@ -60,15 +60,44 @@ def _events(conn, sport):
             for e, (k, h, a) in sorted(asof.kickoffs(conn, sport=sport).items())]
 
 
-def find_opportunities(conn, sport, policy=ev.LIVE_POLICY, max_age_s=asof.DEFAULT_MAX_AGE_S):
-    mk, ms, tk, ts, model_label = models(sport)
-    events = _events(conn, sport)
+def _snapshots_full(conn, sport, events, mods, policy, max_age_s):
+    mk, ms, tk, ts = mods
     times = [t for (t,) in conn.execute(
         "SELECT DISTINCT fetched_at FROM mkt_fetch WHERE sport=? AND n_quotes>0 ORDER BY 1", (sport,))]
-    seen, opps = set(), []
     for t in times:
         live = [e for e in events if e["kickoff"] > t]
-        for r in scan(conn, None, live, t, mk, ms, tk, ts, policy=policy, max_age_s=max_age_s, record=False):
+        yield t, scan(conn, None, live, t, mk, ms, tk, ts, policy=policy, max_age_s=max_age_s, record=False)
+
+
+def _snapshots_cached(conn, sport, events, mods, policy, max_age_s, cache):
+    """Same rows as _snapshots_full (candidates only), reusing per-game results of earlier builds
+    (analysis_v4/line_shop_cache.py). Falls back to a complete recomputation if a spot check differs."""
+    from analysis_v4 import line_shop_cache as C
+    mk, ms, tk, ts = mods
+
+    def one(e, t):
+        return scan(conn, None, [e], t, mk, ms, tk, ts, policy=policy, max_age_s=max_age_s, record=False)
+    try:
+        snaps = C.scan_times(conn, sport, events, policy, max_age_s, cache, one, ev.NO_BET)
+    except C.SpotCheckFailed as e:
+        cache.stats[sport] = {"reused": 0, "computed": 0, "invalidated": 0, "spot_checked": 0,
+                              "status": f"cold (spot check failed at {e}; cache discarded)"}
+        snaps = C.scan_times(conn, sport, events, policy, max_age_s, cache, one, ev.NO_BET, use_prev=False)
+    order = {ev.BET: 0, ev.WATCH: 1, ev.NO_BET: 2}
+    for t, rows in snaps:
+        rows.sort(key=lambda r: (order[r["decision"]], -(r.get("ev_interval") or (0, 0))[0]))   # scan's ordering
+        yield t, rows
+
+
+def find_opportunities(conn, sport, policy=ev.LIVE_POLICY, max_age_s=asof.DEFAULT_MAX_AGE_S, cache=None):
+    """cache: optional analysis_v4.line_shop_cache.LineShopCache (performance only; identical result)."""
+    mk, ms, tk, ts, model_label = models(sport)
+    events = _events(conn, sport)
+    snaps = (_snapshots_cached(conn, sport, events, (mk, ms, tk, ts), policy, max_age_s, cache) if cache is not None
+             else _snapshots_full(conn, sport, events, (mk, ms, tk, ts), policy, max_age_s))
+    seen, opps = set(), []
+    for t, scanned in snaps:
+        for r in scanned:
             if r["decision"] == ev.NO_BET or r.get("selection") is None:
                 continue
             key = (r["game_id"], r["market"], r["selection"], r["book"], r["line"], r["american"])
@@ -112,8 +141,8 @@ def _cluster_ci(values_by_game, n_boot=2000, seed=5):
             "p_le_0": (sum(m <= 0 for m in means) + 1) / (n_boot + 1), "n": len(flat), "games": len(games)}
 
 
-def report(conn, sport, policy=ev.LIVE_POLICY):
-    opps, mods = find_opportunities(conn, sport, policy)
+def report(conn, sport, policy=ev.LIVE_POLICY, cache=None):
+    opps, mods = find_opportunities(conn, sport, policy, cache=cache)
     by_game, unobserved, rows = {}, 0, []
     for o in opps:
         cev, why = closing_ev(conn, o, mods)

@@ -69,7 +69,7 @@ def board(conn, sport, now):
             "games": rows}
 
 
-def scanner_rows(conn, sport, now, policy=ev.LIVE_POLICY):
+def scanner_rows(conn, sport, now, policy=ev.LIVE_POLICY, cache=None):
     """EV scan of the LAST observed snapshot (prices still the latest seen), plus first-sighting
     history across every snapshot with closing EV where a close was observed."""
     T = last_fetch(conn, sport, now)
@@ -83,7 +83,7 @@ def scanner_rows(conn, sport, now, policy=ev.LIVE_POLICY):
         r["sport"] = sport
         r["model"] = label
         r["observed_at"] = _iso(T)
-    hist = line_shop.report(conn, sport, policy)
+    hist = line_shop.report(conn, sport, policy, cache=cache)      # cache: performance only, identical result
     hist.pop("opportunity_rows", None)
     return rows, hist
 

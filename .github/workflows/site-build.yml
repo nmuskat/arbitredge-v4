@@ -46,7 +46,7 @@ jobs:
           python3 -m pip install --quiet "$(grep -i '^numpy==' requirements-v4.txt)"
           python3 -m web_v4.live_site --shards shards --ledger state/ledger.jsonl --rankings-dir rankings --out site \
             --book-dir book --book-out book_new --need-dir need --results-dir results --need-out need_new \
-            --settle-dir settle --sensitivity-cache prev/sensitivity_cache.json
+            --settle-dir settle --sensitivity-cache prev/sensitivity_cache.json --line-shop-cache prev/line_shop_cache.json.gz
       - name: Save synthetic-book ledger (new files only, never overwritten)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -98,6 +98,17 @@ jobs:
           gh release view v4-site >/dev/null 2>&1 || gh release create v4-site --prerelease \
             --title "V4 site (private)" --notes "Rebuilt automatically from collected data. Download index.html and open it."
           gh release upload v4-site site/index.html site/site_snapshot.json site/sensitivity_cache.json --clobber
+          # line-shopping scan cache (performance only; every entry is re-verified when used). Not uploaded if
+          # another build replaced it after this build downloaded it, so an older build never overwrites newer state.
+          if ! now_stamp=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v4-site" \
+            --jq '[.assets[] | select(.name == "line_shop_cache.json.gz") | .updated_at][0] // ""'); then
+            echo "could not read the saved line-shop cache's time: not overwritten"
+          elif [[ "$now_stamp" == "$(cat prev/line_shop_cache.stamp 2>/dev/null)" ]]; then
+            gh release upload v4-site site/line_shop_cache.json.gz --clobber \
+              || echo "::warning::line-shop cache not saved (next build recomputes it; numbers unaffected)"
+          else
+            echo "line-shop cache changed since download ($now_stamp): not overwritten"
+          fi
       - name: Check owner-only protection (no secrets)
         if: vars.CF_PAGES_DEPLOY == 'on'
         env:
