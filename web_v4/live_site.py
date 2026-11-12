@@ -293,6 +293,41 @@ def sharp_follow_step(bconn, conn, active, games, res, now):
     return SF.report(gs, by_game, res, close_line, _iso(now))
 
 
+def market_intel_step(snap, conn, rankings_snaps, results_dir, now, record_out=None, record_existing=None, bconn=None):
+    """ORIGINAL ArbitrEdge market intelligence (spreads, original code) + totals extension mi_totals.v1.
+    Flag-guarded: runs only when MARKET_INTEL=on (default off -> the page is unchanged). Display only; never stops
+    the build. Optional write-once prospective records when MARKET_INTEL_RECORD=on (also default off)."""
+    if os.environ.get("MARKET_INTEL") != "on":
+        return
+    import time as _t
+    t0 = _t.time()
+    try:
+        from collect_v4 import backfill as _B
+        from data_v4 import rankings as _RK
+        from data_v4 import results as _RS
+        from market_intel import LABEL as _MIL
+        from market_intel import engine as _MI
+        from market_intel import record as _MR
+        polls = _B.poll_snapshots(rankings_snaps)
+        latest = max((x for x in rankings_snaps if x.get("teams")), key=lambda x: x["fetched_at"], default=None)
+        matcher = _RK.TeamMatcher(latest["teams"]) if latest else None
+        evs = conn.execute("SELECT event_id, sport, home, away, MAX(commence) FROM mkt_quote WHERE market IN "
+                           "('spreads','totals') GROUP BY event_id").fetchall()
+        gl = [{"sport": "nfl" if sp == "americanfootball_nfl" else "cfb", "event_id": e, "home": h, "away": a,
+               "kickoff": _iso(k)} for e, sp, h, a, k in evs]
+        docs = _RS.load(results_dir) if results_dir else []
+        finals = {k: (v["home_score"], v["away_score"]) for k, v in _RS.match(gl, docs, matcher).items()}
+        from market_intel import agreement_research as _AR
+        snap["market_intel"] = {"status": "OK", "label": _MIL, "cards": _MI.cards(conn, finals, polls, now, bconn),
+                                "results_matched": len(finals), "agreement_research": _AR.load()}
+        if record_out and _MR.enabled():
+            ex = [x.strip() for x in open(record_existing)] if record_existing and os.path.exists(record_existing) else []
+            snap["market_intel"]["records_written"] = len(_MR.record(conn, finals, polls, now, record_out, ex, bconn))
+    except Exception as e:                 # noqa: BLE001
+        snap["market_intel"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
+    snap["market_intel"]["seconds"] = round(_t.time() - t0, 1)
+
+
 def rebuild_store(shards_dir, db_path=":memory:"):
     from analysis_v4.actions_analyze import rebuild
     paths = sorted(glob.glob(os.path.join(shards_dir, "**", "quotes_*.jsonl.gz"), recursive=True))
@@ -324,6 +359,7 @@ nav{display:flex;gap:4px;overflow-x:auto;margin-top:8px;padding-bottom:2px;scrol
 nav a{white-space:nowrap;text-decoration:none;color:var(--mute);padding:5px 10px;border-radius:999px;font-size:14px}
 nav a.on{background:var(--chip);color:var(--ink);font-weight:600}
 main{max-width:1100px;margin:0 auto;padding:12px 16px 60px}
+.mi2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}@media(max-width:760px){.mi2{grid-template-columns:minmax(0,1fr)}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0}
 h2{font-size:18px;margin:6px 0 2px}h3{font-size:15px;margin:4px 0}
 .mute{color:var(--mute)}.small{font-size:13px}
@@ -336,6 +372,7 @@ border:1px solid currentColor;margin-right:4px;vertical-align:middle}
 .banner.delayed{background:color-mix(in srgb,var(--warn) 14%,transparent);border:1px solid var(--warn)}
 .banner.info{background:var(--chip)}
 .filters{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+.pos{color:var(--ok);font-weight:600}.neg{color:var(--bad)}tr.tot td{font-weight:700;border-top:2px solid var(--line)}
 .filters label{font-size:12px;color:var(--mute);display:flex;flex-direction:column;gap:2px}
 select,input{font:inherit;font-size:14px;padding:5px 7px;border:1px solid var(--line);border-radius:6px;
 background:var(--card);color:var(--ink);max-width:180px}
@@ -365,6 +402,7 @@ vertical-align:top}th{font-size:12px;color:var(--mute);font-weight:600}
 const D=JSON.parse(document.getElementById("data").textContent);
 {const ev=((((D.sports||{}).nfl||{}).book||{}).audit||{}).engine_version||"";
  document.getElementById("brand").textContent="ArbitrEdge "+(ev.startsWith("sportsbook_v5")?"V5":"V4")}
+const SECTIONS_MI=D.market_intel?[["mi","Market Intelligence"]]:[];
 const SECTIONS=[["overview","Overview"],["odds","Odds Board"],["splits","Betting Splits"],["need","ArbitrEdge Need"],
 ["tracker","Need Tracker"],["official","Official Needs"],["sharp","Sharp Money"],["ev","EV Scanner"],["sims","SIMS"],["performance","Performance"],["health","Health"]];
 const MK={spreads:"Spread",totals:"Total",h2h:"Moneyline"};const BMK={spread:"spreads",total:"totals",moneyline:"h2h"};
@@ -760,10 +798,66 @@ R.game=(id)=>{const g=gameById(id);if(!g)return[card(el("p",{},"Game not found (
   bkg.need&&bkg.need.spread?el("p",{class:"small"},"Spread Need (liability): "+(bkg.need.spread.financial_need_side||"balanced")):null))}
  if(bkg&&bkg.sharp_public)out.push(card(el("h3",{},badge("MODELED"),"Sharp vs public (simulated customers)"),el("p",{class:"small mute"},SP_NOTE),...["spread","total","moneyline"].map(bm=>spDetail(g,bm,bkg.sharp_public[bm]))));
  return out};
+R.mi=()=>{const M=D.market_intel||{};if(M.status!=="OK")return[card(el("h2",{},"Market Intelligence"),el("p",{class:"mute"},"Unavailable: "+(M.reason||M.status||"not built")))];
+ const cs=(M.cards||{})[st.sport]||[];const pctx=v=>v==null?"–":Math.round(v)+"th pct";
+ const need=x=>x&&x.need?el("b",{},x.decision+(x.strength?" ("+x.strength+")":"")):el("span",{class:"mute"},x?(x.decision||"–"):"–");
+ const books=(bk,kind)=>el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Book"),el("th",{},"Response"),el("th",{},kind==="total"?"Total / price for public side":"Key number"))),
+  el("tbody",{},...Object.entries(bk||{}).map(([b,v])=>el("tr",{},el("td",{},b),el("td",{},v.regime+(v.reason?" ("+v.reason+")":"")),
+   el("td",{class:"small"},kind==="total"?(v.total_start!=null?v.total_start+"→"+v.total_end+", "+(v.price_start||"–")+"→"+(v.price_end||"–")+(v.key_total_state&&!/NO_KEY/.test(v.key_total_state)?" · "+v.key_total_state:""):"–"):(v.key||"–")))))));
+ const head=card(el("h2",{},"Market Intelligence ",badge("EXPERIMENTAL")),el("p",{class:"small"},M.label+". Original ArbitrEdge spread engine (unchanged code) and the totals extension "+(cs[0]&&cs[0].total?cs[0].total.engine:"mi_totals.v1")+
+  ". Public preference is an ESTIMATE from team form and attention, never ticket or handle data. Separate from the Synthetic Sportsbook's Financial NEED and from SIMS. Not a bet."),
+  el("p",{class:"small mute"},"Evaluated at the build time for games kicking off within 30 h (the original starts at T-24h). Historical 2026 audit: no rule passed multiple-testing correction."));
+ if(!cs.length)return[head,card(el("p",{class:"mute"},"No game in the evaluation window.")),agreeCard(M.agreement_research)];
+ return[head,agreeCard(M.agreement_research),...cs.map(c=>{const sp=c.spread||{},tt=c.total||{};return card(el("h3",{},c.game),el("p",{class:"mute small"},"kickoff "+c.kickoff+" · as of "+c.as_of),
+  el("div",{class:"mi2"},
+   el("div",{},el("h3",{},"Spread market intelligence"),el("p",{class:"small"},"Market-derived NEED: ",need(sp)),
+    el("p",{class:"small"},"Estimated public side: "+(sp.public_side_estimate||"–")+" ("+pctx(sp.public_magnitude_pct)+") · market activity "+pctx(sp.handle_intensity_pct)),
+    el("p",{class:"small"},"Books: "+(sp.regime||"–")+(sp.breadth?" ("+sp.breadth+")":"")+" · segment "+(sp.segment||"–")+" · data quality "+(sp.data_quality||"–")),books(sp.books,"spread")),
+   el("div",{},el("h3",{},"Totals market intelligence"),el("p",{class:"small"},"Market-derived NEED: ",need(tt)),
+    el("p",{class:"small"},"Estimated public lean: "+(tt.public_lean_estimate||"–")+" ("+pctx(tt.public_magnitude_pct)+", inputs "+(tt.inputs||"–")+") · totals activity "+pctx(tt.activity_pct)),
+    el("p",{class:"small"},"Books: "+(tt.regime||"–")+(tt.breadth?" ("+tt.breadth+")":"")+" · pro vs rec: "+(tt.sequencing||"–")),
+    el("p",{class:"small mute"},tt.reason||""),books(tt.books,"total"))),
+  el("div",{class:"mi2"},shp("Spread",sp,["home","away"]),shp("Totals",tt,["over","under"])))})]};
+const AG={rule:"v3",cut:"T-1h",src:"genuine",market:"spread",cat:"",show:false};
+const AGCAT={STRONG_AGREEMENT:"Strong agreement",MODERATE_AGREEMENT:"Moderate agreement",DISAGREEMENT:"Disagreement",NO_SHARP_CONSENSUS:"No sharp consensus",MARKET_NEED_ONLY:"NEED only (no sharp wagers)",SHARP_ONLY:"Sharps only (no NEED)",NO_SIGNAL:"No signal",ALL_NEED:"All NEED picks (any sharp position)"};
+function agreeCard(A){if(!A)return card(el("h2",{},"Market NEED × synthetic sharp agreement"),el("p",{class:"mute"},"Research records unavailable in this build."));
+ const seg=(k,opts)=>el("span",{class:"seg"},...opts.map(([v,t])=>el("button",{class:AG[k]===v?"on":"",on:{click:()=>{AG[k]=v;render()}}},t)));
+ const rec=t=>!t||!t.n?"–":t.W+"-"+t.L+(t.P?"-"+t.P:"");const u=t=>!t||!t.n?"–":(t.units>0?"+":"")+t.units.toFixed(2)+"u";
+ const roi=t=>!t||!t.n||t.roi==null?"–":(t.roi>0?"+":"")+(100*t.roi).toFixed(1)+"%";const wp=t=>!t||t.win_pct==null?"–":(100*t.win_pct).toFixed(1)+"%";
+ const clv=t=>!t||t.clv==null?"–":(t.clv>0?"+":"")+(100*t.clv).toFixed(2)+"%";
+ const sel=x=>x.rule===AG.rule&&x.cut===AG.cut&&x.sport===st.sport&&x.market===AG.market;
+ const recs=A.records.filter(r=>sel(r)&&r.source===AG.src).sort((a,b)=>Object.keys(AGCAT).indexOf(a.cat)-Object.keys(AGCAT).indexOf(b.cat));
+ const tbl=el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Category"),el("th",{class:"num"},"Games"),
+   el("th",{class:"num"},"NEED side W-L-P"),el("th",{class:"num"},"Win %"),el("th",{class:"num"},"Units"),el("th",{class:"num"},"ROI"),el("th",{class:"num hide-s"},"CLV"),
+   el("th",{class:"num"},"Sharp side W-L-P"),el("th",{class:"num"},"Units"),el("th",{class:"num hide-s"},"ROI"))),
+  el("tbody",{},...recs.map(r=>el("tr",{class:r.cat==="ALL_NEED"?"tot":""},el("td",{},el("a",{href:"javascript:void 0",on:{click:()=>{AG.cat=AG.cat===r.cat?"":r.cat;AG.show=true;render()}}},AGCAT[r.cat]||r.cat)),
+   el("td",{class:"num"},r.games),el("td",{class:"num"},rec(r.need_side)),el("td",{class:"num"},wp(r.need_side)),el("td",{class:"num"},u(r.need_side)),el("td",{class:"num"},roi(r.need_side)),el("td",{class:"num hide-s"},clv(r.need_side)),
+   el("td",{class:"num"},rec(r.sharp_side)),el("td",{class:"num"},u(r.sharp_side)),el("td",{class:"num hide-s"},roi(r.sharp_side)))))));
+ const gs=A.games.filter(g=>sel(g)&&(!AG.cat||(AG.cat==="ALL_NEED"?g.need:(g[AG.src]&&g[AG.src].cat===AG.cat)))).sort((a,b)=>(b.kickoff||"").localeCompare(a.kickoff||""));
+ const res=b=>!b?el("span",{class:"mute"},"–"):el("span",{class:b.res==="W"?"pos":b.res==="L"?"neg":""},b.res+" "+(b.units>0?"+":"")+b.units.toFixed(2));
+ const rows=gs.map(g=>{const x=g[AG.src];return el("tr",{},el("td",{class:"small"},(g.kickoff||"").slice(5,10)),el("td",{},g.game),
+   el("td",{class:"num small"},g.final?g.final[1]+"–"+g.final[0]:"–"),el("td",{},g.need?el("b",{},g.need.toUpperCase()+(g.strength?" ("+g.strength+")":"")):el("span",{class:"mute"},"PASS")),
+   el("td",{class:"small"},!x?el("span",{class:"mute"},"no ledger"):x.dir?x.dir.toUpperCase()+" ("+x.str+", "+x.tickets+" tix / "+x.bettors+" bettors)":(x.status||"").replace(/_/g," ").toLowerCase()),
+   el("td",{class:"small"},x?(AGCAT[x.cat]||x.cat):"–"),el("td",{class:"num"},res(g.need_bet)),el("td",{class:"num"},res(x&&x.sharp_bet)))});
+ const list=el("details",AG.show?{open:""}:{},el("summary",{on:{click:e=>{e.preventDefault();AG.show=!AG.show;render()}}},"Every game ("+gs.length+(AG.cat?", "+AGCAT[AG.cat]:"")+")"),
+  el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Date"),el("th",{},"Game"),el("th",{class:"num"},"Final (away–home)"),el("th",{},"NEED"),el("th",{},"Synthetic sharps"),el("th",{},"Category"),el("th",{class:"num"},"NEED bet"),el("th",{class:"num"},"Sharp bet"))),el("tbody",{},rows))));
+ return card(el("h2",{},"Market NEED × synthetic sharp agreement: 2026 records ",badge("EXPERIMENTAL"),badge("MODELED")),
+  el("p",{class:"small"},A.status+". "+A.label+". Games "+(A.games_from||"").slice(0,10)+" to "+(A.games_to||"").slice(0,10)+" ("+(st.sport==="nfl"?"NFL":"college football")+"). Graded at the "+A.grading+". The NEED side is a replay of the original engine on collected quotes, not a frozen pre-game record; sample sizes per category are small. Not official plays; default NO BET."),
+  el("div",{class:"filters"},seg("market",[["spread","Spreads"],["total","Totals"]])," ",seg("cut",[["T-1h","1 h before kickoff"],["T-6h","6 h before"]])," ",
+   seg("src",[["genuine","Sharps as published"],["recon","Sharps reconstructed"]])," ",seg("rule",[["v3","Original freshness"],["v4","V4 freshness"]])),
+  el("p",{class:"small mute"},"Sharps as published = synthetic-sharp positions from ledger files saved before the cutoff (only since the book went live). Reconstructed = the same engine replayed over the whole season afterwards. Click a category to list its games."),
+  tbl,list)}
+function shp(t,x,sides){const s=x.sharp||{},a=x.agreement||{};const pc=v=>v==null?"–":Math.round(100*v)+"%";
+ return el("div",{},el("h3",{},t+": NEED × synthetic sharps ",badge("MODELED")),
+  el("p",{class:"small"},el("b",{},(a.category||"–").replace(/_/g," "))," · "+(a.why||"")),
+  s.status&&s.status!=="OK"&&!s.tickets?el("p",{class:"small mute"},s.status+(s.reason?" ("+s.reason+")":"")):
+  el("p",{class:"small"},"Synthetic sharp tickets "+(s.tickets||0)+" from "+(s.bettors||0)+" bettors · tickets "+sides.map(k=>k+" "+pc((s.ticket_pct||{})[k])).join(" / ")+
+   " · simulated handle "+sides.map(k=>k+" "+pc((s.handle_pct||{})[k])).join(" / ")+" · largest wager "+pc(s.largest_wager_share)+" of sharp handle · lean "+(s.direction||"none")+(s.strength?" ("+s.strength+")":"")),
+  el("p",{class:"small mute"},(s.label||"SIMULATED")+(s.book_simulated_through?" · book simulated through "+s.book_simulated_through:"")+(s.last_at?" · last sharp wager "+s.last_at:"")))}
 function render(){const h=location.hash.slice(1);let sec=h||"overview",gid=null;if(h.startsWith("game/")){gid=h.slice(5);sec="game"}
  if(sec!=="game"&&!R[sec])sec="overview";if(sec!=="game")st.prev=sec;st.sec=sec;
  for(const b of document.querySelectorAll("#sport button"))b.classList.toggle("on",b.dataset.s===st.sport);
- const nav=document.getElementById("nav");nav.replaceChildren(...SECTIONS.map(([k,t])=>el("a",{href:"#"+k,class:k===sec?"on":""},t)));
+ const nav=document.getElementById("nav");nav.replaceChildren(...SECTIONS.concat(SECTIONS_MI).map(([k,t])=>el("a",{href:"#"+k,class:k===sec?"on":""},t)));
  const s=S();const f=freshness(s.observed_at);document.getElementById("fresh").replaceChildren(badge(f),el("span",{class:"mute"},s.observed_at?fmtAge(ageMin(s.observed_at))+" old":"no data"));
  const main=document.getElementById("main");const y=window.scrollY;main.replaceChildren(...(sec==="game"?R.game(gid):R[sec]()).filter(Boolean));
  if(document.activeElement&&document.activeElement.type==="search"){}else window.scrollTo(0,y)}
@@ -797,6 +891,8 @@ def main(argv=None):
     ap.add_argument("--sensitivity-cache", default=None, help="previous build's variant splits (v4-site, optional)")
     ap.add_argument("--line-shop-cache", default=None,
                     help="previous build's line-shopping scan cache (v4-site, optional; performance only)")
+    ap.add_argument("--mi-out", default=None, help="market-intelligence records created by this build (if enabled)")
+    ap.add_argument("--mi-existing", default=None, help="names of saved market-intelligence records (one per line)")
     a = ap.parse_args(argv)
     now = _epoch(a.now) if a.now else time.time()
     if a.live_db:
@@ -836,6 +932,7 @@ def main(argv=None):
         for sp in SPORTS:
             (snap["sports"][sp].get("book") or {}).pop("official_snapshots", None)
         snap["official_needs"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
+    market_intel_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, now, a.mi_out, a.mi_existing, bconn)
     with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
         json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))
     ls_cache.save(os.path.join(a.out, "line_shop_cache.json.gz"))
