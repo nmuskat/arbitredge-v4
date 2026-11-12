@@ -101,3 +101,45 @@ def eligible(wagers, sport, event_id, market, cutoff_iso, published_by=None, run
             continue
         out.append(w)
     return out
+
+
+# ------------------------------------------------------------------------------------------------ live (book DB)
+def from_book(bconn, sport, event_id, market, cutoff_iso, data_through_iso=None):
+    """Live/recorder read of the CURRENT build's synthetic-book database (read-only): SHARP wagers accepted by the
+    cutoff in the latest-created run covering this game, plus how far that run had been simulated.
+    Returns (eligible_sharp_wagers, all_wagers_of_market, info)."""
+    if bconn is None:
+        return [], [], {"status": "INSUFFICIENT HISTORICAL SHARP DATA", "reason": "no synthetic-book database"}
+    run = bconn.execute(
+        "SELECT r.run_id, r.created_at, r.engine_version FROM v4_run r WHERE r.sport=? AND EXISTS (SELECT 1 FROM v4_wager w "
+        "WHERE w.run_id=r.run_id AND w.canonical_game_id=?) ORDER BY r.created_at DESC LIMIT 1",
+        (sport, event_id)).fetchone()
+    if run is None:
+        return [], [], {"status": "NO_SHARP_WAGERS", "reason": "game not in the synthetic book (e.g. CFB outside the Top-25)"}
+    rid, created, engine = run
+    through = bconn.execute("SELECT MAX(data_complete_through) FROM v4_interval WHERE run_id=?", (rid,)).fetchone()[0]
+    cur = bconn.execute("SELECT * FROM v4_wager WHERE run_id=? AND canonical_game_id=? AND market=? AND accepted_at<=?",
+                        (rid, event_id, market, cutoff_iso))
+    cols = [c[0] for c in cur.description]
+    ws = [dict(zip(cols, r)) for r in cur.fetchall()]
+    info = {"run_id": rid[:12], "engine_version": engine, "book_simulated_through": through}
+    need_through = min(cutoff_iso, data_through_iso) if data_through_iso else cutoff_iso
+    if through is None or through[:19] < need_through[:19]:
+        info["status"] = "INSUFFICIENT HISTORICAL SHARP DATA"
+        info["reason"] = f"synthetic book only simulated through {through}"
+        return [], ws, info
+    info["status"] = "OK"
+    return [w for w in ws if w["archetype"] == "SHARP"], ws, info
+
+
+def card(bconn, sport, event_id, market, cutoff_iso, need_side, data_through_iso=None):
+    """data_through_iso: latest collected market data available to the build; the book only has to be simulated
+    through min(cutoff, that time) -- it can never be ahead of the data it is simulated from."""
+    sw, allw, info = from_book(bconn, sport, event_id, market, cutoff_iso, data_through_iso)
+    if info["status"] == "INSUFFICIENT HISTORICAL SHARP DATA":
+        return {"sharp": dict(info, label="SIMULATED (synthetic sharps, not real money)"),
+                "agreement": {"category": "INSUFFICIENT HISTORICAL SHARP DATA", "why": info["reason"]}}
+    pos = position(sw, market)
+    cat, why = classify(need_side, pos)
+    return {"sharp": dict(pos, **info, label="SIMULATED (synthetic sharps, not real money)", as_of=cutoff_iso),
+            "agreement": {"category": cat, "why": why}}

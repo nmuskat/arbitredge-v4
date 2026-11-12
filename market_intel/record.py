@@ -17,7 +17,7 @@ from market_intel import LABEL
 from market_intel.compat import build, iso
 
 CUTOFFS = {"T-6h": 6 * 3600, "T-1h": 3600}
-FORMAT = "market_intel_record_v1"
+FORMAT = "market_intel_record_v2"     # v2 adds the synthetic sharp agreement (never live before this)
 
 
 def enabled():
@@ -52,12 +52,16 @@ def _best(quotes, market, side):
     return None if best is None else {"book": best[1], "point": best[2], "price": best[3]}
 
 
-def record(store_conn, finals, polls, now, out, existing=()):
+def record(store_conn, finals, polls, now, out, existing=(), bconn=None):
     """Writes new records for every cutoff that has passed for a not-yet-started game. Returns written names."""
+    from market_intel import sharp as SH
     from market_intel.engine import spread_card, totals_card
+    from market_intel.totals import VERSION as TOT_VERSION
     existing = set(existing)
     conn, ids = build(store_conn, finals, polls)
     written, cache = [], {}
+    latest = store_conn.execute("SELECT MAX(fetched_at) FROM mkt_quote WHERE fetched_at<=?", (now,)).fetchone()[0]
+    data_through = iso(latest) if latest else None
     for eid, (gid, sp, home, away, ko) in ids.items():
         if ko <= now:
             continue
@@ -72,7 +76,14 @@ def record(store_conn, finals, polls, now, out, existing=()):
                     continue
                 card = spread_card(conn, gid, iso(t)) if market == "spread" else totals_card(conn, gid, iso(t), cache)
                 q = _quotes(conn, gid, t, market)
-                rec = {"format": FORMAT, "label": LABEL, "sport": sp, "event_id": eid, "game": f"{away} @ {home}",
+                card.update(SH.card(bconn, sp, eid, market, iso(t), card.get("need"), data_through))
+                rec = {"format": FORMAT, "label": LABEL,
+                       "input_versions": {"spread_engine": "book_need_week1_v1 (original, unchanged)",
+                                          "totals_engine": TOT_VERSION, "sharp_agreement": "sharp_agreement.v1",
+                                          "sharp_thresholds": {k: getattr(SH, k) for k in (
+                                              "MIN_WAGERS", "MIN_BETTORS", "STRONG_HANDLE", "STRONG_TICKETS",
+                                              "STRONG_ROBUST", "LEAN_HANDLE")}},
+                       "agreement": card.get("agreement"), "synthetic_sharp": card.get("sharp"), "sport": sp, "event_id": eid, "game": f"{away} @ {home}",
                        "market": market, "cutoff": label, "evaluated_as_of": iso(t), "recorded_at": iso(now),
                        "kickoff": iso(ko), "decision": card.get("decision"), "need": card.get("need"),
                        "strength": card.get("strength"), "evidence": card, "quotes_at_cutoff": q,

@@ -67,3 +67,64 @@ def test_live_site_flag_off_leaves_page_unchanged(monkeypatch):
     snap = {}
     L.market_intel_step(snap, None, [], None, KO)
     assert "market_intel" not in snap
+
+
+# ------------------------------------------------------------------------------------------------ sharp agreement
+def _w(side, stake, uid, t="2026-11-01T00:00:00Z"):
+    return {"side": side, "stake": stake, "bettor_uid": uid, "accepted_at": t, "accepted_price": -110.0}
+
+
+def test_sharp_thresholds_and_large_wager_safeguard():
+    from market_intel import sharp as SH
+    assert SH.position([_w("home", 100, "a"), _w("home", 100, "b")], "spread")["status"] == "SPARSE"
+    strong = SH.position([_w("home", 100, "a"), _w("home", 100, "b"), _w("home", 100, "c"), _w("away", 50, "d")], "spread")
+    assert strong["direction"] == "home" and strong["strength"] == "STRONG"
+    # one huge wager carries the handle: never STRONG (robustness check), tickets disagree -> conflict
+    huge = SH.position([_w("home", 5000, "a"), _w("away", 100, "b"), _w("away", 100, "c"), _w("away", 100, "d")], "spread")
+    assert huge["strength"] != "STRONG" and huge["direction"] is None
+    assert SH.classify("home", strong)[0] == "STRONG_AGREEMENT"
+    assert SH.classify("away", strong)[0] == "DISAGREEMENT"
+    assert SH.classify(None, strong)[0] == "SHARP_ONLY"
+    assert SH.classify("home", {"status": "NO_SHARP_WAGERS"})[0] == "MARKET_NEED_ONLY"
+    assert SH.classify(None, {"status": "NO_SHARP_WAGERS"})[0] == "NO_SIGNAL"
+    assert SH.classify("home", {"status": "BALANCED", "direction": None})[0] == "NO_SHARP_CONSENSUS"
+
+
+def test_sharp_card_insufficient_when_book_not_simulated_to_cutoff():
+    from market_intel import sharp as SH
+    from sportsbook_v4.schema import ensure_schema
+    b = sqlite3.connect(":memory:")
+    ensure_schema(b)
+    out = SH.card(b, "nfl", "e1", "spread", "2026-11-01T00:00:00Z", "home")
+    assert out["agreement"]["category"] in ("MARKET_NEED_ONLY", "INSUFFICIENT HISTORICAL SHARP DATA")
+    assert SH.card(None, "nfl", "e1", "spread", "2026-11-01T00:00:00Z", "home")["agreement"]["category"] == \
+        "INSUFFICIENT HISTORICAL SHARP DATA"
+
+
+def test_records_carry_agreement_and_grading_never_edits(tmp_path):
+    from market_intel import grade as G
+    from market_intel import record as R
+    c = _store(str(tmp_path / "s.db"), KO)
+    out = str(tmp_path / "rec")
+    w = R.record(c, {}, [], KO - 3000, out)
+    r = json.load(open(os.path.join(out, w[0])))
+    assert r["format"] == "market_intel_record_v2" and r["agreement"]["category"] == "INSUFFICIENT HISTORICAL SHARP DATA"
+    assert r["input_versions"]["totals_engine"] == "mi_totals.v1"
+    before = {n: open(os.path.join(out, n)).read() for n in w}
+    gw = G.grade_dir(out, {("nfl", "e1"): (24, 20)}, c, str(tmp_path / "graded"))
+    assert len(gw) == len(w) and all(n.startswith("graded_") for n in gw)
+    assert {n: open(os.path.join(out, n)).read() for n in w} == before          # frozen records untouched
+    assert G.grade_dir(out, {("nfl", "e1"): (24, 20)}, c, str(tmp_path / "graded"), existing=gw) == []
+
+
+def test_workflow_gated_and_separate_from_cf1():
+    import yaml
+    wf = yaml.safe_load(open(os.path.join(os.path.dirname(__file__), "..", ".github", "workflows", "site-build.yml")))
+    steps = wf["jobs"]["build"]["steps"]
+    cf1 = [s for s in steps if s.get("name", "").startswith("CF1")]
+    assert len(cf1) == 1 and "v4-cf1" in cf1[0]["run"] and "cf1_new" in cf1[0]["run"] and "mi_" not in cf1[0]["run"]
+    mi = [s for s in steps if "market-intelligence" in s.get("name", "")]
+    assert mi and all(s.get("if") == "${{ vars.MARKET_INTEL_RECORD == 'on' }}" for s in mi)
+    assert all("v4-cf1" not in s["run"] and "cf1_" not in s["run"] for s in mi)
+    build = next(s for s in steps if s.get("name") == "Build site")
+    assert build["env"]["MARKET_INTEL"] == "${{ vars.MARKET_INTEL }}"

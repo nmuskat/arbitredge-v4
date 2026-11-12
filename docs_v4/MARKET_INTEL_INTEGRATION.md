@@ -94,3 +94,17 @@
 2. Set repository variable `MARKET_INTEL=on`: the tab appears on the next build.
 3. Optionally set `MARKET_INTEL_RECORD=on`: records start at the next T−6h/T−1h cutoffs.
 4. Rollback: unset the variables (instant); records stay immutable.
+
+## 7. Synthetic sharp agreement (`market_intel/sharp.py`; thresholds frozen in 73e280d before any outcome)
+- **Inputs:** read-only SHARP wagers from the synthetic book. Only wagers accepted by the cutoff count, and only
+  when the book has been simulated through min(cutoff, latest market data). Otherwise the status is
+  INSUFFICIENT HISTORICAL SHARP DATA.
+- **Classification thresholds:**
+  - **Sparse:** fewer than 3 wagers or fewer than 2 bettors.
+  - **STRONG:** ≥ 65% of handle, ≥ 60% of tickets, and still ≥ 55% of handle without the largest wager.
+  - **LEAN:** ≥ 55% of handle with no opposite ticket majority.
+  - **Conflict:** a ticket majority against the handle majority counts as no consensus.
+- **Categories:** strong/moderate agreement, disagreement, no sharp consensus, NEED only, sharp only, no signal.
+- **Labelling:** always shown as SIMULATED, never as real money.
+- **Records:** format v2 adds the sharp position, the agreement class, input versions and thresholds.
+- **Grading:** writes separate `graded_*` files and never edits a record.

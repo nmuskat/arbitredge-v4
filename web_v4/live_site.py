@@ -293,7 +293,7 @@ def sharp_follow_step(bconn, conn, active, games, res, now):
     return SF.report(gs, by_game, res, close_line, _iso(now))
 
 
-def market_intel_step(snap, conn, rankings_snaps, results_dir, now, record_out=None, record_existing=None):
+def market_intel_step(snap, conn, rankings_snaps, results_dir, now, record_out=None, record_existing=None, bconn=None):
     """ORIGINAL ArbitrEdge market intelligence (spreads, original code) + totals extension mi_totals.v1.
     Flag-guarded: runs only when MARKET_INTEL=on (default off -> the page is unchanged). Display only; never stops
     the build. Optional write-once prospective records when MARKET_INTEL_RECORD=on (also default off)."""
@@ -317,11 +317,11 @@ def market_intel_step(snap, conn, rankings_snaps, results_dir, now, record_out=N
                "kickoff": _iso(k)} for e, sp, h, a, k in evs]
         docs = _RS.load(results_dir) if results_dir else []
         finals = {k: (v["home_score"], v["away_score"]) for k, v in _RS.match(gl, docs, matcher).items()}
-        snap["market_intel"] = {"status": "OK", "label": _MIL, "cards": _MI.cards(conn, finals, polls, now),
+        snap["market_intel"] = {"status": "OK", "label": _MIL, "cards": _MI.cards(conn, finals, polls, now, bconn),
                                 "results_matched": len(finals)}
         if record_out and _MR.enabled():
             ex = [x.strip() for x in open(record_existing)] if record_existing and os.path.exists(record_existing) else []
-            snap["market_intel"]["records_written"] = len(_MR.record(conn, finals, polls, now, record_out, ex))
+            snap["market_intel"]["records_written"] = len(_MR.record(conn, finals, polls, now, record_out, ex, bconn))
     except Exception as e:                 # noqa: BLE001
         snap["market_intel"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
     snap["market_intel"]["seconds"] = round(_t.time() - t0, 1)
@@ -814,7 +814,15 @@ R.mi=()=>{const M=D.market_intel||{};if(M.status!=="OK")return[card(el("h2",{},"
    el("div",{},el("h3",{},"Totals market intelligence"),el("p",{class:"small"},"Market-derived NEED: ",need(tt)),
     el("p",{class:"small"},"Estimated public lean: "+(tt.public_lean_estimate||"–")+" ("+pctx(tt.public_magnitude_pct)+", inputs "+(tt.inputs||"–")+") · totals activity "+pctx(tt.activity_pct)),
     el("p",{class:"small"},"Books: "+(tt.regime||"–")+(tt.breadth?" ("+tt.breadth+")":"")+" · pro vs rec: "+(tt.sequencing||"–")),
-    el("p",{class:"small mute"},tt.reason||""),books(tt.books,"total"))))})]};
+    el("p",{class:"small mute"},tt.reason||""),books(tt.books,"total"))),
+  el("div",{class:"mi2"},shp("Spread",sp,["home","away"]),shp("Totals",tt,["over","under"])))})]};
+function shp(t,x,sides){const s=x.sharp||{},a=x.agreement||{};const pc=v=>v==null?"–":Math.round(100*v)+"%";
+ return el("div",{},el("h3",{},t+": NEED × synthetic sharps ",badge("MODELED")),
+  el("p",{class:"small"},el("b",{},(a.category||"–").replace(/_/g," "))," · "+(a.why||"")),
+  s.status&&s.status!=="OK"&&!s.tickets?el("p",{class:"small mute"},s.status+(s.reason?" ("+s.reason+")":"")):
+  el("p",{class:"small"},"Synthetic sharp tickets "+(s.tickets||0)+" from "+(s.bettors||0)+" bettors · tickets "+sides.map(k=>k+" "+pc((s.ticket_pct||{})[k])).join(" / ")+
+   " · simulated handle "+sides.map(k=>k+" "+pc((s.handle_pct||{})[k])).join(" / ")+" · largest wager "+pc(s.largest_wager_share)+" of sharp handle · lean "+(s.direction||"none")+(s.strength?" ("+s.strength+")":"")),
+  el("p",{class:"small mute"},(s.label||"SIMULATED")+(s.book_simulated_through?" · book simulated through "+s.book_simulated_through:"")+(s.last_at?" · last sharp wager "+s.last_at:"")))}
 function render(){const h=location.hash.slice(1);let sec=h||"overview",gid=null;if(h.startsWith("game/")){gid=h.slice(5);sec="game"}
  if(sec!=="game"&&!R[sec])sec="overview";if(sec!=="game")st.prev=sec;st.sec=sec;
  for(const b of document.querySelectorAll("#sport button"))b.classList.toggle("on",b.dataset.s===st.sport);
@@ -888,7 +896,7 @@ def main(argv=None):
         for sp in SPORTS:
             (snap["sports"][sp].get("book") or {}).pop("official_snapshots", None)
         snap["official_needs"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
-    market_intel_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, now, a.mi_out, a.mi_existing)
+    market_intel_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, now, a.mi_out, a.mi_existing, bconn)
     with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
         json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))
     try:                                   # display only; never stops the build

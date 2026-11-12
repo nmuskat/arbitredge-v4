@@ -71,6 +71,27 @@ jobs:
             --title "Original ArbitrEdge market intelligence records (do not delete)" \
             --notes "Immutable pre-cutoff research records (spreads: original engine; totals: mi_totals.v1). Not bets."
           gh release upload v4-market-intel "${files[@]}"
+      - name: Grade market-intelligence records (separate graded_* files; frozen records never edited)
+        if: ${{ vars.MARKET_INTEL_RECORD == 'on' }}
+        continue-on-error: true
+        timeout-minutes: 3
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          mkdir -p mi_all graded_new
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v4-market-intel" --jq '.assets[] | "\(.id) \(.name)"' > mi_assets.txt 2>/dev/null || exit 0
+          awk '{print $2}' mi_assets.txt > mi_names.txt
+          while read -r id name; do
+            case "$name" in mi_*.json) grep -qx "graded_$name" mi_names.txt || gh api -H "Accept: application/octet-stream" \
+              "repos/${GITHUB_REPOSITORY}/releases/assets/$id" > "mi_all/$name";; esac
+          done < mi_assets.txt
+          cp mi_new/mi_*.json mi_all/ 2>/dev/null || true
+          python3 -m market_intel.grade --records mi_all --shards shards --results results --rankings rankings \
+            --out graded_new --existing mi_names.txt
+          files=(graded_new/graded_*.json)
+          (( ${#files[@]} )) || exit 0
+          gh release upload v4-market-intel "${files[@]}"
       - name: Save synthetic-book ledger (new files only, never overwritten)
         env:
           GH_TOKEN: ${{ github.token }}

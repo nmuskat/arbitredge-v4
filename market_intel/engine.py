@@ -53,9 +53,13 @@ def totals_card(conn, gid, as_of, cache):
             "books": _book_view(r.get("per_book"), "total")}
 
 
-def cards(store_conn, finals, polls, now):
-    """{sport: [card]} for games kicking off in (now, now + 30 h]; every error is reported on its card."""
+def cards(store_conn, finals, polls, now, bconn=None):
+    """{sport: [card]} for games kicking off in (now, now + 30 h]; every error is reported on its card.
+    bconn: this build's synthetic-book database (read-only) for the Synthetic Sharp Agreement panel."""
+    from market_intel import sharp as SH
     conn, ids = build(store_conn, finals, polls)
+    latest = store_conn.execute("SELECT MAX(fetched_at) FROM mkt_quote WHERE fetched_at<=?", (now,)).fetchone()[0]
+    data_through = iso(latest) if latest else None
     out, cache = {"nfl": [], "cfb": []}, {}
     for eid, (gid, sp, home, away, ko) in sorted(ids.items(), key=lambda kv: kv[1][4]):
         if not (now < ko <= now + EVAL_WINDOW_S):
@@ -67,5 +71,9 @@ def cards(store_conn, finals, polls, now):
                 c[name] = fn()
             except Exception as e:                                   # noqa: BLE001  (shown, never hidden)
                 c[name] = {"decision": "ERROR", "reason": f"{type(e).__name__}: {e}"[:200]}
+            try:
+                c[name].update(SH.card(bconn, sp, eid, name, iso(now), c[name].get("need"), data_through))
+            except Exception as e:                                   # noqa: BLE001
+                c[name]["agreement"] = {"category": "ERROR", "why": f"{type(e).__name__}: {e}"[:200]}
         out[sp].append(c)
     return out
