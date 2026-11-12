@@ -293,6 +293,40 @@ def sharp_follow_step(bconn, conn, active, games, res, now):
     return SF.report(gs, by_game, res, close_line, _iso(now))
 
 
+def market_intel_step(snap, conn, rankings_snaps, results_dir, now, record_out=None, record_existing=None):
+    """ORIGINAL ArbitrEdge market intelligence (spreads, original code) + totals extension mi_totals.v1.
+    Flag-guarded: runs only when MARKET_INTEL=on (default off -> the page is unchanged). Display only; never stops
+    the build. Optional write-once prospective records when MARKET_INTEL_RECORD=on (also default off)."""
+    if os.environ.get("MARKET_INTEL") != "on":
+        return
+    import time as _t
+    t0 = _t.time()
+    try:
+        from collect_v4 import backfill as _B
+        from data_v4 import rankings as _RK
+        from data_v4 import results as _RS
+        from market_intel import LABEL as _MIL
+        from market_intel import engine as _MI
+        from market_intel import record as _MR
+        polls = _B.poll_snapshots(rankings_snaps)
+        latest = max((x for x in rankings_snaps if x.get("teams")), key=lambda x: x["fetched_at"], default=None)
+        matcher = _RK.TeamMatcher(latest["teams"]) if latest else None
+        evs = conn.execute("SELECT event_id, sport, home, away, MAX(commence) FROM mkt_quote WHERE market IN "
+                           "('spreads','totals') GROUP BY event_id").fetchall()
+        gl = [{"sport": "nfl" if sp == "americanfootball_nfl" else "cfb", "event_id": e, "home": h, "away": a,
+               "kickoff": _iso(k)} for e, sp, h, a, k in evs]
+        docs = _RS.load(results_dir) if results_dir else []
+        finals = {k: (v["home_score"], v["away_score"]) for k, v in _RS.match(gl, docs, matcher).items()}
+        snap["market_intel"] = {"status": "OK", "label": _MIL, "cards": _MI.cards(conn, finals, polls, now),
+                                "results_matched": len(finals)}
+        if record_out and _MR.enabled():
+            ex = [x.strip() for x in open(record_existing)] if record_existing and os.path.exists(record_existing) else []
+            snap["market_intel"]["records_written"] = len(_MR.record(conn, finals, polls, now, record_out, ex))
+    except Exception as e:                 # noqa: BLE001
+        snap["market_intel"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
+    snap["market_intel"]["seconds"] = round(_t.time() - t0, 1)
+
+
 def rebuild_store(shards_dir, db_path=":memory:"):
     from analysis_v4.actions_analyze import rebuild
     paths = sorted(glob.glob(os.path.join(shards_dir, "**", "quotes_*.jsonl.gz"), recursive=True))
@@ -324,6 +358,7 @@ nav{display:flex;gap:4px;overflow-x:auto;margin-top:8px;padding-bottom:2px;scrol
 nav a{white-space:nowrap;text-decoration:none;color:var(--mute);padding:5px 10px;border-radius:999px;font-size:14px}
 nav a.on{background:var(--chip);color:var(--ink);font-weight:600}
 main{max-width:1100px;margin:0 auto;padding:12px 16px 60px}
+.mi2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}@media(max-width:760px){.mi2{grid-template-columns:minmax(0,1fr)}}
 .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin:10px 0}
 h2{font-size:18px;margin:6px 0 2px}h3{font-size:15px;margin:4px 0}
 .mute{color:var(--mute)}.small{font-size:13px}
@@ -365,6 +400,7 @@ vertical-align:top}th{font-size:12px;color:var(--mute);font-weight:600}
 const D=JSON.parse(document.getElementById("data").textContent);
 {const ev=((((D.sports||{}).nfl||{}).book||{}).audit||{}).engine_version||"";
  document.getElementById("brand").textContent="ArbitrEdge "+(ev.startsWith("sportsbook_v5")?"V5":"V4")}
+const SECTIONS_MI=D.market_intel?[["mi","Market Intelligence"]]:[];
 const SECTIONS=[["overview","Overview"],["odds","Odds Board"],["splits","Betting Splits"],["need","ArbitrEdge Need"],
 ["tracker","Need Tracker"],["official","Official Needs"],["sharp","Sharp Money"],["ev","EV Scanner"],["sims","SIMS"],["performance","Performance"],["health","Health"]];
 const MK={spreads:"Spread",totals:"Total",h2h:"Moneyline"};const BMK={spread:"spreads",total:"totals",moneyline:"h2h"};
@@ -760,10 +796,29 @@ R.game=(id)=>{const g=gameById(id);if(!g)return[card(el("p",{},"Game not found (
   bkg.need&&bkg.need.spread?el("p",{class:"small"},"Spread Need (liability): "+(bkg.need.spread.financial_need_side||"balanced")):null))}
  if(bkg&&bkg.sharp_public)out.push(card(el("h3",{},badge("MODELED"),"Sharp vs public (simulated customers)"),el("p",{class:"small mute"},SP_NOTE),...["spread","total","moneyline"].map(bm=>spDetail(g,bm,bkg.sharp_public[bm]))));
  return out};
+R.mi=()=>{const M=D.market_intel||{};if(M.status!=="OK")return[card(el("h2",{},"Market Intelligence"),el("p",{class:"mute"},"Unavailable: "+(M.reason||M.status||"not built")))];
+ const cs=(M.cards||{})[st.sport]||[];const pctx=v=>v==null?"–":Math.round(v)+"th pct";
+ const need=x=>x&&x.need?el("b",{},x.decision+(x.strength?" ("+x.strength+")":"")):el("span",{class:"mute"},x?(x.decision||"–"):"–");
+ const books=(bk,kind)=>el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Book"),el("th",{},"Response"),el("th",{},kind==="total"?"Total / price for public side":"Key number"))),
+  el("tbody",{},...Object.entries(bk||{}).map(([b,v])=>el("tr",{},el("td",{},b),el("td",{},v.regime+(v.reason?" ("+v.reason+")":"")),
+   el("td",{class:"small"},kind==="total"?(v.total_start!=null?v.total_start+"→"+v.total_end+", "+(v.price_start||"–")+"→"+(v.price_end||"–")+(v.key_total_state&&!/NO_KEY/.test(v.key_total_state)?" · "+v.key_total_state:""):"–"):(v.key||"–")))))));
+ const head=card(el("h2",{},"Market Intelligence ",badge("EXPERIMENTAL")),el("p",{class:"small"},M.label+". Original ArbitrEdge spread engine (unchanged code) and the totals extension "+(cs[0]&&cs[0].total?cs[0].total.engine:"mi_totals.v1")+
+  ". Public preference is an ESTIMATE from team form and attention, never ticket or handle data. Separate from the Synthetic Sportsbook's Financial NEED and from SIMS. Not a bet."),
+  el("p",{class:"small mute"},"Evaluated at the build time for games kicking off within 30 h (the original starts at T-24h). Historical 2026 audit: no rule passed multiple-testing correction."));
+ if(!cs.length)return[head,card(el("p",{class:"mute"},"No game in the evaluation window."))];
+ return[head,...cs.map(c=>{const sp=c.spread||{},tt=c.total||{};return card(el("h3",{},c.game),el("p",{class:"mute small"},"kickoff "+c.kickoff+" · as of "+c.as_of),
+  el("div",{class:"mi2"},
+   el("div",{},el("h3",{},"Spread market intelligence"),el("p",{class:"small"},"Market-derived NEED: ",need(sp)),
+    el("p",{class:"small"},"Estimated public side: "+(sp.public_side_estimate||"–")+" ("+pctx(sp.public_magnitude_pct)+") · market activity "+pctx(sp.handle_intensity_pct)),
+    el("p",{class:"small"},"Books: "+(sp.regime||"–")+(sp.breadth?" ("+sp.breadth+")":"")+" · segment "+(sp.segment||"–")+" · data quality "+(sp.data_quality||"–")),books(sp.books,"spread")),
+   el("div",{},el("h3",{},"Totals market intelligence"),el("p",{class:"small"},"Market-derived NEED: ",need(tt)),
+    el("p",{class:"small"},"Estimated public lean: "+(tt.public_lean_estimate||"–")+" ("+pctx(tt.public_magnitude_pct)+", inputs "+(tt.inputs||"–")+") · totals activity "+pctx(tt.activity_pct)),
+    el("p",{class:"small"},"Books: "+(tt.regime||"–")+(tt.breadth?" ("+tt.breadth+")":"")+" · pro vs rec: "+(tt.sequencing||"–")),
+    el("p",{class:"small mute"},tt.reason||""),books(tt.books,"total"))))})]};
 function render(){const h=location.hash.slice(1);let sec=h||"overview",gid=null;if(h.startsWith("game/")){gid=h.slice(5);sec="game"}
  if(sec!=="game"&&!R[sec])sec="overview";if(sec!=="game")st.prev=sec;st.sec=sec;
  for(const b of document.querySelectorAll("#sport button"))b.classList.toggle("on",b.dataset.s===st.sport);
- const nav=document.getElementById("nav");nav.replaceChildren(...SECTIONS.map(([k,t])=>el("a",{href:"#"+k,class:k===sec?"on":""},t)));
+ const nav=document.getElementById("nav");nav.replaceChildren(...SECTIONS.concat(SECTIONS_MI).map(([k,t])=>el("a",{href:"#"+k,class:k===sec?"on":""},t)));
  const s=S();const f=freshness(s.observed_at);document.getElementById("fresh").replaceChildren(badge(f),el("span",{class:"mute"},s.observed_at?fmtAge(ageMin(s.observed_at))+" old":"no data"));
  const main=document.getElementById("main");const y=window.scrollY;main.replaceChildren(...(sec==="game"?R.game(gid):R[sec]()).filter(Boolean));
  if(document.activeElement&&document.activeElement.type==="search"){}else window.scrollTo(0,y)}
@@ -795,6 +850,8 @@ def main(argv=None):
     ap.add_argument("--need-out", default=None, help="where to write Need-tracker files created by this build")
     ap.add_argument("--settle-dir", default=None, help="saved wager settlements (release v4-settlement)")
     ap.add_argument("--sensitivity-cache", default=None, help="previous build's variant splits (v4-site, optional)")
+    ap.add_argument("--mi-out", default=None, help="market-intelligence records created by this build (if enabled)")
+    ap.add_argument("--mi-existing", default=None, help="names of saved market-intelligence records (one per line)")
     a = ap.parse_args(argv)
     now = _epoch(a.now) if a.now else time.time()
     if a.live_db:
@@ -831,6 +888,7 @@ def main(argv=None):
         for sp in SPORTS:
             (snap["sports"][sp].get("book") or {}).pop("official_snapshots", None)
         snap["official_needs"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
+    market_intel_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, now, a.mi_out, a.mi_existing)
     with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
         json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))
     try:                                   # display only; never stops the build
