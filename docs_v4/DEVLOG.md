@@ -373,3 +373,23 @@ positive real-data evidence remains line shopping (closing EV). No official play
   - validated only after a second season.
 - **Live-era volume:** 52 and 88 signals in ISO weeks 44–45.
 - **Tests:** 592 passed, 22 skipped (required suite + tests_cf1).
+
+## 2026-11-12 — Dashboard build: incremental line-shopping cache (owner-approved; performance only)
+
+- **Problem:** the Build site step grew from about 2 minutes to over 10 minutes; the old 10-minute job limit was hit four times (10–12 Nov). The cause was `line_shop.report` re-scanning every stored snapshot on every build (~83% of the step, growing with every snapshot). The job limit was raised to 20 minutes as a stopgap (f3c29d3).
+- **Fix:** `analysis_v4/line_shop_cache.py`.
+  - Each game's scan at each snapshot is reused when a SHA-256 fingerprint of that game's quotes up to that snapshot is unchanged.
+  - Kickoff times and team names always come from the current data.
+  - The cache key includes a calculation version: hashes of the source code and NFL parameters, the policy, the freshness rule and the sport.
+  - Every build recomputes a random sample of 25 reused entries per sport. Any difference discards the cache and recomputes everything.
+  - A missing, corrupt, truncated or old cache means a full calculation.
+  - The cache is saved as the `v4-site` asset `line_shop_cache.json.gz` (~0.7 MB). Publish never overwrites a cache that another build saved after this build downloaded it.
+  - The daily `odds-analyze` report is unchanged (no cache).
+- **Equivalence on production inputs** (259 shards, through 12 Nov 03:33Z):
+  - The full report and the cached report were compared as serialized JSON: every field, including the per-opportunity rows and bootstrap intervals. All identical.
+  - Cold cache: identical.
+  - Warm cache with one new snapshot (cache built from 258 shards): 99 game-snapshots computed, 18,686 reused, identical.
+  - Warm repeat: identical.
+  - Results: NFL 286 opportunities, 167 with an observed close, closing EV +1.41% (CI −0.66% to +3.39%), INCONCLUSIVE. CFB 1,124 opportunities, 761 with a close, +1.45% (CI +0.45% to +2.45%), POSITIVE (provisional).
+- **Runtimes** (line-shopping report, both sports, local): full 529 s; cold cache 498 s; warm with a new snapshot 15.5 s; warm repeat 12.1 s.
+- **Tests:** 18 new scenario tests (`tests_v4/test_line_shop_cache.py`): cold, warm, new snapshots, corrected snapshot (only the affected game and times are recomputed), deleted snapshot, moved kickoff, truncated/garbage/non-gzip/wrong-schema/malformed/empty cache, leftover temp file, code and policy version changes, a tampered entry caught by the spot check, the site CLI round trip, and the workflow wiring. Required suite + tests_cf1: 610 passed, 22 skipped.
