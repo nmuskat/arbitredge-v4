@@ -20,7 +20,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20       # owner-approved 2026-11-12 (was 10: Build site began exceeding it on 2026-11-11)
     concurrency:
       group: v4-site
       cancel-in-progress: false
