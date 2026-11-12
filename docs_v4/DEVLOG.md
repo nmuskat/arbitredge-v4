@@ -393,3 +393,9 @@ positive real-data evidence remains line shopping (closing EV). No official play
   - Results: NFL 286 opportunities, 167 with an observed close, closing EV +1.41% (CI −0.66% to +3.39%), INCONCLUSIVE. CFB 1,124 opportunities, 761 with a close, +1.45% (CI +0.45% to +2.45%), POSITIVE (provisional).
 - **Runtimes** (line-shopping report, both sports, local): full 529 s; cold cache 498 s; warm with a new snapshot 15.5 s; warm repeat 12.1 s.
 - **Tests:** 18 new scenario tests (`tests_v4/test_line_shop_cache.py`): cold, warm, new snapshots, corrected snapshot (only the affected game and times are recomputed), deleted snapshot, moved kickoff, truncated/garbage/non-gzip/wrong-schema/malformed/empty cache, leftover temp file, code and policy version changes, a tampered entry caught by the spot check, the site CLI round trip, and the workflow wiring. Required suite + tests_cf1: 610 passed, 22 skipped.
+- **Production (v4-dev dc7cf2c):**
+  - Cold build, run 43155196957: success. 8m03s in total, of which Build site took 6m35s. The cache was created (719 KB).
+  - Warm build, run 43156661003: success. 2m21s in total, of which Build site took **64 s**. It added one new shard, computed 99 game-snapshots, reused 18,785 and spot-checked 50, with no differences.
+  - CF1 ran normally (no eligible cutoff yet). The synthetic book was OK for both sports. Deploy succeeded.
+  - The published Performance figures equal a from-scratch recompute on the same 260 shards, for both NFL and CFB.
+- **Job time limit:** it stays at 20 minutes. Return it to 10 after several warm production builds show the same headroom.
