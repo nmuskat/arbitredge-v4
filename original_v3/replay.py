@@ -28,7 +28,19 @@ def _init(dbfile, cadence):
                                       ("elevated", 24, 6, 480), ("high", 6, 1, 180), ("highest", 1, 0, 180)]
 
 
+def _one_totals(args):
+    gid, ko_iso, label, as_of, variant = args
+    from original_v3.totals import compute_totals_inference
+    try:
+        r = compute_totals_inference(_DB["conn"], gid, as_of, variant)
+    except Exception as e:
+        return {"gid": gid, "as_of_label": label, "error": f"{type(e).__name__}: {e}"}
+    return dict(r, gid=gid, as_of_label=label, as_of=as_of)
+
+
 def _one(args):
+    if len(args) == 5:
+        return _one_totals(args)
     gid, ko_iso, label, as_of = args
     from book_need.inference import compute_inference
     try:
@@ -55,6 +67,8 @@ def main(argv=None):
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--cadence", default="v3", choices=["v3", "v4"])
     ap.add_argument("--limit", type=int)
+    ap.add_argument("--totals", choices=["over_bias", "scoring_lean"],
+                    help="run the TOTALS EXTENSION (not original) instead of the original spread Book NEED")
     a = ap.parse_args(argv)
     import sqlite3
     from collect_v4 import backfill as B
@@ -76,13 +90,14 @@ def main(argv=None):
         if ko > end or (sp, eid) not in finals:
             continue                                               # completed games with a final score only
         for label, off in AS_OF.items():
-            jobs.append((gid, iso(ko), label, iso(ko - off)))
+            jobs.append((gid, iso(ko), label, iso(ko - off)) + ((a.totals,) if a.totals else ()))
     jobs = jobs[:a.limit] if a.limit else jobs
     with mp.Pool(a.workers, initializer=_init, initargs=(dbfile, a.cadence)) as pool:
         res = list(pool.imap_unordered(_one, jobs, chunksize=4))
     meta = {gid: {"event_id": eid, "sport": sp, "home": h, "away": aw, "kickoff": ko}
             for eid, (gid, sp, h, aw, ko) in ids.items()}
-    pickle.dump({"results": res, "meta": meta, "cadence": a.cadence, "finals": finals}, open(a.out, "wb"))
+    pickle.dump({"results": res, "meta": meta, "cadence": a.cadence, "finals": finals, "totals": a.totals},
+                open(a.out, "wb"))
     print(len(res), "inferences;", sum(1 for r in res if "error" in r), "errors")
 
 

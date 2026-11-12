@@ -18,25 +18,26 @@ from need_v6.market import normalizer
 from sportsbook_v4.market import profit_on_win
 from sportsbook_v4.util import to_epoch
 
-OPP = {"home": "away", "away": "home"}
+OPP = {"home": "away", "away": "home", "over": "under", "under": "over"}
 
 
 class Grader:
     def __init__(self, conn, finals):
         self.conn, self.finals, self.h = conn, finals, {}
 
-    def hist(self, sport, eid):
-        k = (sport, eid)
+    def hist(self, sport, eid, market="spread"):
+        k = (sport, eid, market)
         if k not in self.h:
-            self.h[k] = History(self.conn, sport, eid, "spread")
+            self.h[k] = History(self.conn, sport, eid, market)
         return self.h[k]
 
     def bet(self, sport, eid, side, t):
-        h = self.hist(sport, eid)
+        market = "total" if side in ("over", "under") else "spread"
+        h = self.hist(sport, eid, market)
         f, b = h.snap_at(t)
         if f is None or t - f > 3 * 3600:
             return None
-        nz = normalizer(sport, "spread")
+        nz = normalizer(sport, market)
         v = view(b)
         mu = v.get("consensus_mu")
         if mu is None:
@@ -45,7 +46,10 @@ class Grader:
         for bk, q in b.items():
             if q["mu"] is None:
                 continue
-            pt, pr = (q["point"], q["price_a"]) if side == "home" else (-q["point"], q["price_b"])
+            if market == "total":
+                pt, pr = q["point"], (q["price_a"] if side == "over" else q["price_b"])
+            else:
+                pt, pr = (q["point"], q["price_a"]) if side == "home" else (-q["point"], q["price_b"])
             pw, pp = nz.prob_at(mu, side, pt)
             e = pw * profit_on_win(1.0, pr) - (1 - pw - pp)
             if best is None or e > best[0]:
@@ -61,7 +65,10 @@ class Grader:
         fin = self.finals.get((sport, eid))
         if not fin or None in fin:
             return None
-        v_ = (fin[0] - fin[1]) * (1 if side == "home" else -1) + pt
+        if market == "total":
+            v_ = (fin[0] + fin[1] - pt) * (1 if side == "over" else -1)
+        else:
+            v_ = (fin[0] - fin[1]) * (1 if side == "home" else -1) + pt
         return {"units": profit_on_win(1.0, pr) if v_ > 0 else (0.0 if v_ == 0 else -1.0),
                 "res": "W" if v_ > 0 else "P" if v_ == 0 else "L", "clv": clv, "game": (sport, eid)}
 
@@ -103,6 +110,12 @@ def tests(rep, g):
         pp = x.get("public_pressure") or {}
         spd = pp.get("side_preference_direction")
         key = f"{sp} {lab}"
+        if x["side"] in ("over", "under"):
+            b = g.bet(sp, eid, x["side"], t)
+            T[f"TOT Book NEED (all) | {key}"].append(b)
+            T[f"TOT strength {x['strength']} | {key}"].append(b)
+            T[f"TOT regime {x['regime']} | {key}"].append(b)
+            T[f"TOT OPPOSITE (control) | {key}"].append(g.bet(sp, eid, OPP[x["side"]], t))
         if x["side"] in ("home", "away"):
             b = g.bet(sp, eid, x["side"], t)
             T[f"O1 Book NEED (all) | {key}"].append(b)
