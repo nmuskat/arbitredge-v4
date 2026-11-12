@@ -30,9 +30,16 @@ def _init(dbfile, cadence):
 
 def _one_totals(args):
     gid, ko_iso, label, as_of, variant = args
-    from original_v3.totals import compute_totals_inference
     try:
-        r = compute_totals_inference(_DB["conn"], gid, as_of, variant)
+        if variant == "mi":
+            from original_v3.totals2 import compute_totals_inference as cti
+            r = cti(_DB["conn"], gid, as_of, _DB.setdefault("cache", {}))
+            r = {k: v for k, v in r.items() if k != "per_book"} | {
+                "per_book": {b: {k: v for k, v in x.items() if k in ("regime", "reason", "key_total_state")}
+                             for b, x in (r.get("per_book") or {}).items()}}
+        else:
+            from original_v3.totals import compute_totals_inference
+            r = compute_totals_inference(_DB["conn"], gid, as_of, variant)
     except Exception as e:
         return {"gid": gid, "as_of_label": label, "error": f"{type(e).__name__}: {e}"}
     return dict(r, gid=gid, as_of_label=label, as_of=as_of)
@@ -67,7 +74,7 @@ def main(argv=None):
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--cadence", default="v3", choices=["v3", "v4"])
     ap.add_argument("--limit", type=int)
-    ap.add_argument("--totals", choices=["over_bias", "scoring_lean"],
+    ap.add_argument("--totals", choices=["over_bias", "scoring_lean", "mi"],
                     help="run the TOTALS EXTENSION (not original) instead of the original spread Book NEED")
     a = ap.parse_args(argv)
     import sqlite3
