@@ -28,7 +28,10 @@ import odds_gateway as og  # noqa: E402
 from collect_v4 import backfill as B  # noqa: E402
 from collect_v4.actions_run import (InProcessClient, _write_summary, dump_ledger, export_shard,  # noqa: E402
                                     load_ledger, load_rankings)
-from collect_v4.collector import BOOKS  # noqa: E402
+# The one-time historical backfill keeps the book list it was approved and run with (live collection swapped
+# lowvig for circasports on 2026-11-12), so any further backfill pages match the ones already fetched.
+BOOKS = ("pinnacle", "betonlineag", "lowvig", "draftkings", "fanduel", "betmgm",
+         "williamhill_us", "betrivers", "espnbet", "fanatics")
 from edge_v4.odds_client import GatewayRefused  # noqa: E402
 from market_v4 import normalize, store  # noqa: E402
 

@@ -408,3 +408,17 @@ positive real-data evidence remains line shopping (closing EV). No official play
 - **Local build** on 265 production shards: Market Intelligence step 7.6 s, whole page 2m07s.
 - **Production build** 43232081326 (MI still off): success; line-shop cache warm; book OK for NFL and CFB; CF1 ran.
 - **Tests:** required suite + tests_cf1 + tests_market_intel: 618 passed, 22 skipped.
+
+## 2026-11-12 — Pinnacle & Circa line-move tab; Circa replaces LowVig in collection (owner-approved)
+
+- **Collection:** `collect_v4/collector.py` now collects `circasports` instead of `lowvig` (a BetOnline mirror). It's still 10 books, so still 3 credits per fetch. Circa also joins the market-maker consensus (weight 3.0, already in `asof.SHARP_WEIGHTS`), so EV Scanner and Need consensus figures may shift slightly from this date. The historical backfill keeps its original book list.
+  - The provider's support for Circa on NFL/CFB is unconfirmed until the next collection run. If no Circa prices arrive, the tab shows "no prices yet". Revert if Circa never appears.
+- **Tab "Pinnacle & Circa"** (`analysis_v4/book_moves.py`, rule book_moves.v1, fixed before any result was computed):
+  - Shows every spread and total price change for each game.
+  - INFERRED NEED: the side the book made more expensive since first observation (a move of at least 0.25 point-equivalents), as the owner described from a Circa manager ("book hard to the side we want to need"). Split into LINE (the number moved) and JUICE (price only).
+  - Graded at the book's closing number. The season record counts every collected game; the page lists the last 3 weeks.
+- **First Pinnacle records** (since 27 Oct):
+  - NFL spreads 11-15, totals 11-12.
+  - CFB spreads 46-52-2, totals 52-41-1.
+  - Small samples; no edge shown yet.
+- **Tests:** 4 new tests in `tests_v4/test_book_moves.py`.

@@ -293,6 +293,27 @@ def sharp_follow_step(bconn, conn, active, games, res, now):
     return SF.report(gs, by_game, res, close_line, _iso(now))
 
 
+def book_moves_step(snap, conn, rankings_snaps, results_dir, now):
+    """PINNACLE & CIRCA line moves with an INFERRED need side (analysis_v4/book_moves.py). Display only; an error
+    is shown on the tab and never stops the build."""
+    try:
+        from analysis_v4 import book_moves as _BM
+        from data_v4 import rankings as _RK
+        from data_v4 import results as _RS
+        latest = max((x for x in rankings_snaps if x.get("teams")), key=lambda x: x["fetched_at"], default=None)
+        matcher = _RK.TeamMatcher(latest["teams"]) if latest else None
+        evs = conn.execute("SELECT event_id, sport, home, away, MAX(commence) FROM mkt_quote WHERE book IN "
+                           "('pinnacle','circasports') AND market IN ('spreads','totals') GROUP BY event_id").fetchall()
+        games = [{"sport": "nfl" if sp == "americanfootball_nfl" else "cfb", "event_id": e, "home": h, "away": a,
+                  "kickoff": k} for e, sp, h, a, k in evs]
+        docs = _RS.load(results_dir) if results_dir else []
+        gl = [dict(g, kickoff=_iso(g["kickoff"])) for g in games]
+        finals = {k[1]: (v["home_score"], v["away_score"]) for k, v in _RS.match(gl, docs, matcher).items()}
+        snap["book_moves"] = _BM.build(conn, sorted(games, key=lambda g: g["kickoff"]), finals, now)
+    except Exception as e:                 # noqa: BLE001
+        snap["book_moves"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
+
+
 def market_intel_step(snap, conn, rankings_snaps, results_dir, now, record_out=None, record_existing=None, bconn=None):
     """ORIGINAL ArbitrEdge market intelligence (spreads, original code) + totals extension mi_totals.v1.
     Flag-guarded: runs only when MARKET_INTEL=on (default off -> the page is unchanged). Display only; never stops
@@ -404,7 +425,7 @@ const D=JSON.parse(document.getElementById("data").textContent);
  document.getElementById("brand").textContent="ArbitrEdge "+(ev.startsWith("sportsbook_v5")?"V5":"V4")}
 const SECTIONS_MI=D.market_intel?[["mi","Market Intelligence"]]:[];
 const SECTIONS=[["overview","Overview"],["odds","Odds Board"],["splits","Betting Splits"],["need","ArbitrEdge Need"],
-["tracker","Need Tracker"],["official","Official Needs"],["sharp","Sharp Money"],["ev","EV Scanner"],["sims","SIMS"],["performance","Performance"],["health","Health"]];
+["tracker","Need Tracker"],["official","Official Needs"],["sharp","Sharp Money"],["moves","Pinnacle & Circa"],["ev","EV Scanner"],["sims","SIMS"],["performance","Performance"],["health","Health"]];
 const MK={spreads:"Spread",totals:"Total",h2h:"Moneyline"};const BMK={spread:"spreads",total:"totals",moneyline:"h2h"};
 const st={sport:"nfl",sec:"overview",game:null,f:{q:"",market:"",book:"",date:"",strength:"0",fresh:"all",unfiltered:false}};
 try{const s=localStorage.getItem("v4sport");if(s==="nfl"||s==="cfb")st.sport=s}catch(e){}
@@ -820,6 +841,30 @@ R.mi=()=>{const M=D.market_intel||{};if(M.status!=="OK")return[card(el("h2",{},"
   el("div",{class:"mi2"},shp("Spread",sp,["home","away"]),shp("Totals",tt,["over","under"])))})]};
 const AG={rule:"v3",cut:"T-1h",src:"genuine",market:"spread",cat:"",show:false};
 const AGCAT={STRONG_AGREEMENT:"Strong agreement",MODERATE_AGREEMENT:"Moderate agreement",DISAGREEMENT:"Disagreement",NO_SHARP_CONSENSUS:"No sharp consensus",MARKET_NEED_ONLY:"NEED only (no sharp wagers)",SHARP_ONLY:"Sharps only (no NEED)",NO_SIGNAL:"No signal",ALL_NEED:"All NEED picks (any sharp position)"};
+const BMV={show:{}};
+R.moves=()=>{const B=D.book_moves||{};if(B.status!=="OK")return[card(el("h2",{},"Pinnacle & Circa line moves"),el("p",{class:"mute"},"Unavailable: "+(B.reason||B.status||"not built")))];
+ const gs=(B.games||[]).filter(g=>g.sport===st.sport);const BK=B.books||{};
+ const tm=(g,side)=>side==="home"?g.game.split(" @ ")[1]:side==="away"?g.game.split(" @ ")[0]:side==="over"?"Over":"Under";
+ const nick=n=>n.split(" ").slice(-1)[0];const q=(g,m,x)=>!x?"–":m==="spreads"?nick(tm(g,"home"))+" "+ln(x.line)+" "+am(x.a)+" · "+nick(tm(g,"away"))+" "+ln(-x.line)+" "+am(x.b):"O "+x.line+" "+am(x.a)+" · U "+x.line+" "+am(x.b);
+ const needEl=(g,m,c)=>{const i=(c||{}).inference||{};return i.need?el("span",{},el("b",{},tm(g,i.need)),el("span",{class:"small mute"}," ("+(i.strength==="LINE"?"number moved":"juice only")+", "+Math.abs(i.move).toFixed(1)+" pts)")):el("span",{class:"mute small"},(i.status||"–").toLowerCase())};
+ const res=r=>!r?"":el("span",{class:r==="W"?"pos":r==="L"?"neg":""}," "+r);
+ const recs=(B.records||[]).filter(r=>r.sport===st.sport);
+ const rt=(b,m,sg)=>{const r=recs.find(x=>x.book===b&&x.market===m&&x.strength===sg);if(!r)return"–";const n=r.W+r.L;return r.W+"-"+r.L+(r.P?"-"+r.P:"")+(n?" ("+(100*r.W/n).toFixed(0)+"%)":"")};
+ const recTbl=el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Book"),el("th",{},"Market"),el("th",{class:"num"},"All inferred needs"),el("th",{class:"num"},"Line moves"),el("th",{class:"num"},"Juice only"))),
+  el("tbody",{},...Object.keys(BK).flatMap(b=>["spreads","totals"].map(m=>el("tr",{},el("td",{},BK[b]),el("td",{},MK[m]),el("td",{class:"num"},rt(b,m,"ALL")),el("td",{class:"num"},rt(b,m,"LINE")),el("td",{class:"num"},rt(b,m,"JUICE"))))))));
+ const head=card(el("h2",{},"Pinnacle & Circa line moves ",badge("OBSERVED"),badge("EXPERIMENTAL")),
+  el("p",{class:"small"},"Every price change by Pinnacle and Circa on spreads and totals, from our own collections. INFERRED NEED: the side the book made more expensive since we first saw the game (a worse number, e.g. +3 → +2.5, or more juice at the same number, e.g. −110 → −115). The book is showing that side as strong and inviting money on the cheaper side, so it wants to need it. LINE = the number moved at least half a point; JUICE = only the price moved. Moves smaller than about 8 cents of juice are shown as no clear move."),
+  el("p",{class:"small mute"},B.label+". "+B.note+" Circa is collected from 12 Nov 2026 (it replaced LowVig); earlier games show Pinnacle only. Rule "+B.rule+"."),
+  el("h3",{},"Season record of the inferred need (every collected game, graded at the book's closing number)"),recTbl);
+ const card1=g=>{const id=g.event_id;return card(el("h3",{},g.game),el("p",{class:"small mute"},local(g.kickoff)+(g.final?" · final "+g.final[1]+"–"+g.final[0]+" (away–home)":g.status==="started"?" · in progress / awaiting score":"")),
+  el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Book"),el("th",{},"Market"),el("th",{},"First seen"),el("th",{},g.status==="upcoming"?"Now":"Close"),el("th",{},"Inferred need"))),
+   el("tbody",{},...Object.keys(BK).flatMap(b=>["spreads","totals"].map(m=>{const c=((g.books||{})[b]||{})[m]||{};
+    return el("tr",{},el("td",{},BK[b]),el("td",{},MK[m]),el("td",{class:"small"},q(g,m,c.first)),el("td",{class:"small"},q(g,m,c.last)),el("td",{},needEl(g,m,c),res(c.result)))})))))
+  ,g.status==="upcoming"?el("details",BMV.show[id]?{open:""}:{},el("summary",{on:{click:e=>{e.preventDefault();BMV.show[id]=!BMV.show[id];render()}}},"Every move"),
+   ...Object.keys(BK).flatMap(b=>["spreads","totals"].map(m=>{const mv=(((g.books||{})[b]||{})[m]||{}).moves||[];return mv.length?el("p",{class:"small"},el("b",{},BK[b]+" "+MK[m]+": "),mv.map(x=>local(x.at)+" "+q(g,m,x)).join(" → ")):null}))):null)};
+ const up=gs.filter(g=>g.status==="upcoming"),past=gs.filter(g=>g.status!=="upcoming").reverse();
+ return[head,el("h2",{class:"sec"},"Upcoming ("+up.length+")"),...(up.length?up.map(card1):[card(el("p",{class:"mute"},"No upcoming games with Pinnacle or Circa prices."))]),
+  el("h2",{class:"sec"},"Completed, last 3 weeks ("+past.length+")"),...past.map(card1)]};
 function agreeCard(A){if(!A)return card(el("h2",{},"Market NEED × synthetic sharp agreement"),el("p",{class:"mute"},"Research records unavailable in this build."));
  const seg=(k,opts)=>el("span",{class:"seg"},...opts.map(([v,t])=>el("button",{class:AG[k]===v?"on":"",on:{click:()=>{AG[k]=v;render()}}},t)));
  const rec=t=>!t||!t.n?"–":t.W+"-"+t.L+(t.P?"-"+t.P:"");const u=t=>!t||!t.n?"–":(t.units>0?"+":"")+t.units.toFixed(2)+"u";
@@ -932,6 +977,7 @@ def main(argv=None):
         for sp in SPORTS:
             (snap["sports"][sp].get("book") or {}).pop("official_snapshots", None)
         snap["official_needs"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
+    book_moves_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, now)
     market_intel_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, now, a.mi_out, a.mi_existing, bconn)
     with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
         json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))
