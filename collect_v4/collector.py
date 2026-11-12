@@ -30,9 +30,9 @@ from market_v4 import normalize, store
 SPORTS = ("americanfootball_nfl", "americanfootball_ncaaf")
 # 10 books = one region unit. Market makers first (consensus), then the US
 # recreational books where line-shopping prices would be found.
-# 2026-11-12 (owner-approved): circasports replaces lowvig (a BetOnline mirror) so Circa's line moves can be
-# tracked (Pinnacle & Circa tab). Same 10 books, same credits per fetch.
-BOOKS = ("pinnacle", "betonlineag", "circasports", "draftkings", "fanduel", "betmgm",
+# 2026-11-12: circasports was tried in place of lowvig (owner-approved) but the provider returned no Circa prices
+# for NFL or CFB (collection 2026-11-12T15:40Z), so lowvig is back, as agreed with the owner.
+BOOKS = ("pinnacle", "betonlineag", "lowvig", "draftkings", "fanduel", "betmgm",
          "williamhill_us", "betrivers", "espnbet", "fanatics")
 MARKETS = ("h2h", "spreads", "totals")
 CADENCE = ((90, 10), (360, 30), (2880, 60), (10080, 180))

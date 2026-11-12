@@ -422,3 +422,4 @@ positive real-data evidence remains line shopping (closing EV). No official play
   - CFB spreads 46-52-2, totals 52-41-1.
   - Small samples; no edge shown yet.
 - **Tests:** 4 new tests in `tests_v4/test_book_moves.py`.
+- **Update (same day):** the first collection with `circasports` (2026-11-12T15:40Z) returned no Circa prices for either sport, while all 9 other books returned prices. `lowvig` is restored as agreed. The tab keeps its Circa rows, which show "no prices yet".
