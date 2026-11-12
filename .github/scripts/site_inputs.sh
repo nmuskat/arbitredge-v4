@@ -69,7 +69,7 @@ gh release download v4-site -p sensitivity_cache.json -D prev 2>/dev/null || ech
 gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v4-site" \
   --jq '[.assets[] | select(.name == "line_shop_cache.json.gz") | .updated_at][0] // ""' > prev/line_shop_cache.stamp 2>/dev/null \
   || : > prev/line_shop_cache.stamp
-if [[ -s prev/line_shop_cache.stamp ]]; then
+if [[ -n "$(cat prev/line_shop_cache.stamp)" ]]; then
   gh release download v4-site -p line_shop_cache.json.gz -D prev 2>/dev/null || echo "line-shop cache download failed: full calculation"
 else
   echo "no line-shop cache yet: full calculation"
