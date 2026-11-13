@@ -112,7 +112,8 @@ def test_slates_and_due():
     t = 1_800_000_000
     ks = [t, t + 1800, t + 3 * 3600, t + 3 * 3600 + 1200, t + 7 * 3600]
     assert SL.slates(ks) == [t, t + 3 * 3600, t + 7 * 3600]
-    assert SL.due(t - 80 * 60, ks, [])[0] is None
+    assert SL.due(t - 95 * 60, ks, [])[0] is None
+    assert SL.due(t - 85 * 60, ks, []) == (t, "ON TIME")
     assert SL.due(t - 60 * 60, ks, []) == (t, "ON TIME")
     assert SL.due(t - 30 * 60, ks, []) == (t, "LATE")
     assert SL.due(t - 60 * 60, ks, [t])[0] is None                    # taken once only

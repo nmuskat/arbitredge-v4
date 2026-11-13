@@ -434,7 +434,7 @@ positive real-data evidence remains line shopping (closing EV). No official play
   - Covers is free contest picks: shown, never counted.
   - WagerTalk also supplies Circa's current spread and total.
 - **Timing:** once per slate, about 1 h before its first kickoff.
-  - `splits_v4/slates.py` decides inside each collection run (free kickoff list) and flags the slate when it is 50–75 min away.
+  - `splits_v4/slates.py` decides inside each collection run (free kickoff list) and flags the slate when it is 50–90 min away (widened from 75 on 2026-11-13).
   - A separate job with NO secrets (`splits-collect.yml`) takes the snapshot into release `v4-splits` (immutable).
   - The site then rebuilds.
 - **Rule** `splits_fade.v1`, fixed before any result:

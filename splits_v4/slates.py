@@ -4,11 +4,11 @@ the slate's first kickoff. A slate = kickoffs that start within SLATE_GAP_S of t
 (Sunday 1:00 / 4:05-4:25 / SNF are three slates; a Saturday's CFB windows each a slate).
 
 Called by the collection run (no network, no API calls): it already knows every kickoff for free. Due when the first
-kickoff is 50-75 min away (the 15-minute collection cadence near games always lands one run in that window);
+kickoff is 50-90 min away (widened from 75 on 2026-11-13: GitHub started runs late on the first live night);
 a slate first seen later than that (under 50 min, still before kickoff) is taken late and labelled LATE.
 """
 SLATE_GAP_S = 100 * 60
-DUE_MIN_S, DUE_MAX_S = 50 * 60, 75 * 60
+DUE_MIN_S, DUE_MAX_S = 50 * 60, 90 * 60     # 90 min: owner 2026-11-13 (GitHub can start scheduled runs late)
 
 
 def slates(kickoffs):
