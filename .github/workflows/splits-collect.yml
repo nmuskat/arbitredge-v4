@@ -1,51 +1,55 @@
-# ArbitrEdge V4 -- public betting splits snapshot, once per slate ~1 h before its first kickoff (owner-approved 2026-11-12).
+# ArbitrEdge V4 -- public betting splits: one snapshot per slate, 1-2 h before its first kickoff, for every NFL game
+# and every AP Top-25 college game, any day of the week (owner-approved 2026-11-12/13).
+# Checks hourly 13:05-04:05 UTC (08:05 a.m.-midnight ET); a check with nothing due stops after a few seconds.
 # Reads six public websites (DraftKings Network, ScoresAndOdds, SportsBettingDime, BetMGM's public-betting panel,
-# WagerTalk, Covers). NO secrets, NO Odds API calls. Started by odds-collect when splits_v4.slates says a slate is due
-# (or by hand for a test). Output: one immutable file per run in release v4-splits (never modified or deleted).
+# WagerTalk, Covers). NO Odds API key and NO Odds API calls. After a snapshot it rebuilds the site; that call passes
+# ONLY the two Cloudflare deploy secrets (never inherit). OFF while V4_LIVE is not 'on' (skipped jobs cost nothing).
+# Output: release v4-splits, one immutable file per snapshot (never modified or deleted).
 name: splits-collect
 on:
-  workflow_call:
-    inputs:
-      slate:
-        type: string
-        required: true
-      timing:
-        type: string
-        required: false
-        default: ON_TIME
+  schedule:
+    - cron: "5 0,1,2,3,4,13,14,15,16,17,18,19,20,21,22,23 * * *"
   workflow_dispatch:
     inputs:
       slate:
-        description: "slate start (epoch seconds, UTC)"
-        required: true
-      timing:
-        description: "label"
+        description: "optional: force a snapshot for this slate start (epoch seconds, UTC); empty = normal check"
         required: false
-        default: MANUAL
+        default: ""
 permissions:
   contents: read
+concurrency:
+  group: v4-splits
+  cancel-in-progress: false
 jobs:
   snapshot:
+    if: vars.V4_LIVE == 'on'
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     permissions:
       contents: write           # release assets only (v4-splits); no code changes
+    outputs:
+      taken: ${{ steps.check.outputs.taken }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
         with:
           persist-credentials: false
-      - name: Take the splits snapshot
+      - name: Check for a due slate and take the snapshot
+        id: check
         env:
           GH_TOKEN: ${{ github.token }}
           SLATE: ${{ inputs.slate }}
-          TIMING: ${{ inputs.timing }}
         run: |
-          [[ "$SLATE" =~ ^[0-9]+$ ]] || { echo "bad slate '$SLATE'"; exit 1; }
-          [[ "$TIMING" =~ ^[A-Za-z_]+$ ]] || TIMING=ON_TIME
-          mkdir -p st splits_new
+          mkdir -p st rk splits_new
           gh release download v4-state -p collector_state.json -D st
-          python3 -m splits_v4.snapshot --state st/collector_state.json --slate "$SLATE" --timing "${TIMING//_/ }" --out splits_new
+          gh release download cfb-rankings -p 'rankings_*.json' -D rk 2>/dev/null || echo "no AP-poll snapshots"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v4-splits" --jq '.assets[].name' > existing.txt 2>/dev/null \
+            || : > existing.txt
+          extra=()
+          if [[ -n "$SLATE" ]]; then [[ "$SLATE" =~ ^[0-9]+$ ]] || { echo "bad slate"; exit 1; }; extra=(--slate "$SLATE"); fi
+          python3 -m splits_v4.run --state st/collector_state.json --rankings-dir rk --existing existing.txt \
+            --out splits_new "${extra[@]}"
       - name: Save the snapshot (new file only, never overwritten)
+        if: steps.check.outputs.taken == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -54,5 +58,15 @@ jobs:
           (( ${#files[@]} )) || { echo "no snapshot written"; exit 1; }
           gh release view v4-splits >/dev/null 2>&1 || gh release create v4-splits --prerelease \
             --title "Public betting splits snapshots and plays (do not delete)" \
-            --notes "Immutable: one splits snapshot per slate (~1 h before kickoff) and the sealed play decisions."
+            --notes "Immutable: one splits snapshot per slate (1-2 h before kickoff) and the sealed pick decisions."
           gh release upload v4-splits "${files[@]}"
+  site:
+    # Rebuild the site after a snapshot so the picks appear. Only the two Cloudflare deploy secrets are passed.
+    needs: snapshot
+    if: needs.snapshot.outputs.taken == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/site-build.yml
+    secrets:                    # only the Cloudflare deploy credentials; never inherit
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

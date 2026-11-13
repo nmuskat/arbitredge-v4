@@ -58,8 +58,6 @@ jobs:
       contents: write           # release assets only (data shards + ledger/state); no code changes
     outputs:
       fetched: ${{ steps.save.outputs.fetched }}
-      splits_slate: ${{ steps.save.outputs.splits_slate }}
-      splits_timing: ${{ steps.save.outputs.splits_timing }}
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
         with:
@@ -96,21 +94,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/seal_step.sh
-  splits:
-    # Public betting splits snapshot, once per slate ~1 h before kickoff (splits_v4). No secrets are passed.
-    needs: collect
-    if: needs.collect.outputs.splits_slate != ''
-    permissions:
-      contents: write
-    uses: ./.github/workflows/splits-collect.yml
-    with:
-      slate: ${{ needs.collect.outputs.splits_slate }}
-      timing: ${{ needs.collect.outputs.splits_timing }}
   site:
-    # Rebuild the site only when this run saved new odds or took a splits snapshot (a skipped job costs no minutes).
+    # Rebuild the site only when this run saved new odds (a skipped job costs no minutes).
     # Only the two Cloudflare deploy secrets are passed to it.
-    needs: [collect, splits]
-    if: always() && needs.collect.result == 'success' && (needs.collect.outputs.fetched == 'true' || needs.splits.result == 'success')
+    needs: collect
+    if: needs.collect.outputs.fetched == 'true'
     permissions:
       contents: write
     uses: ./.github/workflows/site-build.yml

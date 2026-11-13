@@ -112,12 +112,27 @@ def test_slates_and_due():
     t = 1_800_000_000
     ks = [t, t + 1800, t + 3 * 3600, t + 3 * 3600 + 1200, t + 7 * 3600]
     assert SL.slates(ks) == [t, t + 3 * 3600, t + 7 * 3600]
-    assert SL.due(t - 95 * 60, ks, [])[0] is None
-    assert SL.due(t - 85 * 60, ks, []) == (t, "ON TIME")
-    assert SL.due(t - 60 * 60, ks, []) == (t, "ON TIME")
+    assert SL.due(t - 125 * 60, ks, [])[0] is None
+    assert SL.due(t - 115 * 60, ks, []) == (t, "ON TIME")             # 1-2 h before (owner 2026-11-13)
+    assert SL.due(t - 61 * 60, ks, []) == (t, "ON TIME")
     assert SL.due(t - 30 * 60, ks, []) == (t, "LATE")
-    assert SL.due(t - 60 * 60, ks, [t])[0] is None                    # taken once only
+    assert SL.due(t - 90 * 60, ks, [t])[0] is None                    # taken once only
+    assert SL.due(t + 3 * 3600 - 90 * 60, ks, [t]) == (t + 3 * 3600, "ON TIME")
     assert [e[0] for e in SL.members([["a", t + 600, "", ""], ["b", t + 3 * 3600, "", ""]], t)] == ["a"]
+
+
+def test_hourly_check_always_lands_in_the_window():
+    t = 1_800_000_000
+    for minute in range(0, 60):                        # wherever the kickoff falls, some hourly run is 60-120 min before
+        ko = t + 5 * 3600 + minute * 60
+        runs = [t + h * 3600 + 5 * 60 for h in range(6)]
+        assert any(SL.due(r, [ko], [])[1] == "ON TIME" for r in runs)
+
+
+def test_done_slates_from_release_names():
+    from splits_v4 import run as R
+    names = ["splits_20261113T002655Z.json", "plays_20261113T002655Z.json", "splits_20261114T003000Z_S1794621600.json"]
+    assert R.done_slates(names) == [1794621600]
 
 
 def test_name_matching():
@@ -215,26 +230,29 @@ def _wf(n):
     return yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", n)))
 
 
-def test_splits_workflow_has_no_secrets_and_is_called_without_secrets():
+def test_splits_workflow_runs_hourly_on_its_own_with_no_odds_key():
+    import re
     txt = open(os.path.join(ROOT, ".github", "workflows", "splits-collect.yml")).read()
-    assert "secrets." not in txt and "ODDS_API_KEY" not in txt
+    wf = _wf("splits-collect.yml")
+    assert "ODDS_API_KEY" not in txt and not re.search(r"secrets:\s*inherit", txt)
+    assert [c["cron"] for c in wf[True]["schedule"]] == ["5 0,1,2,3,4,13,14,15,16,17,18,19,20,21,22,23 * * *"]
+    jobs = wf["jobs"]
+    assert jobs["snapshot"]["if"] == "vars.V4_LIVE == 'on'" and "secrets." not in json.dumps(jobs["snapshot"])
+    assert jobs["site"]["uses"] == "./.github/workflows/site-build.yml" and jobs["site"]["needs"] == "snapshot"
+    assert jobs["site"]["secrets"] == {"CLOUDFLARE_API_TOKEN": "${{ secrets.CLOUDFLARE_API_TOKEN }}",
+                                       "CLOUDFLARE_ACCOUNT_ID": "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}"}
     oc = _wf("odds-collect.yml")["jobs"]
-    assert oc["splits"]["uses"] == "./.github/workflows/splits-collect.yml" and "secrets" not in oc["splits"]
-    assert "splits" in oc["site"]["needs"] and "needs.collect.result == 'success'" in oc["site"]["if"]
-    collect_steps = oc["collect"]["steps"]
-    with_key = [s.get("name") for s in collect_steps if "ODDS_API_KEY" in json.dumps(s.get("env", {}))]
-    assert with_key == ["Collect (credit-gated)"]                    # the key stays in its one step
+    assert "splits" not in oc and oc["site"]["needs"] == "collect"          # collection is not involved
 
 
-def test_state_save_emits_splits_output(tmp_path):
-    import subprocess
-    out = tmp_path / "out"
-    out.mkdir()
-    (out / "splits_due").write_text("1800000000 ON_TIME\n")
-    gho = tmp_path / "gho"
-    gho.write_text("")
-    env = dict(os.environ, GITHUB_OUTPUT=str(gho), PATH=f"{tmp_path}:{os.environ['PATH']}")
-    (tmp_path / "gh").write_text("#!/bin/bash\nexit 0\n")
-    os.chmod(tmp_path / "gh", 0o755)
-    subprocess.run(["bash", os.path.join(ROOT, ".github", "scripts", "state_save.sh")], cwd=tmp_path, env=env, check=True)
-    assert "splits_slate=1800000000" in gho.read_text() and "splits_timing=ON_TIME" in gho.read_text()
+def test_draftkings_price_when_feed_is_stale():
+    t0 = 1_800_000_000
+    conn = _store([-110, -110, -105], t0 + 10 * 3600, t0)
+    s = _snap(t0 + 5 * 3600)                                                 # last odds 3 h old: feed not fresh
+    s["games"]["g1"]["draftkings"]["spread"]["away"].update(line=3.0, price=-112)
+    rec = [r for r in P.decide(s, conn) if r["market"] == "spread"][0]
+    assert rec["status"] == "PICK" and rec["play"]["price_source"] == "DraftKings splits page"
+    assert rec["play"]["line"] == 3.0 and rec["play"]["price"] == -112 and rec["pinnacle"]["age_min"] == 180
+    del s["games"]["g1"]["draftkings"]["spread"]["away"]["line"]
+    rec2 = [r for r in P.decide(s, conn) if r["market"] == "spread"][0]
+    assert rec2["status"] == "NO PICK" and "no current price" in rec2["reason"]

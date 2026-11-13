@@ -15,7 +15,10 @@ Per game, per market (spread, total), from one splits snapshot taken ~1 h before
     Moved >= 0.25 against = STRONG; otherwise HOLD.
  3. CIRCA (from WagerTalk at the snapshot): its number moved >= 0.5 toward the public side vs the market opener =
     RESPECTED -> no play. Not available = noted, does not block.
- 4. PLAY = the side opposite the public, at the best real price in our odds feed at the snapshot time.
+ 4. PLAY = the side opposite the public, at the best real price in our odds feed at the snapshot time; when our
+    feed has no price under 45 min old (e.g. a night the odds collection runs sparsely), DraftKings' price posted on
+    its splits page in the same snapshot (recorded as price_source). Pinnacle's check uses its latest observed price
+    and records how old it was (pinnacle.as_of).
 CFB plays: AP Top-25 games (status unknown also kept, as in collection). Graded W/L/P at the recorded number,
 units at the recorded price (1 unit risked). Records are sealed once; results are added at display time.
 EXPERIMENTAL: not a proven strategy.
@@ -66,7 +69,11 @@ def pinnacle(conn, event_id, market, until, side):
     move = ser[-1][4] - ser[0][4]                       # + = home/over more expensive
     toward = move if side in ("home", "over") else -move
     st = "RESPECTED" if toward >= PIN_MOVE else "STRONG" if toward <= -PIN_MOVE else "HOLD"
-    return st, round(toward, 2), {"first": ser[0][1], "now": ser[-1][1], "first_prices": ser[0][2:4], "now_prices": ser[-1][2:4]}
+    last_seen = conn.execute("SELECT MAX(fetched_at) FROM mkt_quote WHERE event_id=? AND book='pinnacle' AND market=? "
+                             "AND fetched_at<?", (event_id, mk, until)).fetchone()[0]
+    return st, round(toward, 2), {"first": ser[0][1], "now": ser[-1][1], "first_prices": ser[0][2:4],
+                                  "now_prices": ser[-1][2:4], "as_of": last_seen,
+                                  "age_min": None if last_seen is None else round((until - last_seen) / 60)}
 
 
 def circa(game, market, side):
@@ -95,7 +102,15 @@ def best_price(conn, event_id, market, side, at):
         key = ((line if market == "spread" else (-line if side == "over" else line)), price)
         if best is None or key > best[0]:
             best = (key, book, line, price)
-    return None if best is None else {"book": best[1], "line": best[2], "price": int(best[3])}
+    return None if best is None else {"book": best[1], "line": best[2], "price": int(best[3]), "price_source": "odds feed"}
+
+
+def dk_price(game, market, side):
+    """DraftKings' line and price from its splits page in this snapshot (fallback when our feed is not fresh)."""
+    q = (((game.get("draftkings") or {}).get(market) or {}).get(side) or {})
+    if q.get("line") is None or q.get("price") is None:
+        return None
+    return {"book": "draftkings", "line": float(q["line"]), "price": int(q["price"]), "price_source": "DraftKings splits page"}
 
 
 def decide(snapshot, conn, top25=None):
@@ -128,9 +143,9 @@ def decide(snapshot, conn, top25=None):
                     rec["reason"] = "Circa moved toward the public side"
                 else:
                     side = OPP[pub]
-                    price = best_price(conn, e["event_id"], market, side, at)
+                    price = best_price(conn, e["event_id"], market, side, at) or dk_price(g, market, side)
                     if price is None:
-                        rec["reason"] = "no fresh price for the play side at the snapshot"
+                        rec["reason"] = "no current price for the pick side (odds feed stale and DraftKings price missing)"
                     else:
                         rec.update(status="PICK", play={"side": side, "strength": pst, **price},
                                    reason=f"public {pub}; Pinnacle {pst.lower()}; Circa {cst.lower()}")

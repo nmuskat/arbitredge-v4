@@ -20,11 +20,6 @@ if (( ${#hist[@]} )); then
     --notes "Historical odds snapshots (The Odds API historical endpoint) for the one-time season backfill. Do not delete."
   gh release upload odds-hist "${hist[@]}"
 fi
-# public-splits snapshot due (collect_v4.actions_run -> splits_v4.slates): tells the workflow to start the splits job
-if [[ -n "${GITHUB_OUTPUT:-}" && -s out/splits_due ]]; then
-  read -r slate timing < out/splits_due
-  [[ "$slate" =~ ^[0-9]+$ && "$timing" =~ ^[A-Z_]+$ ]] && { echo "splits_slate=$slate"; echo "splits_timing=$timing"; } >> "$GITHUB_OUTPUT"
-fi
 if [[ -f out/ledger.jsonl ]]; then
   state_files=(out/ledger.jsonl)
   [[ -f out/collector_state.json ]] && state_files+=(out/collector_state.json)

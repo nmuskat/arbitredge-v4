@@ -245,23 +245,6 @@ def run(state_in, out, env=os.environ, clock=time.time, opener=None, tier=None, 
             else:
                 open(os.path.join(out, "site_skip"), "w").write(why + "\n")
                 summary["site"] = f"skipped: {why}"
-        # public-splits snapshot (splits_v4): once per slate ~1 h before its first kickoff. Only DECIDES here (no
-        # network); the snapshot itself runs in a separate job with no secrets (.github/workflows/splits-collect.yml).
-        try:
-            from splits_v4 import slates as _SL
-            kicks_all = [k for d in decisions.values() for k in d[0]]
-            done = state.setdefault("_splits_done", [])
-            slate, timing = _SL.due(clock(), kicks_all, done)
-            if slate is not None:
-                done.append(int(slate))
-                del done[:-60]
-                with open(os.path.join(out, "splits_due"), "w") as fh:
-                    fh.write(f"{int(slate)} {timing.replace(' ', '_')}\n")
-                summary["splits"] = f"due: slate {time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime(slate))} ({timing})"
-            else:
-                summary["splits"] = timing
-        except Exception as e:                 # noqa: BLE001 -- splits never affect collection
-            summary["splits"] = f"error: {type(e).__name__}: {e}"[:200]
         if summary["fetches"]:
             shard = os.path.join(out, f"quotes_{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(clock()))}.jsonl.gz")
             summary["shard"] = os.path.basename(shard)

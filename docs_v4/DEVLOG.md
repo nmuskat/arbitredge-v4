@@ -446,3 +446,10 @@ positive real-data evidence remains line shopping (closing EV). No official play
 - **Website:** "Plays" is now the landing page (upcoming plays, record, results, every game checked). All earlier tabs are behind "Research tabs".
 - **First real snapshot test** (today's pages): every site read and matched tonight's games. Tomorrow's 11 AM college slate matched 14 of 14 games on SportsBettingDime.
 - **Tests:** `tests_splits` (16 tests); workflow tests updated.
+
+- **Update 2026-11-13 (owner):**
+  - **Trigger:** the check now runs on its own schedule instead of riding on the odds collection, which left Friday-night games uncovered. `splits-collect.yml` runs hourly from 13:05 to 04:05 UTC every day, for every NFL game and every AP Top-25 college game.
+  - **Timing:** one snapshot per slate, 1–2 h before its first kickoff (`splits_v4/run.py`, `slates.py`). A check with nothing due stops in seconds.
+  - **Cost:** about 16 checks a day, roughly 480 Actions minutes a month, plus a site rebuild after each snapshot.
+  - **Collection:** the odds collection is back to exactly its pre-splits state.
+  - **Price fallback:** when our odds feed has no price under 45 min old, the pick takes DraftKings' price posted on its splits page in the same snapshot (`price_source`). Pinnacle's check records how old its latest price was. The decision rule is unchanged.

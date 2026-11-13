@@ -888,12 +888,12 @@ R.mi=()=>{const M=D.market_intel||{};if(M.status!=="OK")return[card(el("h2",{},"
 const AG={rule:"v3",cut:"T-1h",src:"genuine",market:"spread",cat:"",show:false};
 const AGCAT={STRONG_AGREEMENT:"Strong agreement",MODERATE_AGREEMENT:"Moderate agreement",DISAGREEMENT:"Disagreement",NO_SHARP_CONSENSUS:"No sharp consensus",MARKET_NEED_ONLY:"NEED only (no sharp wagers)",SHARP_ONLY:"Sharps only (no NEED)",NO_SIGNAL:"No signal",ALL_NEED:"All NEED picks (any sharp position)"};
 R.plays=()=>{const P=D.splits_plays||{};const hd=card(el("h2",{},"Plays ",badge("EXPERIMENTAL")),
-  el("p",{},"One idea, tested honestly: when the public is heavy on one side (65%+ of bets across DraftKings, ScoresAndOdds/SportsBettingDime and BetMGM) but Pinnacle and Circa refuse to move toward it, play the other side. Checked once per slate, about 1 hour before kickoff. Every pick is frozen when made and graded after the game. These are tracked picks, not official plays: the site's default stays NO BET until this record proves itself."),
+  el("p",{},"One idea, tested honestly: when the public is heavy on one side (65%+ of bets across DraftKings, ScoresAndOdds/SportsBettingDime and BetMGM) but Pinnacle and Circa refuse to move toward it, play the other side. Every NFL game and every AP Top-25 college game, any day: checked once per slate, 1–2 hours before kickoff. Every pick is frozen when made and graded after the game. These are tracked picks, not official plays: the site's default stays NO BET until this record proves itself."),
   el("p",{class:"small mute"},"STRONG = Pinnacle moved against the public. HOLD = Pinnacle didn't move. Not proven profitable yet: judge it by the record below after a few weekends. Rule "+(P.rule||"")+"."));
  if(P.status!=="OK")return[hd,card(el("p",{class:"mute"},"Unavailable: "+(P.reason||P.status||"not built")))];
  const rs=P.records||[],plays=rs.filter(r=>r.status==="PICK"),now=Date.now()/1000;
  const tm=(r,side)=>{const[a,h]=r.game.split(" @ ");return side==="home"?h:side==="away"?a:side==="over"?"Over":"Under"};
- const pl=r=>{const p=r.play;return tm(r,p.side)+" "+(r.market==="spread"?ln(p.line):p.line)+" "+am(p.price)+" ("+p.book+")"};
+ const pl=r=>{const p=r.play;return tm(r,p.side)+" "+(r.market==="spread"?ln(p.line):p.line)+" "+am(p.price)+" ("+p.book+(p.price_source&&p.price_source!=="odds feed"?", price from its splits page":"")+")"};
  const tally=xs=>{const g=xs.filter(r=>r.graded);const w=g.filter(r=>r.graded.result==="W").length,l=g.filter(r=>r.graded.result==="L").length,pu=g.length-w-l,u=g.reduce((a,r)=>a+r.graded.units,0);
   return{n:g.length,txt:g.length?w+"-"+l+(pu?"-"+pu:"")+"  ·  "+(u>=0?"+":"")+u.toFixed(2)+" units  ·  ROI "+(u/g.length*100>=0?"+":"")+(u/g.length*100).toFixed(1)+"%":"no graded plays yet"}};
  const row=(t,xs)=>{const x=tally(xs);return el("tr",{},el("td",{},t),el("td",{class:"num"},String(xs.length)),el("td",{},x.txt))};
@@ -902,12 +902,12 @@ R.plays=()=>{const P=D.splits_plays||{};const hd=card(el("h2",{},"Plays ",badge(
    row("Spreads",plays.filter(r=>r.market==="spread")),row("Totals",plays.filter(r=>r.market==="total")),
    row("STRONG",plays.filter(r=>r.play.strength==="STRONG")),row("HOLD",plays.filter(r=>r.play.strength==="HOLD"))))),
   el("p",{class:"small mute"},"Snapshots taken: "+(P.snapshots||0)+(P.latest_snapshot?" · latest "+local(P.latest_snapshot):"")+". 1 unit risked per play at the recorded price."));
- const why=r=>(r.why_public||"")+" · Pinnacle "+((r.pinnacle||{}).status||"–").toLowerCase()+" · Circa "+((r.circa||{}).status||"n/a").toLowerCase();
+ const why=r=>{const pn=r.pinnacle||{};return(r.why_public||"")+" · Pinnacle "+(pn.status||"–").toLowerCase()+(pn.age_min!=null&&pn.age_min>45?" (its latest price "+pn.age_min+" min old)":"")+" · Circa "+((r.circa||{}).status||"n/a").toLowerCase()};
  const src=r=>(r.sources||[]).map(x=>x.label+" "+Math.round(x.bets[r.public_side]||0)+"%").join(" · ");
  const up=plays.filter(r=>r.kickoff>now).sort((a,b)=>a.kickoff-b.kickoff),done=plays.filter(r=>r.kickoff<=now).sort((a,b)=>b.kickoff-a.kickoff);
  const upCard=card(el("h3",{},"Upcoming plays ("+up.length+")"),up.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Kickoff"),el("th",{},"Game"),el("th",{},"Play"),el("th",{},"Strength"),el("th",{class:"hide-s"},"Public (bets %)"))),
   el("tbody",{},...up.map(r=>el("tr",{},el("td",{class:"small"},local(r.kickoff_iso)),el("td",{},r.game),el("td",{},el("b",{},pl(r))),el("td",{},r.play.strength),el("td",{class:"small hide-s"},src(r))))))):
-  el("p",{class:"mute"},"No plays for upcoming games right now. Snapshots are taken about 1 hour before each slate."));
+  el("p",{class:"mute"},"No picks for upcoming games right now. Each slate is checked 1–2 hours before its first kickoff."));
  const res=r=>!r.graded?el("span",{class:"mute"},r.final?"–":"awaiting score"):el("span",{class:r.graded.result==="W"?"pos":r.graded.result==="L"?"neg":""},r.graded.result+" "+(r.graded.units>=0?"+":"")+r.graded.units.toFixed(2));
  const doneCard=card(el("h3",{},"Results ("+done.length+")"),done.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Date"),el("th",{},"Game"),el("th",{},"Play"),el("th",{class:"num"},"Final (away–home)"),el("th",{},"Result"))),
   el("tbody",{},...done.map(r=>el("tr",{},el("td",{class:"small"},(r.kickoff_iso||"").slice(5,10)),el("td",{},r.game),el("td",{},pl(r)+" · "+r.play.strength),el("td",{class:"num"},r.final?r.final[1]+"–"+r.final[0]:"–"),el("td",{},res(r))))))):
