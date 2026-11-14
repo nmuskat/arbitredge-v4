@@ -256,3 +256,17 @@ def test_draftkings_price_when_feed_is_stale():
     del s["games"]["g1"]["draftkings"]["spread"]["away"]["line"]
     rec2 = [r for r in P.decide(s, conn) if r["market"] == "spread"][0]
     assert rec2["status"] == "NO PICK" and "no current price" in rec2["reason"]
+
+
+def test_betmgm_official_college_names_match():
+    from splits_v4.match import official
+    assert official("University of Colorado, Boulder") == "Colorado"
+    assert official("University of California, Los Angeles (UCLA)") == "UCLA"
+    pairs = [("Houston", "Colorado", "Houston Cougars", "Colorado Buffaloes"),
+             (official("Southern Methodist University"), "x", "SMU Mustangs", None),
+             (official("North Carolina State University "), "x", "NC State Wolfpack", None),
+             ("San Jose state", "x", "San José State Spartans", None),
+             ("United States Air Force Academy", "x", "Air Force Falcons", None),
+             (official("Georgia Instute of Technlogy"), "x", "Georgia Tech Yellow Jackets", None)]
+    for a, _h, full, _ in pairs:
+        assert M.name_score(a, full, "cfb") > 0, (a, full)

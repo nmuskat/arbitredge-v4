@@ -26,10 +26,36 @@ ALIASES = {"louisiana monroe": "ul monroe", "ulm": "ul monroe", "louisiana lafay
            "utsa": "ut san antonio", "unlv": "unlv", "byu": "byu", "smu": "smu", "tcu": "tcu", "lsu": "lsu", "ucf": "ucf",
            "usc": "usc", "ucla": "ucla", "app state": "appalachian state", "ole miss": "ole miss", "pitt": "pittsburgh",
            "usf": "south florida", "ku": "kansas", "ksu": "kansas state", "uga": "georgia", "bama": "alabama",
-           "utep": "utep", "uab": "uab", "nd": "notre dame", "psu": "penn state", "fsu": "florida state"}
+           "utep": "utep", "uab": "uab", "nd": "notre dame", "psu": "penn state", "fsu": "florida state",
+           # official names (BetMGM's college page)
+           "southern methodist": "smu", "north carolina state": "nc state", "louisiana state": "lsu",
+           "texas christian": "tcu", "brigham young": "byu", "central florida": "ucf", "southern california": "usc",
+           "pennsylvania state": "penn state", "miami university": "miami ohio", "virginia polytechnic institute and state": "virginia tech",
+           "georgia institute of technology": "georgia tech", "texas a and m": "texas a and m", "mississippi": "ole miss",
+           "the ohio state": "ohio state", "nevada las vegas": "unlv", "alabama at birmingham": "uab",
+           "texas at el paso": "utep", "texas at san antonio": "ut san antonio", "massachusetts amherst": "massachusetts",
+           "georgia instute of technlogy": "georgia tech", "north carolina at charlotte": "charlotte",
+           "north carolina at chapel hill": "north carolina", "indiana university bloomington": "indiana",
+           "indiana bloomington": "indiana", "united states air force academy": "air force",
+           "united states military academy": "army", "united states naval academy": "navy",
+           "middle tennessee state": "middle tennessee", "university at buffalo": "buffalo"}
+
+
+def official(name):
+    """'University of Colorado, Boulder' -> 'Colorado'; 'University of California, Los Angeles (UCLA)' -> 'UCLA';
+    'Southern Methodist University' -> 'Southern Methodist'. Used for sites that print official school names."""
+    m = re.search(r"\(([^)]+)\)", name)
+    if m:
+        return m.group(1).strip()
+    n = name.split(",")[0].strip()
+    n = re.sub(r"^(the\s+)?university of\s+", "", n, flags=re.I)
+    n = re.sub(r"\s+(university|college|state university)$", lambda x: " state" if "state" in x.group(0).lower() else "", n, flags=re.I)
+    return n.strip()
 
 
 def _norm(s):
+    import unicodedata
+    s = "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))   # San José -> San Jose
     s = s.lower().replace("&", " and ").replace("'", "").replace("’", "")
     s = re.sub(r"[^a-z0-9]+", " ", s).strip()
     for k, v in ALIASES.items():

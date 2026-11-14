@@ -453,3 +453,6 @@ positive real-data evidence remains line shopping (closing EV). No official play
   - **Cost:** about 16 checks a day, roughly 480 Actions minutes a month, plus a site rebuild after each snapshot.
   - **Collection:** the odds collection is back to exactly its pre-splits state.
   - **Price fallback:** when our odds feed has no price under 45 min old, the pick takes DraftKings' price posted on its splits page in the same snapshot (`price_source`). Pinnacle's check records how old its latest price was. The decision rule is unchanged.
+- **2026-11-14:**
+  - **Friday-night check:** ran at 00:52Z for the 02:00Z slate, ON TIME (68 min before kickoff). Pick: Colorado +8.5 −120 (FanDuel, odds feed), STRONG. 83–84% of bets were on Houston, Pinnacle moved against them, and Circa moved Houston from −10.5 to −7.5.
+  - **BetMGM bug:** BetMGM matched no college games, because its college page prints official school names. Fixed with `match.official()` plus aliases: 56 of 57 of tonight's BetMGM college games now match. Tonight's decisions used 2 sources, which the rule allows.

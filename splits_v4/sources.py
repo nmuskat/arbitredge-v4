@@ -178,7 +178,10 @@ def parse_betmgm(h, sport):
         tm = re.search(r'data-match-time="(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d)', grp)
         if len(trs) < 2 or not ev:
             continue
-        away, home = _html.unescape(ev.group(1)), _html.unescape(ev.group(2))
+        away, home = _html.unescape(ev.group(1)).strip(), _html.unescape(ev.group(2)).strip()
+        if sport == "cfb":                       # BetMGM prints official school names for college games
+            from splits_v4.match import official
+            away, home = official(away), official(home)
         ko = (_dt.datetime(*(int(x) for x in tm.groups()), tzinfo=ET).timestamp() if tm else None)
         cells = []
         for tr in trs:
