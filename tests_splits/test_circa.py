@@ -126,3 +126,41 @@ def test_site_step_grades_with_espn_finals_and_saves_them_once(tmp_path):
     (rec_dir / saved[0].name).write_text(saved[0].read_text())
     LS.circa_step(snap2, str(rec_dir), None, get=lambda url: (_ for _ in ()).throw(OSError("no network")), now=KO + 9 * 3600)
     assert next(s for s in snap2["circa"]["signals"] if s["market"] == "spread")["graded"]["lean"]["result"] == "W"
+
+
+def test_reversed_team_order_is_turned_around():
+    sheet = _sheet(away="Cleveland Cavaliers", home="Memphis Grizzlies")         # listed the other way round
+    sheet[0]["spread"] = {"away": {"line": 4.5, "handle": 100.0, "bets": 87.0}, "home": {"line": 4.5, "handle": 0.0, "bets": 13.0}}
+    s = [x for x in E.signals(sheet, espn.parse(_espn_doc(), "nba"), UP) if x["market"] == "spread"][0]
+    assert s["sheet_order_swapped"] and s["heavy"] == "home" and s["line_heavy"] == -4.5    # money credited to Cleveland
+
+
+def test_one_row_per_game_and_names_required():
+    evs = espn.parse(_espn_doc(), "nba")
+    good, bad = _sheet()[0], dict(_sheet(away="Navy", home="Georgetown")[0])
+    res = E.match_all([bad], evs, UP, others=[good])
+    assert res[0][1] is None                                                     # names don't fit: never matched
+    twin = dict(_sheet()[0])
+    res2 = E.match_all([good], evs, UP, others=[twin])
+    assert res2[0][1] is None and "better" in res2[0][2]                       # two equal claims: neither guessed
+
+
+def test_failed_image_retried_under_new_name(tmp_path, monkeypatch):
+    from splits_v4 import circa_run as R
+    up = tmp_path / "up"
+    up.mkdir()
+    (up / "a.png").write_bytes(b"x")
+    (tmp_path / "existing.txt").write_text("circa_a.png.json\n")
+    (tmp_path / "failed.txt").write_text("circa_a.png.json\n")
+    monkeypatch.setattr(R, "uploaded_at", lambda p: UP)
+    monkeypatch.setattr(R.C, "read", lambda p: [])
+    monkeypatch.setattr(R, "events_for", lambda games, at, get=None: ([], {}, ["20261123"]))
+    out = tmp_path / "out"
+    R.main(["--uploads", str(up), "--existing", str(tmp_path / "existing.txt"), "--failed", str(tmp_path / "failed.txt"),
+            "--out", str(out)])
+    assert [p.name for p in out.iterdir()] == ["circa_a.png__retry1.json"]
+    (tmp_path / "existing.txt").write_text("circa_a.png.json\ncirca_a.png__retry1.json\n")
+    out2 = tmp_path / "out2"
+    R.main(["--uploads", str(up), "--existing", str(tmp_path / "existing.txt"), "--failed", str(tmp_path / "failed.txt"),
+            "--out", str(out2)])
+    assert not out2.exists()                                                     # done: not processed again

@@ -485,3 +485,11 @@ positive real-data evidence remains line shopping (closing EV). No official play
   - **Prices:** DraftKings' price when the number matches Circa's, otherwise −110; moneylines at the sheet price.
   - **Grading:** ESPN finals, saved write-once per league and day (`circa_finals_<league>_<date>.json` in `v4-circa`).
   - **v1:** NFL/CFB on our own odds feed. It was never used on a real upload.
+- **First real uploads (11/18), fixes:**
+  - **Continuation screenshots** (the sheet scrolled down, no header bar): standard column positions scaled to the image width.
+  - **Game rows:** away rows are found by the grey refresh marker, so a cut-off game is never mis-paired.
+  - **Names:** team names, often badly read, must resemble the matched game (`match.fuzzy`, both names ≥ 1.0).
+  - **Team order:** a sheet listing the teams the other way round is turned around (seen for Washington State @ Hawaii).
+  - **One row per game:** each game is claimed by one row across ALL screenshots uploaded together.
+  - **Result on the four uploads:** 49 matches, all checked correct by eye, 0 claimed twice, 17 rows left unmatched.
+  - **Retries:** failed images are retried under `__retry<N>` names, still dated by the original upload.

@@ -23,6 +23,8 @@ except ImportError:                     # pragma: no cover
 
 NUM_CHARS = "0123456789.%+-,"
 # column order after the team name (left to right)
+BASE_W = 1206                                   # standard sheet layout (phone screenshot width) and its 9 columns
+BASE_CENTRES = (396, 489, 583, 676, 769, 862, 957, 1049, 1143)
 COLS = ("spread", "spread_handle", "spread_bets", "total", "total_handle", "total_bets",
         "money", "money_handle", "money_bets")
 
@@ -70,7 +72,13 @@ def layout(im):
     dark = [sum(_lum(px[x, y]) < 120 for x in range(0, W, 8)) > (W // 8) * 0.55 for y in range(H)]
     headers = [(a, b) for a, b in _runs(dark, 15) if b - a <= 70]     # header bars, not the black page margins
     if not headers:
-        raise ValueError("no sport header row found")
+        # a continuation screenshot (the sheet scrolled further down) has no header bar: same layout, so use the
+        # standard column positions scaled to this image's width
+        centres = [round(c * W / BASE_W) for c in BASE_CENTRES]
+        xs = centres[0]
+        box = [200 <= _lum(px[xs - 18, y]) <= 245 for y in range(H)]
+        return {"headers": [], "centres": centres, "rows": _runs(box, 12), "continuation": True,
+                "name_x": (int(W * 0.04), int(min(centres[0] - 45, W * 0.29)))}
     # column centres from the first header row: the bright header words (SPREAD, HANDLE, ...) sit on dark blue
     y0, y1 = headers[0]
     top = y0
@@ -119,16 +127,29 @@ def read(path):
             vals[col] = _ocr(_prep(cell), psm=7, whitelist=NUM_CHARS)
         name = _ocr(_prep(im.crop((L["name_x"][0], a, L["name_x"][1], b)), 3), psm=7)
         sport = next((t for (ha, hb, t) in reversed(hdr) if hb <= a), "")
-        team_rows.append({"y": a, "sport_label": sport, "name": _clean_name(name), "raw": vals})
+        team_rows.append({"y": a, "sport_label": sport, "name": _clean_name(name), "raw": vals,
+                          "first": _is_first_row(im, a, b)})
+    # a game = a first (away) row, marked by the small grey refresh box at the far left, followed by its home row;
+    # a screenshot that starts or ends mid-game leaves a lone row, which is skipped, never paired wrongly
     games, i = [], 0
     while i + 1 < len(team_rows):
         r1, r2 = team_rows[i], team_rows[i + 1]
-        if r1["sport_label"] != r2["sport_label"]:
+        if not r1["first"] or r2["first"] or r1["sport_label"] != r2["sport_label"]:
             i += 1
             continue
         games.append(_pair(r1, r2))
         i += 2
     return games
+
+
+def _is_first_row(im, a, b):
+    """The away row carries a grey outlined refresh box at the far left; the home row a red rank box or nothing."""
+    W = im.size[0]
+    px, ym = im.load(), (a + b) // 2
+    seg = [px[x, y] for x in range(int(W * 0.018), int(W * 0.040)) for y in (ym - 2, ym, ym + 2)]   # marker column only (logos start further right)
+    red = sum(1 for p in seg if p[0] > 150 and p[1] < 100 and p[2] < 100)
+    grey = sum(1 for p in seg if abs(p[0] - p[1]) < 12 and abs(p[1] - p[2]) < 12 and 120 < sum(p) / 3 < 235)
+    return grey >= 3 and red < 3
 
 
 def _clean_name(s):

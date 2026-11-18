@@ -115,3 +115,23 @@ def match_rows(rows, events, rot_map=None):
             continue
         out.setdefault(scored[0][1], r)
     return out, unmatched
+
+
+def fuzzy(src, full):
+    """0..1 resemblance of a badly read name (e.g. 'Moreread ST') to a full team name ('Morehead State Eagles'):
+    the best of whole-string similarity (full name, without mascot) and the longest source word vs each name word."""
+    import difflib
+    a = " ".join(t for t in _norm(src or "").split() if len(t) >= 2)
+    b = _norm(full or "")
+    if not a or not b:
+        return 0.0
+    tb = b.split()
+    cands = {b, " ".join(tb[:-1]) or b, " ".join(tb[:-2]) if len(tb) > 2 else b}
+    best = max(difflib.SequenceMatcher(None, a, c).ratio() for c in cands if c)
+    toks = [t for t in a.split() if len(t) >= 5]           # a long, closely similar word ('moreread' ~ 'morehead')
+    if toks:
+        tk = max(max(difflib.SequenceMatcher(None, t, u).ratio() for u in tb if len(u) >= 4) for t in toks) \
+            if any(len(u) >= 4 for u in tb) else 0.0
+        if tk >= 0.75:
+            best = max(best, tk)
+    return round(best, 3)

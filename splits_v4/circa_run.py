@@ -48,10 +48,11 @@ def events_for(games, at, get=None):
     return evs, errs, days
 
 
-def process(image, at, get=None):
+def process(image, at, get=None, extra_rows=None):
+    """extra_rows: rows of the other screenshots uploaded together, so one game is never claimed by two rows."""
     games = C.read(image)
-    evs, errs, days = events_for(games, at, get)
-    sigs = E.signals(games, evs, at)
+    evs, errs, days = events_for(games + list(extra_rows or []), at, get)
+    sigs = E.signals(games, evs, at, others=extra_rows)
     read = [{"label": g.get("sport_label"), "away": g.get("away"), "home": g.get("home"), "status": g["status"],
              "problems": g["problems"],
              "values": {mk: g.get(mk) for mk in ("spread", "total", "money")}} for g in games]
@@ -65,22 +66,40 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--uploads", required=True)
     ap.add_argument("--existing", default=None)
+    ap.add_argument("--failed", default=None, help="names of saved records that hold an error (retried)")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     have = set(open(a.existing).read().split()) if a.existing and os.path.exists(a.existing) else set()
+    failed = set(open(a.failed).read().split()) if a.failed and os.path.exists(a.failed) else set()
+    # an image is done once it has a record without an error; a failed image is retried under a new name (records
+    # are never overwritten), still dated by its original upload time
     todo = [os.path.join(a.uploads, f) for f in sorted(os.listdir(a.uploads)) if IMG.search(f)
-            and record_name(f) not in have] if os.path.isdir(a.uploads) else []
+            and (record_name(f) not in have or record_name(f) in failed)
+            and not any(n.startswith(record_name(f)[:-5] + "__retry") and n not in failed for n in have)] \
+        if os.path.isdir(a.uploads) else []
     taken = False
     if todo:
         os.makedirs(a.out, exist_ok=True)
+        rows = {}
+        for img in todo:                        # read every screenshot first: matching is done across all of them
+            try:
+                rows[img] = C.read(img)
+            except Exception:                   # noqa: BLE001 -- reported below when that image is processed
+                rows[img] = []
         for img in todo:
             try:
-                doc = process(img, uploaded_at(img))
+                others = [r for o, rs in rows.items() if o != img for r in rs]
+                doc = process(img, uploaded_at(img), extra_rows=others)
             except Exception as e:                              # noqa: BLE001 -- an unreadable image is reported
                 doc = {"version": "circa_record.v1", "rule": E.RULE, "image": os.path.basename(img),
                        "uploaded_at": uploaded_at(img), "error": f"{type(e).__name__}: {e}"[:300], "read": [], "signals": []}
             doc["uploaded_at_iso"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(doc["uploaded_at"]))
-            with open(os.path.join(a.out, record_name(img)), "w") as fh:
+            name = record_name(img)
+            n = 1
+            while name in have:                                   # never overwrite a saved record
+                name = f"{record_name(img)[:-5]}__retry{n}.json"
+                n += 1
+            with open(os.path.join(a.out, name), "w") as fh:
                 json.dump(doc, fh, separators=(",", ":"), sort_keys=True, default=str)
             n = sum(s["status"] == "SIGNAL" for s in doc["signals"])
             print(f"{os.path.basename(img)}: {doc.get('rows_read', 0)} games read, {doc.get('games_ok', 0)} fully readable, "

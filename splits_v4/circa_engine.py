@@ -7,8 +7,11 @@ Rule version circa99.v2, fixed 2026-11-18 (v1 was NFL/CFB on our odds feed; neve
 1. MATCH each sheet row to an ESPN game on the sheet's date (header date if within 3 days of the upload, else the
    upload date, US Eastern): the sheet's spread, total and moneyline must sit close to DraftKings' current numbers
    (tolerances per sport) and the closest game must be clearly closer than any other; team names add weight.
-   Signs and decimals the image cannot show reliably come from DraftKings (favourite gets the minus sign; "25" ->
-   2.5). Anything that does not fit is NOT MATCHED, never guessed.
+   The two team names (often badly read) must also resemble the game's teams (fuzzy similarity of both names
+   together >= NAME_MIN), checked both ways round: a sheet that lists the teams in the other order is turned around
+   so the money is credited to the right team. Each game can be claimed by one row only (the best fit). Signs and
+   decimals the image cannot show reliably come from DraftKings (favourite gets the minus sign; "25" -> 2.5).
+   Anything that does not fit is NOT MATCHED, never guessed.
 2. SIGNAL: a side with >= 99% of Circa's HANDLE in a market (spread / puck line / run line, total, moneyline).
    NORMAL tier: that side's bets % < 99 (playable). THIN tier: bets also >= 99% (one ticket / tiny market): logged.
 3. FILTERS (recorded on every signal):
@@ -38,6 +41,8 @@ TOL = {   # spread, total tolerance (points) per league
     "nfl": (3.0, 3.5), "cfb": (3.5, 4.0), "nba": (3.0, 6.0), "wnba": (3.0, 5.0), "cbb": (3.5, 6.0),
     "nhl": (0.01, 1.0), "mlb": (0.01, 1.5)}
 OPP = {"away": "home", "home": "away", "over": "under", "under": "over"}
+NAME_MIN = 1.0           # both names together (each 0..1); fixed from the owner's first real uploads (2026-11-18)
+SWAP_MARGIN = 0.3        # reversed team order must fit this much better before the sheet's sides are swapped
 LEAGUE_NAMES = {"nfl": "NFL", "cfb": "College football", "nba": "NBA", "wnba": "WNBA", "cbb": "College basketball",
                 "nhl": "NHL", "mlb": "MLB"}
 
@@ -96,26 +101,62 @@ def _score(g, e):
     if ma is not None and mh is not None and o.get("ml_away_close") is not None and o.get("ml_home_close") is not None:
         dm = min(abs(abs(ma) - abs(o["ml_away_close"])), abs(abs(mh) - abs(o["ml_home_close"])))
         s += min(dm, 400) / 60.0
-    names = M.name_score(g.get("away", ""), e["away"], _sname(e["league"])) + \
-        M.name_score(g.get("home", ""), e["home"], _sname(e["league"]))
-    return s - 0.6 * names
+    straight = M.fuzzy(g.get("away"), e["away"]) + M.fuzzy(g.get("home"), e["home"])
+    swapped = M.fuzzy(g.get("away"), e["home"]) + M.fuzzy(g.get("home"), e["away"])
+    names = max(straight, swapped)
+    if names < NAME_MIN:
+        return None
+    return s - 1.5 * names, swapped > straight + SWAP_MARGIN
+
+
+def swap_sides(g):
+    """The sheet listed the teams in the other order: swap away/home on spread and moneyline (totals unaffected)."""
+    out = dict(g, away=g.get("home"), home=g.get("away"), swapped=True)
+    for mk in ("spread", "money"):
+        m = g.get(mk) or {}
+        out[mk] = {"away": m.get("home"), "home": m.get("away")}
+    return out
 
 
 def match_game(g, events, uploaded_at):
+    """(event, row as oriented to the event) or (None, reason)."""
     day = game_day(g.get("sport_label"), uploaded_at)
     cands = []
     for e in events:
         if _dt.datetime.fromtimestamp(e["kickoff"], ET).date() != day:
             continue
-        sc = _score(g, e)
-        if sc is not None:
-            cands.append((sc, e["league"], e["id"], e))
+        r = _score(g, e)
+        if r is not None:
+            cands.append((r[0], r[1], e))
     cands.sort(key=lambda c: c[0])
     if not cands:
-        return None, "no game that day fits this row's spread, total and moneyline"
+        return None, "no game that day fits this row's numbers and team names"
     if len(cands) > 1 and cands[1][0] - cands[0][0] < 1.0:
         return None, "more than one game fits; not guessed"
-    return cands[0][3], None
+    return cands[0][2], (swap_sides(g) if cands[0][1] else g)
+
+
+def match_all(sheet, events, uploaded_at, others=None):
+    """One game per row and one row per game: when several rows claim the same game, only the clearly best keeps it.
+    others: rows of other screenshots uploaded together (they compete for games but are not returned)."""
+    res, claims = [], {}
+    for i, g in enumerate(list(sheet) + list(others or [])):
+        e, x = match_game(g, events, uploaded_at)
+        if e is None:
+            res.append((g, None, x))
+            continue
+        sc = _score(x, e)[0]
+        res.append((x, e, sc))
+        claims.setdefault(e["id"], []).append((sc, i))
+    for gid, cl in claims.items():
+        if len(cl) < 2:
+            continue
+        cl.sort()
+        keep = cl[0][1] if cl[1][0] - cl[0][0] >= 0.5 else None
+        for _sc, i in cl:
+            if i != keep:
+                res[i] = (res[i][0], None, "another row fits this game better; not guessed")
+    return [(g, e, (None if e else why)) for g, e, why in res[:len(sheet)]]
 
 
 def resolve(g, e):
@@ -182,10 +223,9 @@ def bettor_read(b):
     return "one big ticket (possibly sharp)" if 50 <= b <= 67 else "public piling in" if b >= 80 else "mixed"
 
 
-def signals(sheet, events, uploaded_at):
+def signals(sheet, events, uploaded_at, others=None):
     out = []
-    for g in sheet:
-        e, why = match_game(g, events, uploaded_at)
+    for g, e, why in match_all(sheet, events, uploaded_at, others):
         res = resolve(g, e) if e else {}
         for market, sides in (("spread", ("away", "home")), ("total", ("over", "under")), ("money", ("away", "home"))):
             src = res.get(market) if e else (g.get(market) or {})
@@ -195,6 +235,7 @@ def signals(sheet, events, uploaded_at):
                     continue
                 fade = OPP[heavy]
                 rec = {"rule": RULE, "sheet_game": f"{g.get('away')} @ {g.get('home')}", "sheet_label": g.get("sport_label"),
+                       "sheet_order_swapped": bool(g.get("swapped")),
                        "market": market, "heavy": heavy, "fade": fade, "handle": s.get("handle"), "bets": s.get("bets"),
                        "uploaded_at": uploaded_at}
                 if not e:

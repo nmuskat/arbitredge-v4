@@ -35,11 +35,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v4-circa" --jq '.assets[].name' > existing.txt 2>/dev/null \
-            || : > existing.txt
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v4-circa" --jq '.assets[] | "\(.id) \(.name)"' > assets.txt 2>/dev/null \
+            || : > assets.txt
+          awk '{print $2}' assets.txt > existing.txt
+          : > failed.txt                                   # records that hold an error are retried under a new name
+          while read -r id name; do
+            case "$name" in circa_finals_*) continue;; circa_*.json)
+              gh api -H "Accept: application/octet-stream" "repos/${GITHUB_REPOSITORY}/releases/assets/$id" \
+                | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("error") else 1)' && echo "$name" >> failed.txt;;
+            esac
+          done < assets.txt
       - name: Read new sheets and apply the 99% rule
         id: run
-        run: python3 -m splits_v4.circa_run --uploads circa_uploads --existing existing.txt --out circa_new
+        run: python3 -m splits_v4.circa_run --uploads circa_uploads --existing existing.txt --failed failed.txt --out circa_new
       - name: Save records (new files only, never overwritten)
         if: steps.run.outputs.taken == 'true'
         env:
