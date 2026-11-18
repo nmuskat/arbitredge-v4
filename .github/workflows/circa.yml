@@ -1,8 +1,8 @@
 # ArbitrEdge V4 -- the owner's Circa 99% engine (owner-approved 2026-11-18). The owner uploads a Circa splits sheet
 # image (from @BettingSplits on X) into the folder circa_uploads/ on v4-dev; this reads it with free local text
-# recognition (Tesseract), applies rule circa99.v1 (splits_v4/circa_engine.py) to NFL and college football games, and
-# saves one immutable record per image to release v4-circa. NO Odds API key, NO API calls. The site rebuild after it
-# passes ONLY the two Cloudflare deploy secrets (never inherit).
+# recognition (Tesseract), matches every sport's games and DraftKings lines on ESPN's public scoreboard, applies rule
+# circa99.v2 (splits_v4/circa_engine.py), and saves one immutable record per image to release v4-circa. NO Odds API
+# key and no Odds API calls. The site rebuild after it passes ONLY the two Cloudflare deploy secrets (never inherit).
 name: circa
 on:
   push:
@@ -30,19 +30,16 @@ jobs:
       - name: Install free text recognition
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr >/dev/null
-          python3 -m pip install --quiet "Pillow==11.0.0" "$(grep -i '^numpy==' requirements-v4.txt)"
-      - name: Download collected odds (for matching games and lines)
+          python3 -m pip install --quiet "Pillow==11.0.0"
+      - name: List saved records
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p shards
-          for tag in $(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[].tag_name | select(startswith("odds-data-"))'); do
-            gh release download "$tag" -p 'quotes_*.jsonl.gz' -D "shards/$tag"
-          done
-          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v4-circa" --jq '.assets[].name' > existing.txt 2>/dev/null || : > existing.txt
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v4-circa" --jq '.assets[].name' > existing.txt 2>/dev/null \
+            || : > existing.txt
       - name: Read new sheets and apply the 99% rule
         id: run
-        run: python3 -m splits_v4.circa_run --uploads circa_uploads --shards shards --existing existing.txt --out circa_new
+        run: python3 -m splits_v4.circa_run --uploads circa_uploads --existing existing.txt --out circa_new
       - name: Save records (new files only, never overwritten)
         if: steps.run.outputs.taken == 'true'
         env:

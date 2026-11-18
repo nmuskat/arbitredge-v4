@@ -478,3 +478,10 @@ positive real-data evidence remains line shopping (closing EV). No official play
   - The site's "Circa 99%" tab sits next to Plays.
   - `v4-ci` ignores image uploads.
 - **Tests:** `tests_splits/test_circa.py` (7 tests). Required suite + cf1 + market_intel + splits: 648 passed, 22 skipped.
+- **Update (same day, owner: every sport, built like his) — rule `circa99.v2`:**
+  - **ESPN:** games and DraftKings' opening and current lines come from ESPN's public scoreboard at upload time, for every sport on the sheet (NFL, CFB, NBA, CBB, NHL, MLB, WNBA). It is free, has no key, and carries the same terms risk the owner accepted, for private use. ESPN drops a game's odds once it finishes, so the lines used are stored in the record.
+  - **Matching:** each row's spread, total and moneyline are checked against DraftKings, with per-sport tolerances and a uniqueness margin. On today's real games, with unsigned numbers and shortened names: 75 of 75 right, 0 wrong. With every team name unreadable: 73 right, 0 wrong, 2 NHL rows skipped (same puck line and total).
+  - **Line move:** DraftKings opener → current, from the heavy side's point of view.
+  - **Prices:** DraftKings' price when the number matches Circa's, otherwise −110; moneylines at the sheet price.
+  - **Grading:** ESPN finals, saved write-once per league and day (`circa_finals_<league>_<date>.json` in `v4-circa`).
+  - **v1:** NFL/CFB on our own odds feed. It was never used on a real upload.

@@ -58,7 +58,7 @@ jobs:
           python3 -m web_v4.live_site --shards shards --ledger state/ledger.jsonl --rankings-dir rankings --out site \
             --book-dir book --book-out book_new --need-dir need --results-dir results --need-out need_new \
             --settle-dir settle --sensitivity-cache prev/sensitivity_cache.json --line-shop-cache prev/line_shop_cache.json.gz --mi-out mi_new --mi-existing mi_existing.txt \
-            --splits-dir splits --splits-out splits_new --circa-dir circa
+            --splits-dir splits --splits-out splits_new --circa-dir circa --circa-out circa_new
       - name: Save market-intelligence records (new files only, never overwritten)
         if: ${{ vars.MARKET_INTEL_RECORD == 'on' }}
         continue-on-error: true
@@ -93,6 +93,15 @@ jobs:
           files=(graded_new/graded_*.json)
           (( ${#files[@]} )) || exit 0
           gh release upload v4-market-intel "${files[@]}"
+      - name: Save Circa final scores (new files only, never overwritten)
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          files=(circa_new/circa_finals_*.json)
+          (( ${#files[@]} )) || { echo "no new Circa finals"; exit 0; }
+          gh release upload v4-circa "${files[@]}"
       - name: Save sealed splits plays (new files only, never overwritten)
         continue-on-error: true
         env:

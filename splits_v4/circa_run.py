@@ -2,10 +2,10 @@
 splits_v4/circa_run.py -- process the owner's uploaded Circa splits sheet images (folder circa_uploads/, run by
 .github/workflows/circa.yml; no secrets, no API calls).
 
-  python -m splits_v4.circa_run --uploads circa_uploads --shards shards --existing names.txt --out circa_new
+  python -m splits_v4.circa_run --uploads circa_uploads --existing names.txt --out circa_new
 
-For every image without a record yet: read it (circa_ocr), match it to our games and apply the 99% rule
-(circa_engine), and write circa_new/circa_<image name>.json -- what was read, every problem, every signal. The upload
+For every image without a record yet: read it (circa_ocr), match it to ESPN's games and DraftKings lines at upload
+time (espn), apply the 99% rule (circa_engine), and write circa_new/circa_<image name>.json -- what was read, every problem, every signal. The upload
 time is the time the image was committed (git), so a sheet uploaded after kickoff is flagged LIVE. Written once.
 """
 import argparse
@@ -35,13 +35,28 @@ def uploaded_at(path):
         return time.time()
 
 
-def process(image, conn, at):
+def events_for(games, at, get=None):
+    """ESPN games (all leagues) for every date the sheet covers (header date if within 3 days, else upload day)."""
+    from splits_v4 import espn
+    days = sorted({E.game_day(g.get("sport_label"), at).strftime("%Y%m%d") for g in games} or
+                  {E.game_day("", at).strftime("%Y%m%d")})
+    evs, errs = [], {}
+    for d in days:
+        got, err = espn.games(d, get=get) if get else espn.games(d)
+        evs += got
+        errs.update({f"{k} {d}": v for k, v in err.items()})
+    return evs, errs, days
+
+
+def process(image, at, get=None):
     games = C.read(image)
-    sigs = E.signals(games, conn, at)
+    evs, errs, days = events_for(games, at, get)
+    sigs = E.signals(games, evs, at)
     read = [{"label": g.get("sport_label"), "away": g.get("away"), "home": g.get("home"), "status": g["status"],
              "problems": g["problems"],
              "values": {mk: g.get(mk) for mk in ("spread", "total", "money")}} for g in games]
-    return {"version": "circa_record.v1", "rule": E.RULE, "image": os.path.basename(image), "uploaded_at": at,
+    return {"version": "circa_record.v2", "rule": E.RULE, "image": os.path.basename(image), "uploaded_at": at,
+            "espn_dates": days, "espn_games": len(evs), "espn_errors": errs,
             "uploaded_at_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(at)),
             "rows_read": len(games), "games_ok": sum(g["status"] == "OK" for g in games), "read": read, "signals": sigs}
 
@@ -49,7 +64,6 @@ def process(image, conn, at):
 def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--uploads", required=True)
-    ap.add_argument("--shards", required=True)
     ap.add_argument("--existing", default=None)
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
@@ -58,12 +72,10 @@ def main(argv=None):
             and record_name(f) not in have] if os.path.isdir(a.uploads) else []
     taken = False
     if todo:
-        from web_v4.live_site import rebuild_store
-        conn, _, _ = rebuild_store(a.shards)
         os.makedirs(a.out, exist_ok=True)
         for img in todo:
             try:
-                doc = process(img, conn, uploaded_at(img))
+                doc = process(img, uploaded_at(img))
             except Exception as e:                              # noqa: BLE001 -- an unreadable image is reported
                 doc = {"version": "circa_record.v1", "rule": E.RULE, "image": os.path.basename(img),
                        "uploaded_at": uploaded_at(img), "error": f"{type(e).__name__}: {e}"[:300], "read": [], "signals": []}
@@ -72,7 +84,7 @@ def main(argv=None):
                 json.dump(doc, fh, separators=(",", ":"), sort_keys=True, default=str)
             n = sum(s["status"] == "SIGNAL" for s in doc["signals"])
             print(f"{os.path.basename(img)}: {doc.get('rows_read', 0)} games read, {doc.get('games_ok', 0)} fully readable, "
-                  f"{n} football signal(s){' -- ERROR ' + doc['error'] if doc.get('error') else ''}")
+                  f"{n} signal(s){' -- ERROR ' + doc['error'] if doc.get('error') else ''}")
             taken = True
     else:
         print("no new images")

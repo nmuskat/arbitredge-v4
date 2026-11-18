@@ -1,46 +1,49 @@
 """
 splits_v4/circa_engine.py -- the owner's buddy's "99% Circa handle" engine, rebuilt mechanically (owner request
-2026-11-18). Input: one Circa splits sheet image (read by circa_ocr), uploaded by the owner. NFL and college football
-only (the only sports we have final scores and market lines for). Rule version circa99.v1, fixed 2026-11-18.
+2026-11-18: every sport on the sheet, built like his). Input: one Circa splits sheet image (read by circa_ocr),
+uploaded by the owner; games and DraftKings lines from ESPN's scoreboard at upload time (splits_v4.espn).
+Rule version circa99.v2, fixed 2026-11-18 (v1 was NFL/CFB on our odds feed; never used on a real upload).
 
-1. MATCH each sheet row to a game in our odds feed: same sport, kickoff on the sheet's date (US Eastern), and the
-   sheet's spread/total within 3 points of our market at upload time (the closest unique game). Signs and decimals
-   the image cannot show reliably are taken from the market (e.g. "25" -> 2.5, favourite gets the minus sign); a
-   reading that does not fit the market is rejected, never guessed.
-2. SIGNAL: a side with >= 99% of Circa's HANDLE in a market (spread, total, moneyline).
-   Tier NORMAL: that side's bets % < 99 (playable). Tier THIN: bets also >= 99% (one ticket / tiny market):
-   logged, never played.
+1. MATCH each sheet row to an ESPN game on the sheet's date (header date if within 3 days of the upload, else the
+   upload date, US Eastern): the sheet's spread, total and moneyline must sit close to DraftKings' current numbers
+   (tolerances per sport) and the closest game must be clearly closer than any other; team names add weight.
+   Signs and decimals the image cannot show reliably come from DraftKings (favourite gets the minus sign; "25" ->
+   2.5). Anything that does not fit is NOT MATCHED, never guessed.
+2. SIGNAL: a side with >= 99% of Circa's HANDLE in a market (spread / puck line / run line, total, moneyline).
+   NORMAL tier: that side's bets % < 99 (playable). THIN tier: bets also >= 99% (one ticket / tiny market): logged.
 3. FILTERS (recorded on every signal):
-   line move   our market line at upload vs the first line we saw: AGAINST the heavy side (heavy side got cheaper;
-               the book agrees with the fade), WITH it (heavy side got more expensive), or NONE (< 0.5 pt / 10 cents).
-   key number  whether the fade line sits on a key number (3, 7, and 10/14 for college).
-   bettor read bets % bucket: 50-67 one big ticket (possibly sharp), 68-79 mixed, 80+ public piling in.
-   timing      LIVE if the game had already started when the sheet was uploaded (logged, not played).
-4. LEAN (fixed written rules standing in for Grok's judgement, which cannot be reproduced):
-   LIKE  (bet the fade)  normal tier and the line did not move WITH the heavy side;
-   FLIP  (bet the heavy side) normal tier, line moved WITH the heavy side, and bets 50-67% (big money looks sharp);
-   PASS  otherwise (line moved with a public-looking heavy side, or the game was live). THIN = LOG only.
-5. GRADING: fade, follow and lean results at the sheet's Circa line (spreads/totals at -110, moneylines at the
-   sheet price), 1 unit risked.
+   line move   DraftKings' opening line -> its current line at upload: AGAINST the heavy side (heavy side cheaper;
+               the book agrees with the fade), WITH it (more expensive), NONE (< 0.5 pt, or < 2% win prob on a
+               moneyline). Original number available = Circa's number still equals DraftKings' opener.
+   key number  fade line on a key number (NFL 3, 7; college football 3, 7, 10, 14).
+   bettor read bets 50-67% one big ticket (possibly sharp) / 68-79% mixed / 80%+ public. Bucket <70, 70-89, 90-98, 99+.
+   timing      LIVE when the game had started before the upload (logged, not played).
+4. LEAN (fixed written rules standing in for Grok's research judgement, which cannot be reproduced):
+   LIKE (bet the fade)       normal tier and the line did not move WITH the heavy side;
+   FLIP (bet the heavy side) normal tier, line moved WITH it, and bets 50-67% (the big money looks sharp);
+   PASS                      otherwise, or LIVE. THIN tier = LOG only.
+5. GRADING: fade, follow and lean, 1 unit risked, at Circa's number on the sheet; price = DraftKings' current price
+   for that side when its number is the same, else -110 (moneylines at the sheet price).
 """
 import datetime as _dt
 import re
-import time
 from zoneinfo import ZoneInfo
 
-from market_v4 import asof
 from splits_v4 import match as M
 
-RULE = "circa99.v1 (2026-11-18): >=99% Circa handle; NORMAL bets<99 / THIN bets>=99; LIKE/FLIP/PASS fixed rules"
+RULE = "circa99.v2 (2026-11-18): >=99% Circa handle, every sport; NORMAL bets<99 / THIN bets>=99; LIKE/FLIP/PASS fixed rules"
 ET = ZoneInfo("America/New_York")
-SPORT_KEY = {"nfl": "americanfootball_nfl", "cfb": "americanfootball_ncaaf"}
 KEYS = {"nfl": {3, 7}, "cfb": {3, 7, 10, 14}}
-MATCH_TOL = 3.0
+TOL = {   # spread, total tolerance (points) per league
+    "nfl": (3.0, 3.5), "cfb": (3.5, 4.0), "nba": (3.0, 6.0), "wnba": (3.0, 5.0), "cbb": (3.5, 6.0),
+    "nhl": (0.01, 1.0), "mlb": (0.01, 1.5)}
 OPP = {"away": "home", "home": "away", "over": "under", "under": "over"}
+LEAGUE_NAMES = {"nfl": "NFL", "cfb": "College football", "nba": "NBA", "wnba": "WNBA", "cbb": "College basketball",
+                "nhl": "NHL", "mlb": "MLB"}
 
 
 def sheet_date(label, year):
-    m = re.search(r"(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\w*\s+(\d{1,2})", label.upper())
+    m = re.search(r"(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)\w*\s+(\d{1,2})", (label or "").upper())
     if not m:
         return None
     mon = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"].index(m.group(1)) + 1
@@ -50,150 +53,163 @@ def sheet_date(label, year):
         return None
 
 
+def game_day(label, uploaded_at):
+    up = _dt.datetime.fromtimestamp(uploaded_at, ET).date()
+    d = sheet_date(label, up.year)
+    return d if d is not None and abs((d - up).days) <= 3 else up
+
+
 def _variants(v):
-    """The magnitudes a misread line could really be: as read, and with a lost decimal point (25 -> 2.5)."""
     if v is None:
         return []
     a = abs(v)
     out = {a}
     if a >= 10 and a == int(a):
-        out.add(a / 10)
+        out.add(a / 10)                     # a lost decimal point: 25 -> 2.5
     return sorted(out)
 
 
-def _market(conn, eid, at):
-    sp = asof.market_state(conn, eid, "spreads", at, max_age_s=12 * 3600)
-    to = asof.market_state(conn, eid, "totals", at, max_age_s=12 * 3600)
-    ml = asof.market_state(conn, eid, "h2h", at, max_age_s=12 * 3600)
-    return {"spread_home": sp.get("line") if sp.get("status") == "OK" else None,
-            "total": to.get("line") if to.get("status") == "OK" else None,
-            "ml_home_fav": (ml.get("fair") or {}).get("home", 0.5) > 0.5 if ml.get("status") == "OK" else None,
-            "ml_both_neg": None}
+def _sname(league):
+    return "nfl" if league == "nfl" else "cfb"          # name_score: NFL abbreviations, else school/city rules
 
 
-def match_game(g, conn, at, year):
-    """(event, None) or (None, reason). The sport and date in the header are often misread, so every row is tried
-    against NFL and college football games on the header date (if it is within 3 days of the upload) or else on the
-    upload date. Other sports never fit: their spreads/totals do not match any football game that day."""
-    up_day = _dt.datetime.fromtimestamp(at, ET).date()
-    day = sheet_date(g.get("sport_label", ""), year)
-    if day is None or abs((day - up_day).days) > 3:
-        day = up_day
-    sp = (g.get("spread") or {}).get("away", {}).get("line")
-    tot = (g.get("total") or {}).get("over", {}).get("line")
+def _score(g, e):
+    """Lower = better fit; None = does not fit."""
+    o = e.get("odds")
+    if not o:
+        return None
+    ts, tt = TOL[e["league"]]
+    sp = ((g.get("spread") or {}).get("away") or {}).get("line")
+    tot = ((g.get("total") or {}).get("over") or {}).get("line")
+    s = 0.0
+    if o.get("spread_home_close") is not None and sp is not None:
+        ds = min(abs(v - abs(o["spread_home_close"])) for v in _variants(sp))
+        if ds > ts:
+            return None
+        s += ds
+    if o.get("total_close") is not None and tot is not None:
+        dt = min(abs(v - o["total_close"]) for v in _variants(tot))
+        if dt > tt:
+            return None
+        s += dt
+    ma, mh = ((g.get("money") or {}).get("away") or {}).get("line"), ((g.get("money") or {}).get("home") or {}).get("line")
+    if ma is not None and mh is not None and o.get("ml_away_close") is not None and o.get("ml_home_close") is not None:
+        dm = min(abs(abs(ma) - abs(o["ml_away_close"])), abs(abs(mh) - abs(o["ml_home_close"])))
+        s += min(dm, 400) / 60.0
+    names = M.name_score(g.get("away", ""), e["away"], _sname(e["league"])) + \
+        M.name_score(g.get("home", ""), e["home"], _sname(e["league"]))
+    return s - 0.6 * names
+
+
+def match_game(g, events, uploaded_at):
+    day = game_day(g.get("sport_label"), uploaded_at)
     cands = []
-    for sport, key in SPORT_KEY.items():
-      for eid, (k, home, away) in asof.kickoffs(conn, sport=key).items():
-        if _dt.datetime.fromtimestamp(k, ET).date() != day:
+    for e in events:
+        if _dt.datetime.fromtimestamp(e["kickoff"], ET).date() != day:
             continue
-        mk = _market(conn, eid, min(at, k - 1e-6))
-        if mk["spread_home"] is None or mk["total"] is None:
-            continue
-        ds = min((abs(v - abs(mk["spread_home"])) for v in _variants(sp)), default=99)
-        dt = min((abs(v - mk["total"]) for v in _variants(tot)), default=99)
-        if ds <= MATCH_TOL and dt <= MATCH_TOL:
-            names = M.name_score(g.get("away", ""), away, sport) + M.name_score(g.get("home", ""), home, sport)
-            cands.append((ds + dt - 0.5 * names, eid, k, home, away, mk, sport))
-    cands.sort()
+        sc = _score(g, e)
+        if sc is not None:
+            cands.append((sc, e["league"], e["id"], e))
+    cands.sort(key=lambda c: c[0])
     if not cands:
-        return None, "not an NFL or college football game we track (no game that day with this spread and total)"
+        return None, "no game that day fits this row's spread, total and moneyline"
     if len(cands) > 1 and cands[1][0] - cands[0][0] < 1.0:
         return None, "more than one game fits; not guessed"
-    _s, eid, k, home, away, mk, sport = cands[0]
-    return {"event_id": eid, "kickoff": k, "home": home, "away": away, "market": mk, "sport": sport}, None
+    return cands[0][3], None
 
 
-def resolve(g, ev):
-    """Signs and decimals from the market. Returns {market: {side: {line, handle, bets}}} with unusable markets dropped."""
-    mk = ev["market"]
-    out = {}
-    # spread: favourite (market home line < 0 -> home) gets the minus sign; magnitude = variant closest to the market
+def resolve(g, e):
+    """{market: {side: {line, handle, bets}}} with signs/decimals from DraftKings; markets that do not fit dropped."""
+    o, out = e["odds"], {}
+    ts, tt = TOL[e["league"]]
     sp = g.get("spread") or {}
-    mag = min(_variants((sp.get("away") or {}).get("line")), key=lambda v: abs(v - abs(mk["spread_home"])), default=None)
-    if mag is not None and abs(mag - abs(mk["spread_home"])) <= MATCH_TOL and mk["spread_home"] != 0:
-        home_line = -mag if mk["spread_home"] < 0 else mag
-        out["spread"] = {"home": dict(sp.get("home") or {}, line=home_line), "away": dict(sp.get("away") or {}, line=-home_line)}
-    to = g.get("total") or {}
-    tmag = min(_variants((to.get("over") or {}).get("line")), key=lambda v: abs(v - mk["total"]), default=None)
-    if tmag is not None and abs(tmag - mk["total"]) <= MATCH_TOL:
+    hc = o.get("spread_home_close")
+    mag = min(_variants((sp.get("away") or {}).get("line")), key=lambda v: abs(v - abs(hc)), default=None) if hc is not None else None
+    if mag is not None and abs(mag - abs(hc)) <= ts and hc != 0:
+        home = -mag if hc < 0 else mag
+        out["spread"] = {"home": dict(sp.get("home") or {}, line=home), "away": dict(sp.get("away") or {}, line=-home)}
+    to, tc = g.get("total") or {}, o.get("total_close")
+    tmag = min(_variants((to.get("over") or {}).get("line")), key=lambda v: abs(v - tc), default=None) if tc is not None else None
+    if tmag is not None and abs(tmag - tc) <= tt:
         out["total"] = {"over": dict(to.get("over") or {}, line=tmag), "under": dict(to.get("under") or {}, line=tmag)}
     mo = g.get("money") or {}
     a, h = (mo.get("away") or {}).get("line"), (mo.get("home") or {}).get("line")
-    if a is not None and h is not None and mk["ml_home_fav"] is not None and abs(a) >= 100 and abs(h) >= 100:
-        fav, dog = ("home", "away") if mk["ml_home_fav"] else ("away", "home")
-        vals = {"away": abs(a), "home": abs(h)}
-        if vals[fav] >= vals[dog] or vals[fav] <= 120:          # a favourite's price is the larger number (or near pick'em)
-            out["money"] = {fav: dict(mo.get(fav) or {}, line=-vals[fav]),
-                            dog: dict(mo.get(dog) or {}, line=vals[dog] if vals[dog] > vals[fav] or vals[dog] > 120 else -vals[dog])}
+    ah, aa = o.get("ml_home_close"), o.get("ml_away_close")
+    if None not in (a, h, ah, aa) and abs(a) >= 100 and abs(h) >= 100:
+        # each side takes DraftKings' sign for that side (both negative near pick'em is possible)
+        out["money"] = {"home": dict(mo.get("home") or {}, line=abs(h) if ah > 0 else -abs(h)),
+                        "away": dict(mo.get("away") or {}, line=abs(a) if aa > 0 else -abs(a))}
     return out
 
 
-def first_line(conn, eid, market, side):
-    """Our first observed consensus line for that side (spreads: that side's number; totals: the total)."""
-    row = conn.execute("SELECT MIN(fetched_at) FROM mkt_quote WHERE event_id=? AND market=?",
-                       (eid, "spreads" if market == "spread" else "totals")).fetchone()[0]
-    if row is None:
-        return None
-    st = asof.market_state(conn, eid, "spreads" if market == "spread" else "totals", row + 1, max_age_s=24 * 3600)
-    if st.get("status") != "OK":
-        return None
-    if market == "spread":
-        return st["line"] if side == "home" else -st["line"]
-    return st["line"]
+def _prob(ml):
+    return 100 / (ml + 100) if ml > 0 else -ml / (-ml + 100)
 
 
-def movement(market, heavy, first, now):
-    """AGAINST (heavy side got cheaper), WITH (heavy side got more expensive), NONE."""
-    if first is None or now is None:
-        return "UNKNOWN"
+def movement(market, heavy, o):
+    """DraftKings opener -> current, from the heavy side's point of view."""
     if market == "spread":
-        d = now - first                      # heavy side's own number: higher = better for heavy bettors = cheaper
+        a, b = o.get(f"spread_{heavy}_open"), o.get(f"spread_{heavy}_close")
+        if a is None or b is None:
+            return "UNKNOWN"
+        d = b - a                                   # heavy side's number went up = cheaper for its bettors
+    elif market == "total":
+        a, b = o.get("total_open"), o.get("total_close")
+        if a is None or b is None:
+            return "UNKNOWN"
+        d = (a - b) if heavy == "over" else (b - a)
     else:
-        d = (first - now) if heavy == "over" else (now - first)   # over cheaper when the total drops
+        a, b = o.get(f"ml_{heavy}_open"), o.get(f"ml_{heavy}_close")
+        if a is None or b is None or abs(a) < 100 or abs(b) < 100:
+            return "UNKNOWN"
+        d = (_prob(a) - _prob(b)) * 25              # 2% win probability ~ 0.5 "points"
     return "AGAINST" if d >= 0.5 else "WITH" if d <= -0.5 else "NONE"
 
 
-def bucket(bets):
-    return "<70" if bets < 70 else "70-89" if bets < 90 else "90-98" if bets < 99 else "99+"
+def _dk_price(market, side, line, o):
+    if market == "money":
+        return None
+    if market == "spread":
+        return o.get(f"spread_{side}_close_price") if o.get(f"spread_{side}_close") == line else None
+    return o.get(f"total_{side}_close_price") if o.get("total_close") == line else None
 
 
-def bettor_read(bets):
-    return "one big ticket (possibly sharp)" if 50 <= bets <= 67 else "public piling in" if bets >= 80 else "mixed"
+def bucket(b):
+    return "<70" if b < 70 else "70-89" if b < 90 else "90-98" if b < 99 else "99+"
 
 
-def signals(sheet, conn, uploaded_at, year=None):
-    """One record per >=99% handle side found on the sheet (all sports listed; only NFL/CFB matched and graded)."""
-    year = year or time.gmtime(uploaded_at).tm_year
+def bettor_read(b):
+    return "one big ticket (possibly sharp)" if 50 <= b <= 67 else "public piling in" if b >= 80 else "mixed"
+
+
+def signals(sheet, events, uploaded_at):
     out = []
     for g in sheet:
-        ev, why = match_game(g, conn, uploaded_at, year)
-        res = resolve(g, ev) if ev else {}
+        e, why = match_game(g, events, uploaded_at)
+        res = resolve(g, e) if e else {}
         for market, sides in (("spread", ("away", "home")), ("total", ("over", "under")), ("money", ("away", "home"))):
-            src = res.get(market) if ev else (g.get(market) or {})
+            src = res.get(market) if e else (g.get(market) or {})
             for heavy in sides:
                 s = (src or {}).get(heavy) or {}
                 if (s.get("handle") or 0) < 99:
                     continue
                 fade = OPP[heavy]
-                rec = {"rule": RULE, "sport_label": g.get("sport_label"), "sport": g.get("sport"), "market": market,
-                       "sheet_game": f"{g.get('away')} @ {g.get('home')}", "heavy": heavy, "fade": fade,
-                       "handle": s.get("handle"), "bets": s.get("bets"), "uploaded_at": uploaded_at}
-                if not ev:
+                rec = {"rule": RULE, "sheet_game": f"{g.get('away')} @ {g.get('home')}", "sheet_label": g.get("sport_label"),
+                       "market": market, "heavy": heavy, "fade": fade, "handle": s.get("handle"), "bets": s.get("bets"),
+                       "uploaded_at": uploaded_at}
+                if not e:
                     rec.update(status="NOT MATCHED", reason=why)
                     out.append(rec)
                     continue
                 if market not in res:
-                    rec.update(status="NOT MATCHED", reason=f"{market} numbers did not fit the market", event_id=ev["event_id"])
+                    rec.update(status="NOT MATCHED", reason=f"{market} numbers did not fit DraftKings'", event_id=e["id"])
                     out.append(rec)
                     continue
-                bets = s.get("bets")
+                o, bets = e["odds"], s.get("bets")
                 tier = "THIN" if bets is not None and bets >= 99 else "NORMAL"
-                line_heavy, line_fade = res[market][heavy].get("line"), res[market][fade].get("line")
-                mv = "UNKNOWN"
-                if market in ("spread", "total"):
-                    mv = movement(market, heavy, first_line(conn, ev["event_id"], market, heavy),
-                                  line_heavy if market == "spread" else line_heavy)
-                live = uploaded_at >= ev["kickoff"]
+                lh, lf = res[market][heavy]["line"], res[market][fade]["line"]
+                mv = movement(market, heavy, o)
+                live = uploaded_at >= e["kickoff"]
                 if tier == "THIN":
                     lean = "LOG"
                 elif live:
@@ -204,15 +220,21 @@ def signals(sheet, conn, uploaded_at, year=None):
                     lean = "FLIP"
                 else:
                     lean = "PASS"
-                key = abs(line_fade) in KEYS.get(ev["sport"], set()) if market == "spread" and line_fade is not None else False
-                rec["sport"] = ev["sport"]
-                rec.update(status="SIGNAL", event_id=ev["event_id"], game=f"{ev['away']} @ {ev['home']}",
-                           kickoff=ev["kickoff"], tier=tier, lean=lean, live=live, movement=mv,
-                           bucket=bucket(bets) if bets is not None else None,
-                           bettor_read=bettor_read(bets) if bets is not None else None,
-                           line_heavy=line_heavy, line_fade=line_fade, key_number=key,
-                           price_heavy=line_heavy if market == "money" else -110,
-                           price_fade=line_fade if market == "money" else -110,
+                orig = None
+                if market == "spread" and o.get(f"spread_{heavy}_open") is not None:
+                    orig = lh == o.get(f"spread_{heavy}_open")
+                elif market == "total" and o.get("total_open") is not None:
+                    orig = lh == o["total_open"]
+                rec.update(status="SIGNAL", league=e["league"], sport=LEAGUE_NAMES[e["league"]], event_id=e["id"],
+                           game=f"{e['away']} @ {e['home']}", kickoff=e["kickoff"], tier=tier, lean=lean, live=live,
+                           movement=mv, original_number=orig, bucket=bucket(bets) if bets is not None else None,
+                           bettor_read=bettor_read(bets) if bets is not None else None, line_heavy=lh, line_fade=lf,
+                           key_number=(market == "spread" and abs(lf) in KEYS.get(e["league"], set())),
+                           price_heavy=lh if market == "money" else (_dk_price(market, heavy, lh, o) or -110),
+                           price_fade=lf if market == "money" else (_dk_price(market, fade, lf, o) or -110),
+                           dk={k: o.get(k) for k in ("spread_home_open", "spread_home_close", "total_open", "total_close",
+                                                    "ml_home_open", "ml_home_close", "ml_away_open", "ml_away_close")},
+                           game_date=_dt.datetime.fromtimestamp(e["kickoff"], ET).strftime("%Y%m%d"),
                            reason=_reason(tier, lean, mv, bets, live))
                 out.append(rec)
     return out
@@ -225,14 +247,14 @@ def _reason(tier, lean, mv, bets, live):
         return "game had already started when the sheet was uploaded"
     if lean == "LIKE":
         return {"AGAINST": "line moved against the heavy money (book agrees with the fade)",
-                "NONE": "line held despite 99%+ of the money", "UNKNOWN": "line history unavailable"}[mv]
+                "NONE": "line held despite 99%+ of the money", "UNKNOWN": "no line history; default fade"}[mv]
     if lean == "FLIP":
         return f"line moved with the money and {bets:g}% of bets looks like one big (possibly sharp) ticket"
     return f"line moved with the money and {bets:g}% of bets looks public"
 
 
 def grade_side(market, side, line, price, final):
-    """W/L/P and units for one side. final = (home_score, away_score)."""
+    """final = (home_score, away_score)."""
     if final is None or line is None:
         return None
     h, a = final
@@ -244,8 +266,7 @@ def grade_side(market, side, line, price, final):
         m = (h - a) if side == "home" else (a - h)
     res = "W" if m > 0 else "L" if m < 0 else "P"
     p = float(price)
-    units = (p / 100 if p > 0 else 100 / -p) if res == "W" else -1.0 if res == "L" else 0.0
-    return {"result": res, "units": round(units, 3)}
+    return {"result": res, "units": round((p / 100 if p > 0 else 100 / -p) if res == "W" else -1.0 if res == "L" else 0.0, 3)}
 
 
 def grade(rec, final):
@@ -253,5 +274,5 @@ def grade(rec, final):
         return None
     fade = grade_side(rec["market"], rec["fade"], rec["line_fade"], rec["price_fade"], final)
     follow = grade_side(rec["market"], rec["heavy"], rec["line_heavy"], rec["price_heavy"], final)
-    lean = fade if rec["lean"] == "LIKE" else follow if rec["lean"] == "FLIP" else None
-    return {"fade": fade, "follow": follow, "lean": lean}
+    return {"fade": fade, "follow": follow,
+            "lean": fade if rec["lean"] == "LIKE" else follow if rec["lean"] == "FLIP" else None}
