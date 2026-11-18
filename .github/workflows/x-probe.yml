@@ -1,0 +1,25 @@
+# TEMPORARY one-off test (owner-approved 2026-11-18): can GitHub's servers read @BettingSplits' posts and images
+# through X's free embed feed? Manual only, no secrets, no API keys. Deleted after the test.
+name: x-probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - name: Try X's embed feed and image server
+        run: |
+          UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+          for i in 1 2 3; do
+            code=$(curl -sS -L -A "$UA" --max-time 30 -o tl.html -w "%{http_code}" \
+              "https://syndication.twitter.com/srv/timeline-profile/screen-name/BettingSplits" || echo ERR)
+            echo "timeline try $i: HTTP $code, $(wc -c < tl.html 2>/dev/null) bytes"
+            [ "$code" = 200 ] && break; sleep 20
+          done
+          imgs=$(grep -oE 'https://pbs.twimg.com/media/[A-Za-z0-9_-]+\.(jpg|png)' tl.html | sort -u | head -3)
+          echo "images found: $(echo "$imgs" | grep -c http || true)"
+          for u in $imgs; do curl -sS -o img.bin -w "image HTTP %{http_code} %{size_download} bytes\n" "$u?name=large"; done
+          grep -oE '"created_at":"[^"]+"' tl.html | head -3 || true
