@@ -58,7 +58,7 @@ jobs:
           python3 -m web_v4.live_site --shards shards --ledger state/ledger.jsonl --rankings-dir rankings --out site \
             --book-dir book --book-out book_new --need-dir need --results-dir results --need-out need_new \
             --settle-dir settle --sensitivity-cache prev/sensitivity_cache.json --line-shop-cache prev/line_shop_cache.json.gz --mi-out mi_new --mi-existing mi_existing.txt \
-            --splits-dir splits --splits-out splits_new
+            --splits-dir splits --splits-out splits_new --circa-dir circa
       - name: Save market-intelligence records (new files only, never overwritten)
         if: ${{ vars.MARKET_INTEL_RECORD == 'on' }}
         continue-on-error: true

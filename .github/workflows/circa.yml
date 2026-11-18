@@ -1,0 +1,66 @@
+# ArbitrEdge V4 -- the owner's Circa 99% engine (owner-approved 2026-11-18). The owner uploads a Circa splits sheet
+# image (from @BettingSplits on X) into the folder circa_uploads/ on v4-dev; this reads it with free local text
+# recognition (Tesseract), applies rule circa99.v1 (splits_v4/circa_engine.py) to NFL and college football games, and
+# saves one immutable record per image to release v4-circa. NO Odds API key, NO API calls. The site rebuild after it
+# passes ONLY the two Cloudflare deploy secrets (never inherit).
+name: circa
+on:
+  push:
+    branches: [v4-dev]
+    paths: ["circa_uploads/**"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: v4-circa
+  cancel-in-progress: false
+jobs:
+  read:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write           # release assets only (v4-circa); no code changes
+    outputs:
+      taken: ${{ steps.run.outputs.taken }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09   # v5.1.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0        # upload times come from the git history
+      - name: Install free text recognition
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr >/dev/null
+          python3 -m pip install --quiet "Pillow==11.0.0" "$(grep -i '^numpy==' requirements-v4.txt)"
+      - name: Download collected odds (for matching games and lines)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p shards
+          for tag in $(gh api --paginate "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[].tag_name | select(startswith("odds-data-"))'); do
+            gh release download "$tag" -p 'quotes_*.jsonl.gz' -D "shards/$tag"
+          done
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/v4-circa" --jq '.assets[].name' > existing.txt 2>/dev/null || : > existing.txt
+      - name: Read new sheets and apply the 99% rule
+        id: run
+        run: python3 -m splits_v4.circa_run --uploads circa_uploads --shards shards --existing existing.txt --out circa_new
+      - name: Save records (new files only, never overwritten)
+        if: steps.run.outputs.taken == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          files=(circa_new/circa_*.json)
+          (( ${#files[@]} )) || exit 0
+          gh release view v4-circa >/dev/null 2>&1 || gh release create v4-circa --prerelease \
+            --title "Circa 99% engine records (do not delete)" \
+            --notes "Immutable: one record per uploaded Circa splits sheet (what was read and every signal)."
+          gh release upload v4-circa "${files[@]}"
+  site:
+    needs: read
+    if: needs.read.outputs.taken == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/site-build.yml
+    secrets:                    # only the Cloudflare deploy credentials; never inherit
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

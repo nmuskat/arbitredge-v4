@@ -65,6 +65,9 @@ fetch_all v4-settlement 'settle_*.json.gz' settle '^settle_'
 mkdir -p splits
 fetch_all v4-splits 'splits_*.json' splits '^splits_'
 fetch_all v4-splits 'plays_*.json' splits '^plays_'
+# Circa 99% engine records (release v4-circa; absent until the first uploaded sheet)
+mkdir -p circa
+fetch_all v4-circa 'circa_*.json' circa '^circa_'
 # previous build's sensitivity replays (a cache, not a record): reused for up to 3 h; absent = recompute
 mkdir -p prev
 gh release download v4-site -p sensitivity_cache.json -D prev 2>/dev/null || echo "no sensitivity cache yet"

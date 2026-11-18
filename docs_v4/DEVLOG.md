@@ -456,3 +456,25 @@ positive real-data evidence remains line shopping (closing EV). No official play
 - **2026-11-14:**
   - **Friday-night check:** ran at 00:52Z for the 02:00Z slate, ON TIME (68 min before kickoff). Pick: Colorado +8.5 −120 (FanDuel, odds feed), STRONG. 83–84% of bets were on Houston, Pinnacle moved against them, and Circa moved Houston from −10.5 to −7.5.
   - **BetMGM bug:** BetMGM matched no college games, because its college page prints official school names. Fixed with `match.official()` plus aliases: 56 of 57 of tonight's BetMGM college games now match. Tonight's decisions used 2 sources, which the rule allows.
+
+## 2026-11-18 — Circa 99% engine (owner's buddy's rules, rebuilt; owner-approved)
+
+- **Data source:**
+  - The buddy's engine (Grok) reads Circa's splits sheet, which @BettingSplits posts as images on X.
+  - Reading X automatically isn't workable for free. X's API costs about $200/month. Its free embed feed was rate-limited (HTTP 429) from this session and on 1 of 2 GitHub runs, and when it answered it served only stale posts. A temporary `x-probe` workflow tested this and was removed.
+  - So the owner uploads the image to `circa_uploads/` (GitHub → Add file → Upload).
+- **Reading** (`splits_v4/circa_ocr.py`): free local Tesseract, one value box at a time.
+  - A percentage pair is accepted only if exactly one plausible reading adds to exactly 100.
+  - On the owner's 11/17 sheet: 156 of 180 percentages correct, 0 wrong, 24 rejected; all 17 of 17 sides with 99%+ handle found.
+- **Matching** (`circa_engine.py`): signs and decimals the image cannot show come from our market lines. Rows match a game by date plus spread/total within 3 points; anything ambiguous is NOT MATCHED. NFL and CFB only.
+- **Rule `circa99.v1`** (fixed before any result):
+  - ≥99% handle → fade.
+  - Tiers: NORMAL (bets < 99) or THIN (bets ≥ 99, logged only).
+  - Lean: LIKE unless the line moved with the money; FLIP when it did and bets were 50–67%; otherwise PASS; LIVE uploads PASS.
+  - Fade, follow and lean are all graded. Spreads and totals at −110 at Circa's number; moneylines at the sheet price.
+  - Grok's research judgment cannot be reproduced; it is replaced by these written rules.
+- **Pipeline:**
+  - `.github/workflows/circa.yml` (no odds key; passes only the two Cloudflare secrets to site-build) writes write-once records to release `v4-circa`.
+  - The site's "Circa 99%" tab sits next to Plays.
+  - `v4-ci` ignores image uploads.
+- **Tests:** `tests_splits/test_circa.py` (7 tests). Required suite + cf1 + market_intel + splits: 648 passed, 22 skipped.

@@ -293,6 +293,43 @@ def sharp_follow_step(bconn, conn, active, games, res, now):
     return SF.report(gs, by_game, res, close_line, _iso(now))
 
 
+def circa_step(snap, conn, rankings_snaps, results_dir, circa_dir=None):
+    """CIRCA 99% ENGINE (splits_v4.circa_engine): every uploaded sheet's record, signals de-duplicated (first upload
+    wins), graded fade / follow / lean. Display only; an error is shown and never stops the build."""
+    try:
+        from data_v4 import rankings as _RK
+        from data_v4 import results as _RS
+        from splits_v4 import circa_engine as _CE
+        files = sorted(glob.glob(os.path.join(circa_dir, "**", "circa_*.json"), recursive=True)) if circa_dir else []
+        docs = sorted((json.load(open(p)) for p in files), key=lambda d: d.get("uploaded_at") or 0)
+        seen, sigs, uploads = set(), [], []
+        for d in docs:
+            uploads.append({k: d.get(k) for k in ("image", "uploaded_at_iso", "rows_read", "games_ok", "error")} |
+                           {"football": [r for r in d.get("read", []) if any(
+                               s.get("sheet_game") == f"{r.get('away')} @ {r.get('home')}" and s.get("status") == "SIGNAL"
+                               for s in d.get("signals", []))],
+                            "problems": sum(1 for r in d.get("read", []) if r.get("status") != "OK")})
+            for s in d.get("signals", []):
+                k = (s.get("event_id") or s.get("sheet_game"), s.get("market"), s.get("heavy"))
+                if s.get("status") == "SIGNAL" and k not in seen:
+                    seen.add(k)
+                    sigs.append(dict(s, image=d.get("image")))
+        gl = [{"sport": s["sport"], "event_id": s["event_id"], "home": s["game"].split(" @ ")[1],
+               "away": s["game"].split(" @ ")[0], "kickoff": _iso(s["kickoff"])} for s in sigs]
+        latest = max((x for x in rankings_snaps if x.get("teams")), key=lambda x: x["fetched_at"], default=None)
+        res = _RS.load(results_dir) if results_dir else []
+        finals = {k[1]: (v["home_score"], v["away_score"]) for k, v in
+                  _RS.match(gl, res, _RK.TeamMatcher(latest["teams"]) if latest else None).items()}
+        for s in sigs:
+            s["final"] = list(finals[s["event_id"]]) if s["event_id"] in finals else None
+            s["graded"] = _CE.grade(s, finals.get(s["event_id"]))
+            s["kickoff_iso"] = _iso(s["kickoff"])
+        snap["circa"] = {"status": "OK", "rule": _CE.RULE, "signals": sigs, "uploads": uploads[-10:][::-1],
+                         "n_uploads": len(docs)}
+    except Exception as e:                 # noqa: BLE001
+        snap["circa"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
+
+
 def splits_step(snap, conn, rankings_snaps, results_dir, now, splits_dir=None, splits_out=None):
     """PUBLIC SPLITS PLAYS (splits_v4): seal play decisions for snapshots that have none yet (write-once files), then
     show every sealed play with its result. Display/record only; an error is shown and never stops the build."""
@@ -887,6 +924,38 @@ R.mi=()=>{const M=D.market_intel||{};if(M.status!=="OK")return[card(el("h2",{},"
   el("div",{class:"mi2"},shp("Spread",sp,["home","away"]),shp("Totals",tt,["over","under"])))})]};
 const AG={rule:"v3",cut:"T-1h",src:"genuine",market:"spread",cat:"",show:false};
 const AGCAT={STRONG_AGREEMENT:"Strong agreement",MODERATE_AGREEMENT:"Moderate agreement",DISAGREEMENT:"Disagreement",NO_SHARP_CONSENSUS:"No sharp consensus",MARKET_NEED_ONLY:"NEED only (no sharp wagers)",SHARP_ONLY:"Sharps only (no NEED)",NO_SIGNAL:"No signal",ALL_NEED:"All NEED picks (any sharp position)"};
+R.circa=()=>{const Cx=D.circa||{};const hd=card(el("h2",{},"Circa 99% ",badge("EXPERIMENTAL")),
+  el("p",{},"Your buddy's engine, rebuilt with fixed rules: when one side has 99%+ of Circa's money, the default is to fade it. NORMAL tier (bets under 99%) is playable; THIN tier (bets also 99%+, likely one ticket) is logged only. Lean: LIKE = bet the fade; FLIP = bet the heavy side (line moved with the money and 50–67% of bets suggests one sharp ticket); PASS = no bet. NFL and college football only."),
+  el("p",{class:"small mute"},"How to add a sheet: save @BettingSplits' Circa image from X, then in GitHub open the circa_uploads folder → Add file → Upload files → choose the image → Commit. The site updates a few minutes later. Rule "+(Cx.rule||"")+". Grok's research calls can't be reproduced; these are written rules. Tracked picks, not official plays: default NO BET."));
+ if(Cx.status!=="OK")return[hd,card(el("p",{class:"mute"},"Unavailable: "+(Cx.reason||Cx.status||"not built")))];
+ const S=Cx.signals||[],now=Date.now()/1000;
+ const tm=(r,side)=>{const[a,h]=r.game.split(" @ ");return side==="home"?h:side==="away"?a:side==="over"?"Over":"Under"};
+ const lineTxt=(r,side)=>{const l=side===r.fade?r.line_fade:r.line_heavy;return r.market==="money"?tm(r,side)+" ML "+am(l):r.market==="spread"?tm(r,side)+" "+ln(l):tm(r,side)+" "+l};
+ const pick=r=>r.lean==="LIKE"?lineTxt(r,r.fade):r.lean==="FLIP"?lineTxt(r,r.heavy):"–";
+ const tally=(xs,k)=>{const g=xs.map(r=>r.graded&&r.graded[k]).filter(Boolean);const w=g.filter(x=>x.result==="W").length,l=g.filter(x=>x.result==="L").length,p=g.length-w-l,u=g.reduce((a,x)=>a+x.units,0);
+  return g.length?w+"-"+l+(p?"-"+p:"")+" · "+(u>=0?"+":"")+u.toFixed(2)+"u":"–"};
+ const plays=S.filter(r=>r.lean==="LIKE"||r.lean==="FLIP");
+ const up=S.filter(r=>r.kickoff>now).sort((a,b)=>({LIKE:0,FLIP:1,PASS:2,LOG:3}[a.lean]-{LIKE:0,FLIP:1,PASS:2,LOG:3}[b.lean])||a.kickoff-b.kickoff);
+ const sigRow=r=>el("tr",{},el("td",{class:"small"},local(r.kickoff_iso)),el("td",{},r.game),el("td",{},r.market),
+   el("td",{},lineTxt(r,r.heavy)+" ("+r.handle+"% $ / "+r.bets+"% bets)"),el("td",{},r.tier),el("td",{},el("b",{},r.lean)),el("td",{},el("b",{},pick(r))),el("td",{class:"small"},r.reason));
+ const upCard=card(el("h3",{},"Signals for upcoming games ("+up.length+")"),up.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Kickoff"),el("th",{},"Game"),el("th",{},"Market"),el("th",{},"Heavy side (Circa)"),el("th",{},"Tier"),el("th",{},"Lean"),el("th",{},"Pick"),el("th",{},"Why"))),el("tbody",{},...up.map(sigRow)))):
+  el("p",{class:"mute"},"No signals for upcoming games. Upload today's Circa sheet to check."));
+ const grp=(t,xs)=>el("tr",{},el("td",{},t),el("td",{class:"num"},String(xs.length)),el("td",{},tally(xs,"lean")),el("td",{},tally(xs,"fade")),el("td",{},tally(xs,"follow")));
+ const norm=S.filter(r=>r.tier==="NORMAL"),thin=S.filter(r=>r.tier==="THIN");
+ const rec=card(el("h3",{},"Record (1 unit per pick)"),el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},""),el("th",{class:"num"},"Signals"),el("th",{},"Our lean"),el("th",{},"Fade the 99%"),el("th",{},"Follow the 99%"))),
+  el("tbody",{},grp("All",S),grp("LIKE (fade picks)",S.filter(r=>r.lean==="LIKE")),grp("FLIP (follow picks)",S.filter(r=>r.lean==="FLIP")),grp("PASS",S.filter(r=>r.lean==="PASS")),
+   grp("NORMAL tier",norm),grp("THIN tier",thin),grp("Spreads",S.filter(r=>r.market==="spread")),grp("Totals",S.filter(r=>r.market==="total")),grp("Moneylines",S.filter(r=>r.market==="money")),
+   grp("Line moved AGAINST the money",S.filter(r=>r.movement==="AGAINST")),grp("Line moved WITH the money",S.filter(r=>r.movement==="WITH")),grp("Line held",S.filter(r=>r.movement==="NONE")),
+   ...["<70","70-89","90-98","99+"].map(b=>grp("Bets "+b+"%",S.filter(r=>r.bucket===b)))))),
+  el("p",{class:"small mute"},"Spreads and totals graded at -110 at Circa's number on the sheet; moneylines at the sheet's price."));
+ const done=S.filter(r=>r.kickoff<=now).sort((a,b)=>b.kickoff-a.kickoff);
+ const res=x=>!x?el("span",{class:"mute"},"–"):el("span",{class:x.result==="W"?"pos":x.result==="L"?"neg":""},x.result+" "+(x.units>=0?"+":"")+x.units.toFixed(2));
+ const doneCard=card(el("h3",{},"Results ("+done.length+")"),done.length?el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},"Date"),el("th",{},"Game"),el("th",{},"Market"),el("th",{},"Lean"),el("th",{},"Pick"),el("th",{class:"num"},"Final (away–home)"),el("th",{},"Lean result"),el("th",{},"Fade"),el("th",{},"Follow"))),
+  el("tbody",{},...done.map(r=>el("tr",{},el("td",{class:"small"},(r.kickoff_iso||"").slice(5,10)),el("td",{},r.game),el("td",{},r.market+" · "+r.tier),el("td",{},r.lean),el("td",{},pick(r)),el("td",{class:"num"},r.final?r.final[1]+"–"+r.final[0]:"awaiting"),
+   el("td",{},res(r.graded&&r.graded.lean)),el("td",{},res(r.graded&&r.graded.fade)),el("td",{},res(r.graded&&r.graded.follow))))))):el("p",{class:"mute"},"No finished games yet."));
+ const ups=Cx.uploads||[];
+ const upl=el("details",{},el("summary",{},"Uploaded sheets ("+(Cx.n_uploads||0)+") and what was read"),...ups.map(u=>el("p",{class:"small"},el("b",{},u.image)," · uploaded "+local(u.uploaded_at_iso)+" · "+(u.error?"ERROR: "+u.error:(u.rows_read||0)+" games read, "+(u.games_ok||0)+" fully readable, "+(u.problems||0)+" with a number that couldn't be read (skipped, never guessed)"))));
+ return[hd,upCard,rec,doneCard,card(upl)]};
 R.plays=()=>{const P=D.splits_plays||{};const hd=card(el("h2",{},"Plays ",badge("EXPERIMENTAL")),
   el("p",{},"One idea, tested honestly: when the public is heavy on one side (65%+ of bets across DraftKings, ScoresAndOdds/SportsBettingDime and BetMGM) but Pinnacle and Circa refuse to move toward it, play the other side. Every NFL game and every AP Top-25 college game, any day: checked once per slate, 1–2 hours before kickoff. Every pick is frozen when made and graded after the game. These are tracked picks, not official plays: the site's default stays NO BET until this record proves itself."),
   el("p",{class:"small mute"},"STRONG = Pinnacle moved against the public. HOLD = Pinnacle didn't move. Not proven profitable yet: judge it by the record below after a few weekends. Rule "+(P.rule||"")+"."));
@@ -977,10 +1046,10 @@ function shp(t,x,sides){const s=x.sharp||{},a=x.agreement||{};const pc=v=>v==nul
 function render(){const h=location.hash.slice(1);let sec=h||"plays",gid=null;if(h.startsWith("game/")){gid=h.slice(5);sec="game"}
  if(sec!=="game"&&!R[sec])sec="plays";if(sec!=="game")st.prev=sec;st.sec=sec;
  for(const b of document.querySelectorAll("#sport button"))b.classList.toggle("on",b.dataset.s===st.sport);
- const nav=document.getElementById("nav");const showMore=st.more||(sec!=="plays"&&sec!=="game");
- nav.replaceChildren(el("a",{href:"#plays",class:sec==="plays"?"on":""},"Plays"),
+ const nav=document.getElementById("nav");const showMore=st.more||(sec!=="plays"&&sec!=="circa"&&sec!=="game");
+ nav.replaceChildren(el("a",{href:"#plays",class:sec==="plays"?"on":""},"Plays"),el("a",{href:"#circa",class:sec==="circa"?"on":""},"Circa 99%"),
   ...(showMore?SECTIONS.concat(SECTIONS_MI).map(([k,t])=>el("a",{href:"#"+k,class:k===sec?"on":""},t)):[]),
-  el("a",{href:"javascript:void 0",class:"small",on:{click:()=>{st.more=!showMore;try{localStorage.setItem("v4more",st.more?"1":"")}catch(e){}if(!st.more&&sec!=="plays")location.hash="plays";else render()}}},showMore?"Hide research tabs":"Research tabs ▸"));
+  el("a",{href:"javascript:void 0",class:"small",on:{click:()=>{st.more=!showMore;try{localStorage.setItem("v4more",st.more?"1":"")}catch(e){}if(!st.more&&sec!=="plays"&&sec!=="circa")location.hash="plays";else render()}}},showMore?"Hide research tabs":"Research tabs ▸"));
  const s=S();const f=freshness(s.observed_at);document.getElementById("fresh").replaceChildren(badge(f),el("span",{class:"mute"},s.observed_at?fmtAge(ageMin(s.observed_at))+" old":"no data"));
  const main=document.getElementById("main");const y=window.scrollY;main.replaceChildren(...(sec==="game"?R.game(gid):R[sec]()).filter(Boolean));
  if(document.activeElement&&document.activeElement.type==="search"){}else window.scrollTo(0,y)}
@@ -1014,6 +1083,7 @@ def main(argv=None):
     ap.add_argument("--sensitivity-cache", default=None, help="previous build's variant splits (v4-site, optional)")
     ap.add_argument("--line-shop-cache", default=None,
                     help="previous build's line-shopping scan cache (v4-site, optional; performance only)")
+    ap.add_argument("--circa-dir", default=None, help="Circa 99%% engine records (release v4-circa)")
     ap.add_argument("--splits-dir", default=None, help="public-splits snapshots and sealed plays (release v4-splits)")
     ap.add_argument("--splits-out", default=None, help="where to write play records sealed by this build")
     ap.add_argument("--mi-out", default=None, help="market-intelligence records created by this build (if enabled)")
@@ -1059,6 +1129,7 @@ def main(argv=None):
         snap["official_needs"] = {"status": "ERROR", "reason": f"{type(e).__name__}: {e}"[:300]}
     book_moves_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, now)
     splits_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, now, a.splits_dir, a.splits_out)
+    circa_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, a.circa_dir)
     market_intel_step(snap, conn, load_rankings(a.rankings_dir), a.results_dir, now, a.mi_out, a.mi_existing, bconn)
     with open(os.path.join(a.out, "sensitivity_cache.json"), "w") as fh:
         json.dump(snap.pop("_sensitivity_cache", None), fh, separators=(",", ":"))

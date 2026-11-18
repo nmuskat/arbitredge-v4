@@ -546,7 +546,7 @@ case "$1" in
       *official_*) echo "${FAKE_OFF:-0}"; exit 0 ;;          # Official Needs records (counted by their own pattern)
       *releases/tags/v4-book*) [[ -n "${FAKE_BOOK:-}" ]] || exit 1; echo "${FAKE_BOOK%%:*}"; exit 0 ;;
       *releases/tags/v4-need-decisions*) [[ -n "${FAKE_DEC:-}" ]] || exit 1; echo "${FAKE_DEC%%:*}"; exit 0 ;;
-      *releases/tags/v4-need-*|*releases/tags/v4-results*|*releases/tags/v4-settlement*|*releases/tags/v4-splits*) exit 1 ;;
+      *releases/tags/v4-need-*|*releases/tags/v4-results*|*releases/tags/v4-settlement*|*releases/tags/v4-splits*|*releases/tags/v4-circa*) exit 1 ;;
       *) printf '%s\n' $FAKE_TAGS; exit 0 ;;
     esac ;;
   release)

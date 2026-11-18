@@ -6,7 +6,7 @@ name: v4-ci
 on:
   push:
     branches: [v4-dev, main]
-    paths-ignore: ["**.md", "docs_v4/**"]
+    paths-ignore: ["**.md", "docs_v4/**", "circa_uploads/**"]
   pull_request:
     paths-ignore: ["**.md", "docs_v4/**"]
 permissions:
