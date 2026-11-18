@@ -19,7 +19,17 @@ jobs:
             echo "timeline try $i: HTTP $code, $(wc -c < tl.html 2>/dev/null) bytes"
             [ "$code" = 200 ] && break; sleep 20
           done
-          imgs=$(grep -oE 'https://pbs.twimg.com/media/[A-Za-z0-9_-]+\.(jpg|png)' tl.html | sort -u | head -3)
-          echo "images found: $(echo "$imgs" | grep -c http || true)"
-          for u in $imgs; do curl -sS -o img.bin -w "image HTTP %{http_code} %{size_download} bytes\n" "$u?name=large"; done
-          grep -oE '"created_at":"[^"]+"' tl.html | head -3 || true
+          python3 - <<'PY'
+          import json, re
+          h = open("tl.html", encoding="utf-8", errors="replace").read()
+          m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', h, re.S)
+          if not m:
+              print("no embedded data"); raise SystemExit
+          d = json.loads(m.group(1))
+          ents = d["props"]["pageProps"]["timeline"]["entries"]
+          print("posts in feed:", len(ents))
+          for e in ents:
+              t = (e.get("content") or {}).get("tweet") or {}
+              media = [x.get("media_url_https") for x in (t.get("extended_entities") or t.get("entities") or {}).get("media", [])]
+              print("POST", t.get("id_str"), t.get("created_at"), "|", (t.get("full_text") or t.get("text") or "")[:90].replace("\n", " "), "|", " ".join(m for m in media if m))
+          PY
