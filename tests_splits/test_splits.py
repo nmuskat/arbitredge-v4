@@ -170,7 +170,7 @@ def _store(pin_home_prices, kick, t0):
     return conn
 
 
-def _snap(t, home_bets=(75, 70, 80)):
+def _snap(t, home_bets=(85, 80, 90)):
     g = {"draftkings": {"spread": {"home": {"bets": home_bets[0]}, "away": {"bets": 100 - home_bets[0]}}},
          "scoresandodds": {"spread": {"home": {"bets": home_bets[1]}, "away": {"bets": 100 - home_bets[1]}}},
          "sportsbettingdime": {"spread": {"home": {"bets": 10}, "away": {"bets": 90}}},     # same feed: never counted twice
@@ -183,6 +183,8 @@ def test_public_side_counts_each_source_once():
     side, src, _ = P.public_side(_snap(0)["games"]["g1"], "spread")
     assert side == "home" and [s[1] for s in src] == ["draftkings", "scoresandodds", "betmgm"]
     assert P.public_side(_snap(0, (70, 50, 55))["games"]["g1"], "spread")[0] is None        # avg 58%: not heavy
+    assert P.public_side(_snap(0, (75, 70, 80))["games"]["g1"], "spread")[0] is None        # avg 75%: below 80% (v2)
+    assert P.public_side(_snap(0, (85, 75, 80))["games"]["g1"], "spread")[0] == "home"      # avg 80%
     g = {"draftkings": {"spread": {"home": {"bets": 90}, "away": {"bets": 10}}}}
     assert P.public_side(g, "spread")[0] is None                                             # one source is not enough
 

@@ -5,7 +5,8 @@ splits_v4/plays.py -- the PLAY RULE (owner's idea, 2026-11-12; thresholds fixed 
 (not respecting that action), that is a play" -- on the OTHER side.
 
 Per game, per market (spread, total), from one splits snapshot taken ~1 h before the slate:
- 1. PUBLIC SIDE: average % of BETS across the independent real-money sources >= 65%, with at least 2 sources each
+ 1. PUBLIC SIDE: average % of BETS across the independent real-money sources >= 80% (65% in v1, until 2026-11-20,
+    owner's change), with at least 2 sources each
     >= 60% on that side, and at least 2 sources available. Independent sources (each counted ONCE):
       DraftKings (WagerTalk republishes DraftKings: used only if DraftKings itself is missing),
       the ScoresAndOdds / SportsBettingDime feed (ScoresAndOdds; SportsBettingDime if it is missing),
@@ -28,8 +29,8 @@ import time
 from analysis_v4 import book_moves as BM
 from market_v4 import asof
 
-RULE = "splits_fade.v1 (2026-11-12): avg bets >= 65% (>= 2 sources >= 60%); Pinnacle/Circa not moving toward it"
-PUBLIC_AVG, PUBLIC_EACH, MIN_SOURCES = 65.0, 60.0, 2
+RULE = "splits_fade.v2 (2026-11-20): avg bets >= 80% (>= 2 sources >= 60%); Pinnacle/Circa not moving toward it"
+PUBLIC_AVG, PUBLIC_EACH, MIN_SOURCES = 80.0, 60.0, 2     # v2 (owner 2026-11-20); v1 used 65% (picks sealed under v1 keep it)
 PIN_MOVE, CIRCA_MOVE = 0.25, 0.5
 SOURCES = (("DraftKings", ("draftkings", "wagertalk")), ("ScoresAndOdds/SBD", ("scoresandodds", "sportsbettingdime")),
            ("BetMGM", ("betmgm",)))

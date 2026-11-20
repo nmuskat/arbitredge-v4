@@ -975,7 +975,7 @@ R.circa=()=>{const Cx=D.circa||{};const hd=card(el("h2",{},"Circa 99% ",badge("E
  const upl=el("details",{},el("summary",{},"Uploaded sheets ("+(Cx.n_uploads||0)+") and what was read"),...ups.map(u=>el("p",{class:"small"},el("b",{},u.image)," · uploaded "+local(u.uploaded_at_iso)+" · "+(u.error?"ERROR: "+u.error:(u.rows_read||0)+" games read, "+(u.games_ok||0)+" fully readable, "+(u.problems||0)+" with a number that couldn't be read (skipped, never guessed) · "+(u.signals||0)+" signals, "+(u.unmatched||0)+" 99% sides not matched to a game"))));
  return[hd,upCard,rec,doneCard,card(upl)]};
 R.plays=()=>{const P=D.splits_plays||{};const hd=card(el("h2",{},"Plays ",badge("EXPERIMENTAL")),
-  el("p",{},"One idea, tested honestly: when the public is heavy on one side (65%+ of bets across DraftKings, ScoresAndOdds/SportsBettingDime and BetMGM) but Pinnacle and Circa refuse to move toward it, play the other side. Every NFL game and every AP Top-25 college game, any day: checked once per slate, 1–2 hours before kickoff. Every pick is frozen when made and graded after the game. These are tracked picks, not official plays: the site's default stays NO BET until this record proves itself."),
+  el("p",{},"One idea, tested honestly: when the public is heavy on one side (80%+ of bets across DraftKings, ScoresAndOdds/SportsBettingDime and BetMGM) but Pinnacle and Circa refuse to move toward it, play the other side. Every NFL game and every AP Top-25 college game, any day: checked once per slate, 1–2 hours before kickoff. Every pick is frozen when made and graded after the game. These are tracked picks, not official plays: the site's default stays NO BET until this record proves itself."),
   el("p",{class:"small mute"},"STRONG = Pinnacle moved against the public. HOLD = Pinnacle didn't move. Not proven profitable yet: judge it by the record below after a few weekends. Rule "+(P.rule||"")+"."));
  if(P.status!=="OK")return[hd,card(el("p",{class:"mute"},"Unavailable: "+(P.reason||P.status||"not built")))];
  const rs=P.records||[],plays=rs.filter(r=>r.status==="PICK"),now=Date.now()/1000;
@@ -987,7 +987,8 @@ R.plays=()=>{const P=D.splits_plays||{};const hd=card(el("h2",{},"Plays ",badge(
  const rec=card(el("h3",{},"Record"),el("div",{class:"wrap"},el("table",{},el("thead",{},el("tr",{},el("th",{},""),el("th",{class:"num"},"Plays"),el("th",{},"Result"))),
   el("tbody",{},row("All plays",plays),row("NFL",plays.filter(r=>r.sport==="nfl")),row("College (Top-25)",plays.filter(r=>r.sport==="cfb")),
    row("Spreads",plays.filter(r=>r.market==="spread")),row("Totals",plays.filter(r=>r.market==="total")),
-   row("STRONG",plays.filter(r=>r.play.strength==="STRONG")),row("HOLD",plays.filter(r=>r.play.strength==="HOLD"))))),
+   row("STRONG",plays.filter(r=>r.play.strength==="STRONG")),row("HOLD",plays.filter(r=>r.play.strength==="HOLD")),
+   row("Rule v2 (80%+ public, from 11/20)",plays.filter(r=>(r.rule||"").startsWith("splits_fade.v2"))),row("Rule v1 (65%+ public, 11/12–11/19)",plays.filter(r=>(r.rule||"").startsWith("splits_fade.v1")))))),
   el("p",{class:"small mute"},"Snapshots taken: "+(P.snapshots||0)+(P.latest_snapshot?" · latest "+local(P.latest_snapshot):"")+". 1 unit risked per play at the recorded price."));
  const why=r=>{const pn=r.pinnacle||{};return(r.why_public||"")+" · Pinnacle "+(pn.status||"–").toLowerCase()+(pn.age_min!=null&&pn.age_min>45?" (its latest price "+pn.age_min+" min old)":"")+" · Circa "+((r.circa||{}).status||"n/a").toLowerCase()};
  const src=r=>(r.sources||[]).map(x=>x.label+" "+Math.round(x.bets[r.public_side]||0)+"%").join(" · ");

@@ -499,3 +499,8 @@ positive real-data evidence remains line shopping (closing EV). No official play
   - **Rows:** found at four offsets.
   - **Retries:** a record that read 0 rows is retried like an error.
   - **Result:** all 8 real screenshots detect cleanly; the hand-checked sheet is still 156 correct, 0 wrong.
+
+## 2026-11-20 — Plays rule v2 (owner): public threshold 80%
+
+- **Rule `splits_fade.v2`:** the average public bets % must be ≥ 80% (it was 65% in v1). Everything else is unchanged.
+- **Records:** picks sealed under v1 keep their v1 label and are never re-decided. The Plays record table shows v1 and v2 separately.
