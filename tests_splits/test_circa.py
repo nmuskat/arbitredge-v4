@@ -174,7 +174,7 @@ def test_list_step_exits_cleanly_under_github_shell_options(tmp_path):
     fake = tmp_path / "gh"
     fake.write_text('#!/bin/bash\nif [[ "$*" == *"--jq"* ]]; then printf "1 circa_a.png.json\\n2 circa_b.png.json\\n'
                     '3 circa_finals_nba_20261118.json\\n"; exit 0; fi\ncase "$*" in *assets/1*) echo \'{"error":"x"}\';; '
-                    '*assets/2*) echo \'{"signals":[]}\';; esac\n')
+                    '*assets/2*) echo \'{"signals":[],"rows_read":15}\';; esac\n')
     fake.chmod(0o755)
     r = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step], cwd=tmp_path,
                        env=dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", GITHUB_REPOSITORY="o/r"))

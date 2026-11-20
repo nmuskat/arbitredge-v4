@@ -303,8 +303,9 @@ def circa_step(snap, circa_dir=None, circa_out=None, get=None, now=None):
         files = sorted(glob.glob(os.path.join(circa_dir, "**", "circa_*.json"), recursive=True)) if circa_dir else []
         recs = [p for p in files if not os.path.basename(p).startswith("circa_finals_")]
         docs = sorted((json.load(open(p)) for p in recs), key=lambda d: d.get("uploaded_at") or 0)
-        ok_images = {d.get("image") for d in docs if not d.get("error")}
-        docs = [d for d in docs if not (d.get("error") and d.get("image") in ok_images)]   # a failed read later retried
+        bad = lambda d: bool(d.get("error")) or not d.get("rows_read")                     # noqa: E731
+        ok_images = {d.get("image") for d in docs if not bad(d)}
+        docs = [d for d in docs if not (bad(d) and d.get("image") in ok_images)]           # a failed read later retried
         finals = {}
         for p in files:
             if os.path.basename(p).startswith("circa_finals_"):

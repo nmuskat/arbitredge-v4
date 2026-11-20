@@ -493,3 +493,9 @@ positive real-data evidence remains line shopping (closing EV). No official play
   - **One row per game:** each game is claimed by one row across ALL screenshots uploaded together.
   - **Result on the four uploads:** 49 matches, all checked correct by eye, 0 claimed twice, 17 rows left unmatched.
   - **Retries:** failed images are retried under `__retry<N>` names, still dated by the original upload.
+- **11/19 uploads, fixes:**
+  - **Listing loop:** the record-listing loop failed under `bash -eo pipefail` (fixed and tested).
+  - **Columns:** they are now measured from the value boxes themselves, so small shifts and zoom differences don't matter, with the standard layout as a fallback when the headings can't be read.
+  - **Rows:** found at four offsets.
+  - **Retries:** a record that read 0 rows is retried like an error.
+  - **Result:** all 8 real screenshots detect cleanly; the hand-checked sheet is still 156 correct, 0 wrong.

@@ -75,9 +75,10 @@ def layout(im):
         # a continuation screenshot (the sheet scrolled further down) has no header bar: same layout, so use the
         # standard column positions scaled to this image's width
         centres = [round(c * W / BASE_W) for c in BASE_CENTRES]
-        xs = centres[0]
-        box = [200 <= _lum(px[xs - 18, y]) <= 245 for y in range(H)]
-        return {"headers": [], "centres": centres, "rows": _runs(box, 12), "continuation": True,
+        rows = _box_rows(px, W, H, centres[0], [False] * H)
+        centres = _box_centres(im, rows) or centres
+        rows = _box_rows(px, W, H, centres[0], [False] * H)
+        return {"headers": [], "centres": centres, "rows": rows, "continuation": True,
                 "name_x": (int(W * 0.04), int(min(centres[0] - 45, W * 0.29)))}
     # column centres from the first header row: the bright header words (SPREAD, HANDLE, ...) sit on dark blue
     y0, y1 = headers[0]
@@ -96,14 +97,42 @@ def layout(im):
             merged.append((a, b))
     label_end = merged[0][1] if merged else W // 4       # "CFB - TUESDAY, NOV 17" is the first block of words
     centres = [(a + b) // 2 for a, b in merged if a > W * 0.25]
-    if len(centres) < 9:
-        raise ValueError(f"expected 9 column headings, found {len(centres)}")
+    if len(centres) < 9:                     # headings not found (e.g. the table starts right at the black top edge):
+        centres = [round(c * W / BASE_W) for c in BASE_CENTRES]       # same layout, standard column positions
     centres = centres[-9:]
-    # team rows: grey/green value boxes in the spread column, outside header rows
-    xs = centres[0]
-    box = [(not dark[y]) and 200 <= _lum(px[xs - 18, y]) <= 245 for y in range(H)]
-    rows = [r for r in _runs(box, 12)]
+    # team rows: grey/green value boxes in the spread column, outside header rows; then the columns are re-measured
+    # from the boxes themselves (robust to small shifts and zoom differences between screenshots)
+    rows = _box_rows(px, W, H, centres[0], dark)
+    centres = _box_centres(im, rows) or centres
+    rows = _box_rows(px, W, H, centres[0], dark)
     return {"headers": headers, "centres": centres, "rows": rows, "name_x": (int(W * 0.04), int(min(centres[0] - 45, W * 0.29)))}
+
+
+def _box_rows(px, W, H, xs, dark):
+    """Row bands where the spread column's value box is present (box fill, sampled at three offsets)."""
+    offs = [o for o in (-18, -14, -10, -6) if 0 <= xs + o < W]
+    box = [(not dark[y]) and any(200 <= _lum(px[xs + o, y]) <= 245 for o in offs) for y in range(H)]
+    return _runs(box, 12)
+
+
+def _box_centres(im, rows):
+    """Column centres measured from the value boxes on the team rows: on each row, the 9 runs of box fill
+    (grey or green) right of the team-name area; the median over rows. None if not found."""
+    if not rows:
+        return None
+    W = im.size[0]
+    px = im.load()
+    found = []
+    for a, b in rows[:12]:
+        y = a + (b - a) // 3                                      # upper part of the box: above most digits
+        fill = [W * 0.27 < x < W - 4 and 195 <= _lum(px[x, y]) <= 248 and _lum(px[x, y]) < 252 for x in range(W)]
+        runs = [(p, q) for p, q in _runs(fill, 20) if q - p < W * 0.09]
+        if len(runs) == 9:
+            found.append([(p + q) // 2 for p, q in runs])
+    if not found:
+        return None
+    found.sort()
+    return [sorted(col)[len(col) // 2] for col in zip(*found)]
 
 
 def read(path):
