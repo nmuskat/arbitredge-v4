@@ -164,3 +164,19 @@ def test_failed_image_retried_under_new_name(tmp_path, monkeypatch):
     R.main(["--uploads", str(up), "--existing", str(tmp_path / "existing.txt"), "--failed", str(tmp_path / "failed.txt"),
             "--out", str(out2)])
     assert not out2.exists()                                                     # done: not processed again
+
+
+def test_list_step_exits_cleanly_under_github_shell_options(tmp_path):
+    """GitHub runs steps with bash -eo pipefail: the record-listing loop must not fail when the last record is fine."""
+    import subprocess
+    step = [s for s in yaml.safe_load(open(os.path.join(ROOT, ".github", "workflows", "circa.yml")))["jobs"]["read"]["steps"]
+            if s.get("name") == "List saved records"][0]["run"]
+    fake = tmp_path / "gh"
+    fake.write_text('#!/bin/bash\nif [[ "$*" == *"--jq"* ]]; then printf "1 circa_a.png.json\\n2 circa_b.png.json\\n'
+                    '3 circa_finals_nba_20261118.json\\n"; exit 0; fi\ncase "$*" in *assets/1*) echo \'{"error":"x"}\';; '
+                    '*assets/2*) echo \'{"signals":[]}\';; esac\n')
+    fake.chmod(0o755)
+    r = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step], cwd=tmp_path,
+                       env=dict(os.environ, PATH=f"{tmp_path}:{os.environ['PATH']}", GITHUB_REPOSITORY="o/r"))
+    assert r.returncode == 0
+    assert (tmp_path / "failed.txt").read_text().split() == ["circa_a.png.json"]

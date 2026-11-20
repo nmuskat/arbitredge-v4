@@ -41,8 +41,10 @@ jobs:
           : > failed.txt                                   # records that hold an error are retried under a new name
           while read -r id name; do
             case "$name" in circa_finals_*) continue;; circa_*.json)
-              gh api -H "Accept: application/octet-stream" "repos/${GITHUB_REPOSITORY}/releases/assets/$id" \
-                | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("error") else 1)' && echo "$name" >> failed.txt;;
+              if gh api -H "Accept: application/octet-stream" "repos/${GITHUB_REPOSITORY}/releases/assets/$id" \
+                | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("error") else 1)'; then
+                echo "$name" >> failed.txt
+              fi;;
             esac
           done < assets.txt
       - name: Read new sheets and apply the 99% rule
