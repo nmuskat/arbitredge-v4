@@ -148,6 +148,14 @@ def parse_scoresandodds(h, sport):
 
 
 # ------------------------------------------------------------------------------------------------ SportsBettingDime
+def _pctval(v):
+    """A percentage from a JSON feed, or None when blank/not a number (SBD posts "" before its numbers are in)."""
+    try:
+        return None if v is None or str(v).strip() == "" else float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_sportsbettingdime(body, sport):
     rows = []
     for g in json.loads(body).get("data", []):
@@ -160,10 +168,12 @@ def parse_sportsbettingdime(body, sport):
         r = {"source": "sportsbettingdime", "sport": sport, "away": name["away"], "home": name["home"], "kickoff": ko,
              "rot": [c["away"].get("rotation_number"), c["home"].get("rotation_number")], "spread": None, "total": None}
         sp, to = bs.get("spread") or {}, bs.get("total") or {}
-        if (sp.get("away") or {}).get("betsPercentage") is not None:
-            r["spread"] = {s: {"bets": sp[s].get("betsPercentage"), "money": sp[s].get("stakePercentage")} for s in ("away", "home")}
-        if (to.get("over") or {}).get("betsPercentage") is not None:
-            r["total"] = {s: {"bets": to[s].get("betsPercentage"), "money": to[s].get("stakePercentage")} for s in ("over", "under")}
+        if _pctval((sp.get("away") or {}).get("betsPercentage")) is not None:
+            r["spread"] = {s: {"bets": _pctval(sp[s].get("betsPercentage")), "money": _pctval(sp[s].get("stakePercentage"))}
+                           for s in ("away", "home")}
+        if _pctval((to.get("over") or {}).get("betsPercentage")) is not None:
+            r["total"] = {s: {"bets": _pctval(to[s].get("betsPercentage")), "money": _pctval(to[s].get("stakePercentage"))}
+                          for s in ("over", "under")}
         if r["spread"] or r["total"]:
             rows.append(r)
     return rows

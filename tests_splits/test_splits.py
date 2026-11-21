@@ -272,3 +272,16 @@ def test_betmgm_official_college_names_match():
              (official("Georgia Instute of Technlogy"), "x", "Georgia Tech Yellow Jackets", None)]
     for a, _h, full, _ in pairs:
         assert M.name_score(a, full, "cfb") > 0, (a, full)
+
+
+def test_blank_percentages_are_missing_not_a_crash():
+    # 2026-11-21: SportsBettingDime posted "" for one game's percentages; the Plays tab crashed on float("")
+    from splits_v4 import plays as P
+    from splits_v4 import sources as S
+    g = {"sportsbettingdime": {"spread": {"away": {"bets": ""}, "home": {"bets": ""}}},
+         "draftkings": {"spread": {"away": {"bets": 85}, "home": {"bets": 15}}},
+         "betmgm": {"spread": {"away": {"bets": "88"}, "home": {"bets": "12"}}}}
+    src = P._bets(g, "spread")
+    assert [x[1] for x in src] == ["draftkings", "betmgm"]
+    assert P.public_side(g, "spread")[0] == "away"
+    assert S._pctval("") is None and S._pctval(None) is None and S._pctval("x") is None and S._pctval("61") == 61.0

@@ -38,15 +38,22 @@ MK = {"spread": ("spreads", ("away", "home")), "total": ("totals", ("over", "und
 OPP = {"away": "home", "home": "away", "over": "under", "under": "over"}
 
 
+def _num(v):
+    try:
+        return None if v is None or str(v).strip() == "" else float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 def _bets(game, market):
-    """[(label, site, {side: bets%})] -- one per independent source."""
+    """[(label, site, {side: bets%})] -- one per independent source. A blank or unreadable % = source missing."""
     out = []
     for label, sites in SOURCES:
         for site in sites:
             m = ((game.get(site) or {}).get(market) or {})
-            sides = MK[market][1]
-            if all((m.get(s) or {}).get("bets") is not None for s in sides):
-                out.append((label, site, {s: float(m[s]["bets"]) for s in sides}))
+            vals = {s: _num((m.get(s) or {}).get("bets")) for s in MK[market][1]}
+            if all(v is not None for v in vals.values()):
+                out.append((label, site, vals))
                 break
     return out
 
